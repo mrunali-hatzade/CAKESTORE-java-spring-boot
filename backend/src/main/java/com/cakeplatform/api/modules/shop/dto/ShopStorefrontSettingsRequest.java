@@ -50,4 +50,6 @@ public class ShopStorefrontSettingsRequest {
     private Boolean mapEnabled;
     @NotNull
     private Boolean businessHoursEnabled;
+    private Boolean hideStreetAddress;
 }
+

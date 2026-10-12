@@ -149,7 +149,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     org.springframework.data.domain.Page<Order> findByCustomerPhoneOrderByCreatedAtDesc(String customerPhone, Pageable pageable);
 
-    @Query("SELECT o FROM Order o WHERE o.customerPhone = :customerPhone " +
+    @Query("SELECT o FROM Order o WHERE (o.customerPhone = :customerPhone OR o.customerPhone = CONCAT('+91', :customerPhone) OR o.customerPhone = CONCAT('+91 ', :customerPhone)) " +
            "AND NOT (UPPER(COALESCE(o.paymentMethod, '')) IN ('ONLINE_PAYMENT', 'RAZORPAY') " +
            "         AND UPPER(COALESCE(o.paymentStatus, '')) NOT IN ('PAID', 'COMPLETED')) " +
            "ORDER BY o.createdAt DESC")

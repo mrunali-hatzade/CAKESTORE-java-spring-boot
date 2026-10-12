@@ -8,7 +8,10 @@ import {
   ShopStorefrontSettings,
   ShopCustomFormField,
   WebsiteConfigurationRequest,
+  ShopSocialLink,
+  ShopSocialLinkRequest,
 } from '@/types/storefrontManagement';
+
 
 export const ownerStorefrontApi = {
   // Hero Banners
@@ -67,4 +70,19 @@ export const ownerStorefrontApi = {
   deleteCustomFormField: async (id: number): Promise<{ message: string }> => {
     return apiClient.delete<{ message: string }>(`/api/owner/storefront/custom-fields/${id}`);
   },
+
+  // Social & External Links
+  getSocialLinks: async (): Promise<ShopSocialLink[]> => {
+    return apiClient.get<ShopSocialLink[]>('/api/owner/storefront/social-links');
+  },
+  createSocialLink: async (data: ShopSocialLinkRequest): Promise<ShopSocialLink> => {
+    return apiClient.post<ShopSocialLink>('/api/owner/storefront/social-links', data);
+  },
+  updateSocialLink: async (id: number, data: ShopSocialLinkRequest): Promise<ShopSocialLink> => {
+    return apiClient.put<ShopSocialLink>(`/api/owner/storefront/social-links/${id}`, data);
+  },
+  deleteSocialLink: async (id: number): Promise<{ message: string }> => {
+    return apiClient.delete<{ message: string }>(`/api/owner/storefront/social-links/${id}`);
+  },
 };
+

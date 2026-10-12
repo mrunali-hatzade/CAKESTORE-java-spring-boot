@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { Phone, MessageCircle, Mail, MapPin, Navigation } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -14,6 +14,8 @@ interface ContactInfoSectionProps {
   onAddressChange: (v: string) => void;
   mapLocationUrl: string;
   onMapLocationUrlChange: (v: string) => void;
+  hideStreetAddress?: boolean;
+  onHideStreetAddressChange?: (v: boolean) => void;
 }
 
 export const ContactInfoSection: React.FC<ContactInfoSectionProps> = ({
@@ -27,7 +29,10 @@ export const ContactInfoSection: React.FC<ContactInfoSectionProps> = ({
   onAddressChange,
   mapLocationUrl,
   onMapLocationUrlChange,
+  hideStreetAddress,
+  onHideStreetAddressChange,
 }) => {
+
   return (
     <Card className="p-6 space-y-4">
       <div>
@@ -99,7 +104,36 @@ export const ContactInfoSection: React.FC<ContactInfoSectionProps> = ({
             onChange={(e) => onAddressChange(e.target.value)}
           />
         </div>
+
+        <div className="sm:col-span-2 pt-2 border-t border-brand-border/40">
+          <label className={`flex items-start gap-3 p-4 rounded-2xl border transition-all cursor-pointer ${
+            hideStreetAddress
+              ? 'border-emerald-300 bg-emerald-50/50'
+              : 'border-brand-border/60 bg-brand-cream-light/30 hover:border-brand-border'
+          }`}>
+            <input
+              type="checkbox"
+              checked={Boolean(hideStreetAddress)}
+              onChange={(e) => onHideStreetAddressChange && onHideStreetAddressChange(e.target.checked)}
+              className="mt-0.5 w-4 h-4 text-brand-plum rounded border-brand-border focus:ring-brand-plum"
+            />
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-owner-heading">
+                  Hide Street Address on Public Storefront (Home-Baker Privacy)
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">
+                  Recommended for Home Bakers
+                </span>
+              </div>
+              <p className="text-[11px] text-owner-muted leading-relaxed">
+                When enabled, your exact residential street/flat number and Google Maps coordinate pin are kept strictly private. Public pages and invoices will only display your locality, city, and pincode so customers can verify serviceability without discovering your home residence.
+              </p>
+            </div>
+          </label>
+        </div>
       </div>
     </Card>
   );
 };
+

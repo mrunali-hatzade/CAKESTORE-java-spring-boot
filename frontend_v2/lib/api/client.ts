@@ -58,8 +58,6 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
     }
   }
 
-  const effectiveToken = token ?? getStoredToken();
-
   const reqHeaders: Record<string, string> = {
     Accept: 'application/json',
     ...(headers as Record<string, string>),
@@ -69,8 +67,31 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
     reqHeaders['Content-Type'] = 'application/json';
   }
 
-  if (effectiveToken) {
-    reqHeaders['Authorization'] = `Bearer ${effectiveToken}`;
+  const hasExplicitAuthHeader = Boolean(reqHeaders['Authorization'] || reqHeaders['authorization']);
+
+  if (!hasExplicitAuthHeader) {
+    if (token) {
+      reqHeaders['Authorization'] = `Bearer ${token}`;
+    } else if (token === undefined) {
+      const isCustomerOrStorefrontEndpoint =
+        endpoint.startsWith('/api/customer/') ||
+        endpoint.startsWith('/api/storefront/');
+
+      if (!isCustomerOrStorefrontEndpoint) {
+        const storedToken = getStoredToken();
+        if (storedToken) {
+          reqHeaders['Authorization'] = `Bearer ${storedToken}`;
+        }
+      } else {
+        if (typeof window !== 'undefined') {
+          const guestToken = sessionStorage.getItem('cakeStoreGuestToken');
+          if (guestToken) {
+            reqHeaders['Authorization'] = `Bearer ${guestToken}`;
+          }
+        }
+      }
+    }
+    // If token === null, explicitly unauthenticated
   }
 
   try {

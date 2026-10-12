@@ -19,6 +19,7 @@ import { Textarea } from '@/components/ui/Textarea';
 import { Select } from '@/components/ui/Select';
 import { Card } from '@/components/ui/Card';
 import { storefrontApi } from '@/lib/api/storefront';
+import { SocialIcon } from '@/components/common/SocialIcon';
 
 interface StorefrontContactTabProps {
   shop: Shop;
@@ -36,6 +37,7 @@ export const StorefrontContactTab: React.FC<StorefrontContactTabProps> = ({ shop
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const settings = shop.storefrontSettings;
+  const isPrivacyEnabled = !!settings?.hideStreetAddress;
   const whatsappEnabled = settings ? settings.whatsappEnabled !== false : true;
   const phoneEnabled = settings ? settings.phoneEnabled !== false : true;
   const emailEnabled = settings ? settings.emailEnabled !== false : true;
@@ -48,18 +50,24 @@ export const StorefrontContactTab: React.FC<StorefrontContactTabProps> = ({ shop
   const displayPhone = shop.phone || shop.businessPhone || '';
   const displayEmail = shop.businessEmail || shop.email || '';
 
-  const addressParts = [
-    shop.addressLine1 || shop.address,
-    shop.area,
-    shop.city,
-    shop.district,
-    shop.state,
-  ].filter(Boolean);
+  const addressParts = isPrivacyEnabled
+    ? [shop.area, shop.city, shop.district, shop.state].filter(Boolean)
+    : [
+        shop.addressLine1 || shop.address,
+        shop.area,
+        shop.city,
+        shop.district,
+        shop.state,
+      ].filter(Boolean);
 
   const fullAddress =
     addressParts.length > 0
       ? `${addressParts.join(', ')}${shop.pincode ? ` - ${shop.pincode}` : ''}`
       : `${shop.city || ''}${shop.city && shop.state ? ', ' : ''}${shop.state || ''}`;
+
+  const activeSocialLinks = (shop.socialLinks || []).filter(
+    (l) => l.isActive !== false && l.url && l.url.trim().length > 0
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,13 +196,24 @@ export const StorefrontContactTab: React.FC<StorefrontContactTabProps> = ({ shop
                 <MapPin className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-sm font-bold text-brand-espresso">Kitchen Address</h2>
+                <h2 className="text-sm font-bold text-brand-espresso">
+                  {isPrivacyEnabled ? 'Kitchen Locality / Pickup Area' : 'Kitchen Address'}
+                </h2>
                 <p className="text-xs text-brand-muted mt-0.5 line-clamp-2">{fullAddress}</p>
               </div>
             </div>
             {mapEnabled ? (
               <a
-                href={shop.mapLocationUrl || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shop.businessName + ' ' + fullAddress)}`}
+                href={
+                  isPrivacyEnabled
+                    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                        [shop.area, shop.city, shop.state].filter(Boolean).join(', ')
+                      )}`
+                    : (shop.mapLocationUrl ||
+                        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                          shop.businessName + ' ' + fullAddress
+                        )}`)
+                }
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-brand-cream border border-brand-border text-brand-espresso text-xs font-semibold hover:bg-brand-border/40 transition-all"
@@ -207,6 +226,34 @@ export const StorefrontContactTab: React.FC<StorefrontContactTabProps> = ({ shop
           </Card>
         )}
       </div>
+
+      {/* Social Media & External Links */}
+      {activeSocialLinks.length > 0 && (
+        <Card className="p-6 border border-brand-border/80 shadow-soft max-w-2xl mx-auto text-center space-y-4">
+          <div>
+            <h2 className="text-sm font-serif font-bold text-brand-espresso">
+              Connect With Us Online
+            </h2>
+            <p className="text-xs text-brand-muted mt-0.5">
+              Follow our official social profiles, videos, and portfolio channels.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+            {activeSocialLinks.map((link) => (
+              <a
+                key={link.id || link.url}
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-brand-cream border border-brand-border text-brand-espresso hover:text-brand-plum hover:border-brand-plum/40 hover:bg-brand-blush/30 transition-all text-xs font-semibold shadow-xs"
+              >
+                <SocialIcon platform={link.platform} className="w-4 h-4 text-brand-plum shrink-0" />
+                <span>{link.title || link.displayName || link.platform}</span>
+              </a>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Business Operating Hours Section */}
       {businessHoursEnabled && sortedBusinessHours.length > 0 && (

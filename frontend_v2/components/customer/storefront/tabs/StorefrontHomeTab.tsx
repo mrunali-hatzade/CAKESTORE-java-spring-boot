@@ -480,13 +480,16 @@ export const StorefrontHomeTab: React.FC<StorefrontHomeTabProps> = ({
   const displayProducts = topRatedProducts.length > 0 ? topRatedProducts : products.slice(0, 4);
   const isProcessing = isUploading || isSubmittingFeedback;
 
-  const addressParts = [
-    shop.addressLine1 || shop.address,
-    shop.area,
-    shop.city,
-    shop.district,
-    shop.state,
-  ].filter(Boolean);
+  const isPrivacyEnabled = !!shop.storefrontSettings?.hideStreetAddress;
+  const addressParts = isPrivacyEnabled
+    ? [shop.area, shop.city, shop.district, shop.state].filter(Boolean)
+    : [
+        shop.addressLine1 || shop.address,
+        shop.area,
+        shop.city,
+        shop.district,
+        shop.state,
+      ].filter(Boolean);
 
   const fullAddress =
     addressParts.length > 0

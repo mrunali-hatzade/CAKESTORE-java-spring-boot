@@ -58,9 +58,13 @@ public class AuthService {
     
     @org.springframework.beans.factory.annotation.Autowired
     private EmailService emailService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.shop.ShopStorefrontSettingsRepository shopStorefrontSettingsRepository;
     
     @Value("${FRONTEND_BASE_URL:http://localhost:3001}")
     private String frontendBaseUrl;
+
 
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -228,6 +232,17 @@ public class AuthService {
         shop.setVerificationStatus(com.cakeplatform.api.modules.shop.VerificationStatus.PROCESSING);
 
         Shop savedShop = shopRepository.save(shop);
+
+        // Auto-enable address privacy by default for newly registered home bakers
+        if (savedShop.getBusinessType() == com.cakeplatform.api.modules.shop.BusinessType.HOME_BAKERY && shopStorefrontSettingsRepository != null) {
+            try {
+                com.cakeplatform.api.modules.shop.ShopStorefrontSettings settings = com.cakeplatform.api.modules.shop.ShopStorefrontSettings.builder()
+                        .shop(savedShop)
+                        .hideStreetAddress(true)
+                        .build();
+                shopStorefrontSettingsRepository.save(settings);
+            } catch (Exception ignored) {}
+        }
 
         // 3. Dispatch Admin Notifications: NEW_BAKERY & BAKERY_AWAITING_APPROVAL
         try {

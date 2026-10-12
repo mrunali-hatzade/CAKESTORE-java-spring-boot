@@ -113,6 +113,7 @@ export const ordersApi = {
 
   getMyOrders: async (token: string, page = 0, size = 10): Promise<{ content: Order[], totalElements: number, totalPages: number }> => {
     return apiClient.get(`/api/customer/storefront/tracking/orders?page=${page}&size=${size}`, {
+      token,
       headers: { Authorization: `Bearer ${token}` }
     });
   },

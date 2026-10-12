@@ -73,6 +73,43 @@ export interface ShopStorefrontSettings {
   addressEnabled: boolean;
   mapEnabled: boolean;
   businessHoursEnabled: boolean;
+  hideStreetAddress?: boolean;
+}
+
+export type SocialPlatformType =
+  | 'INSTAGRAM'
+  | 'FACEBOOK'
+  | 'YOUTUBE'
+  | 'WHATSAPP'
+  | 'PINTEREST'
+  | 'TELEGRAM'
+  | 'LINKEDIN'
+  | 'TIKTOK'
+  | 'WEBSITE'
+  | 'CUSTOM'
+  | string;
+
+export interface ShopSocialLink {
+  id: number;
+  platform: SocialPlatformType;
+  title: string;
+  displayName?: string;
+  url: string;
+  iconKey?: string;
+  displayOrder: number;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ShopSocialLinkRequest {
+  platform: SocialPlatformType;
+  title: string;
+  displayName?: string;
+  url: string;
+  iconKey?: string;
+  displayOrder?: number;
+  isActive?: boolean;
 }
 
 export interface ShopCustomFormField {
@@ -91,3 +128,4 @@ export interface WebsiteConfigurationRequest {
   deliveryConfig: Partial<ShopDeliveryConfig>;
   storefrontSettings: Partial<ShopStorefrontSettings>;
 }
+

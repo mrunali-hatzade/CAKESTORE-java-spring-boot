@@ -37,6 +37,29 @@ public class OwnerPaymentController {
     @Value("${spring.profiles.active:}")
     private String activeProfiles;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.core.env.Environment environment;
+
+    public void setEnvironment(org.springframework.core.env.Environment environment) {
+        this.environment = environment;
+    }
+
+    private boolean isAllowedMockEnvironment() {
+        if (environment != null) {
+            for (String profile : environment.getActiveProfiles()) {
+                if ("prod".equalsIgnoreCase(profile) || "production".equalsIgnoreCase(profile)) {
+                    return false;
+                }
+            }
+            for (String profile : environment.getActiveProfiles()) {
+                if ("test".equalsIgnoreCase(profile) || "dev".equalsIgnoreCase(profile) || "local".equalsIgnoreCase(profile)) {
+                    return true;
+                }
+            }
+        }
+        return razorpayService.getKeyId() != null && razorpayService.getKeyId().contains("placeholder");
+    }
+
     private final SubscriptionService subscriptionService;
     private final PaymentRepository paymentRepository;
     private final ShopAccessValidator shopAccessValidator;
@@ -138,7 +161,17 @@ public class OwnerPaymentController {
         payment = paymentRepository.save(payment);
 
         String receiptId = "sub_rcpt_" + payment.getId();
-        String orderId = razorpayService.createSubscriptionOrder(amount, plan.getId(), shop.getId(), receiptId);
+        String orderId;
+        if (!razorpayService.isConfigured()) {
+            if (isAllowedMockEnvironment()) {
+                orderId = "order_mock_sub_" + payment.getId();
+                log.info("[TEST/DEV MOCK] Generated simulated Razorpay order ID {} for unconfigured non-production environment", orderId);
+            } else {
+                throw new IllegalStateException("Razorpay credentials not configured.");
+            }
+        } else {
+            orderId = razorpayService.createSubscriptionOrder(amount, plan.getId(), shop.getId(), receiptId);
+        }
         
         // Save the razorpay order id back to payment
         payment.setProviderOrderId(orderId);
@@ -185,7 +218,11 @@ public class OwnerPaymentController {
 
         // Signature verification
         if (!razorpayService.isConfigured()) {
-            throw new IllegalArgumentException("Razorpay is not configured for production use.");
+            if (isAllowedMockEnvironment() && "simulated_test_sig".equals(razorpaySignature)) {
+                log.info("[TEST/DEV MOCK] Bypassing Razorpay signature check in non-production environment for orderId={}", razorpayOrderId);
+            } else {
+                throw new IllegalArgumentException("Razorpay is not configured for production use.");
+            }
         } else {
             boolean valid = razorpayService.verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature);
             if (!valid) {

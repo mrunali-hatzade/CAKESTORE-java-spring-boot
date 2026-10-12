@@ -136,6 +136,10 @@ public class ShopStorefrontSettings {
     @Builder.Default
     private Boolean businessHoursEnabled = true;
 
+    @Column(name = "hide_street_address", nullable = false)
+    @Builder.Default
+    private Boolean hideStreetAddress = false;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

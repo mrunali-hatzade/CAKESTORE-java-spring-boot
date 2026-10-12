@@ -54,4 +54,6 @@ public class StorefrontShopResponse {
     private ShopDeliveryConfig deliveryConfig;
     private ShopStorefrontSettings storefrontSettings;
     private List<ShopCustomFormField> customCakeFormFields;
+    private List<com.cakeplatform.api.modules.shop.dto.ShopSocialLinkResponse> socialLinks;
 }
+

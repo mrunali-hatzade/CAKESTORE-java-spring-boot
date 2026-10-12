@@ -119,6 +119,35 @@ public class OwnerStorefrontController {
         return ResponseEntity.ok(Map.of("message", "Custom form field deleted successfully"));
     }
 
+    // --- Social & External Links ---
+    @GetMapping("/social-links")
+    public ResponseEntity<List<ShopSocialLinkResponse>> getSocialLinks(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(ownerStorefrontService.getSocialLinks(userDetails.getId()));
+    }
+
+    @PostMapping("/social-links")
+    public ResponseEntity<ShopSocialLinkResponse> createSocialLink(
+            @Valid @RequestBody ShopSocialLinkRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(ownerStorefrontService.createSocialLink(userDetails.getId(), request));
+    }
+
+    @PutMapping("/social-links/{id}")
+    public ResponseEntity<ShopSocialLinkResponse> updateSocialLink(
+            @PathVariable Long id,
+            @Valid @RequestBody ShopSocialLinkRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(ownerStorefrontService.updateSocialLink(userDetails.getId(), id, request));
+    }
+
+    @DeleteMapping("/social-links/{id}")
+    public ResponseEntity<?> deleteSocialLink(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        ownerStorefrontService.deleteSocialLink(userDetails.getId(), id);
+        return ResponseEntity.ok(Map.of("message", "Social link deleted successfully"));
+    }
+
     // --- Website Management Atomic Save ---
     @PutMapping("/website")
     public ResponseEntity<?> updateWebsiteConfiguration(
@@ -128,3 +157,4 @@ public class OwnerStorefrontController {
         return ResponseEntity.ok(Map.of("message", "Website configuration saved successfully"));
     }
 }
+

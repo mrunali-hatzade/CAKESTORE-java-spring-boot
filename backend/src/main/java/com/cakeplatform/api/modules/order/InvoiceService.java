@@ -31,10 +31,22 @@ public class InvoiceService {
 
         // Shop Details
         document.add(new Paragraph(order.getShop().getBusinessName(), boldFont));
-        if (order.getShop().getAddress() != null) {
+        boolean hideStreet = order.getShop().getStorefrontSettings() != null &&
+                Boolean.TRUE.equals(order.getShop().getStorefrontSettings().getHideStreetAddress());
+        if (hideStreet) {
+            java.util.List<String> localityParts = java.util.stream.Stream.of(
+                    order.getShop().getArea(),
+                    order.getShop().getCity(),
+                    order.getShop().getState()
+            ).filter(s -> s != null && !s.trim().isEmpty()).toList();
+            String localityAddress = localityParts.isEmpty() ? "Verified Bakery Location"
+                    : String.join(", ", localityParts) + (order.getShop().getPincode() != null ? " - " + order.getShop().getPincode() : "");
+            document.add(new Paragraph(localityAddress, normalFont));
+        } else if (order.getShop().getAddress() != null) {
             document.add(new Paragraph(order.getShop().getAddress(), normalFont));
         }
         document.add(new Paragraph("Phone: " + order.getShop().getPhone(), normalFont));
+
         document.add(new Paragraph(" ")); // Blank line
 
         // Order Details

@@ -38,7 +38,9 @@ const TOGGLE_OPTIONS: VisibilityToggleOption[] = [
   { key: 'addressEnabled', label: 'Physical Bakery Address', description: 'Show pickup/store address on contact section.', page: 'Contact' },
   { key: 'mapEnabled', label: 'Google Maps Link', description: 'Display Get Directions button opening Google Maps.', page: 'Contact' },
   { key: 'businessHoursEnabled', label: 'Business Hours Schedule', description: 'Display the 7-day schedule on the contact page.', page: 'Contact' },
+  { key: 'hideStreetAddress', label: 'Hide Street Address (Home-Baker Privacy)', description: 'Display only City/Locality while keeping street address private.', page: 'Contact' },
 ];
+
 
 export const StorefrontVisibilitySection: React.FC<StorefrontVisibilitySectionProps> = ({
   settings,

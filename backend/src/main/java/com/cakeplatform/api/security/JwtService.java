@@ -53,6 +53,15 @@ public class JwtService {
 
     public boolean isTokenValid(String token, UserDetails userDetails) {
         final String username = extractUsername(token);
+        if (userDetails instanceof CustomUserDetails customUserDetails) {
+            com.cakeplatform.api.modules.user.User user = customUserDetails.getUser();
+            boolean matchesIdentifier = (user != null) && (
+                    (user.getEmail() != null && username.equalsIgnoreCase(user.getEmail()))
+                    || (user.getMobile() != null && username.equals(user.getMobile()))
+                    || username.equals(userDetails.getUsername())
+            );
+            return matchesIdentifier && !isTokenExpired(token);
+        }
         return (username.equals(userDetails.getUsername())) && !isTokenExpired(token);
     }
 

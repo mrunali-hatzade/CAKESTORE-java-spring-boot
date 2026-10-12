@@ -48,7 +48,9 @@ export interface ShopStorefrontSettings {
   addressEnabled: boolean;
   mapEnabled: boolean;
   businessHoursEnabled: boolean;
+  hideStreetAddress?: boolean;
 }
+
 
 export interface ShopCustomFormField {
   id?: number;
@@ -118,7 +120,9 @@ export interface Shop {
   deliveryConfig?: ShopDeliveryConfig;
   storefrontSettings?: ShopStorefrontSettings;
   customCakeFormFields?: ShopCustomFormField[];
+  socialLinks?: import('./storefrontManagement').ShopSocialLink[];
 }
+
 
 export interface ShopSearchFilters {
   state?: string;

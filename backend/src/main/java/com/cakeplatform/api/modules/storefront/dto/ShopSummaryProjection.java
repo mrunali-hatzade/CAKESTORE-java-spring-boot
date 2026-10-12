@@ -23,4 +23,6 @@ public interface ShopSummaryProjection {
     Double getAvgRating();
     Long getTotalReviews();
     Double getDistanceKm();
+    Boolean getHideStreetAddress();
 }
+

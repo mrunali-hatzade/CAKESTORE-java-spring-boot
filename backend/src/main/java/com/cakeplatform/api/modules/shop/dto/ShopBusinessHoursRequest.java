@@ -8,12 +8,14 @@ import java.time.LocalTime;
 
 @Data
 public class ShopBusinessHoursRequest {
-    @NotBlank
+    @NotBlank(message = "Day of week is required")
     private String dayOfWeek;
-    @NotNull
+
+    @NotNull(message = "isOpen flag is required")
     private Boolean isOpen;
-    @NotNull
+
     private LocalTime openTime;
-    @NotNull
+
     private LocalTime closeTime;
 }
+

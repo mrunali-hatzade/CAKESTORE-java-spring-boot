@@ -41,6 +41,18 @@ interface CustomerAuthContextType extends CustomerAuthState {
 
 const CustomerAuthContext = createContext<CustomerAuthContextType | undefined>(undefined);
 
+function normalizePhone(raw: string): string {
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('0')) {
+    return digits.substring(1);
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return digits.substring(2);
+  }
+  return digits;
+}
+
 export function CustomerAuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<CustomerAuthState>({
     isAuthenticated: false,
@@ -57,7 +69,7 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
       if (savedToken && savedPhone) {
         setState({
           isAuthenticated: true,
-          phone: savedPhone,
+          phone: normalizePhone(savedPhone),
           token: savedToken,
           isLoading: false,
         });
@@ -70,20 +82,22 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const requestOtp = useCallback(async (phone: string) => {
-    await ordersApi.requestTrackingOtp(phone);
+    const cleanPhone = normalizePhone(phone);
+    await ordersApi.requestTrackingOtp(cleanPhone);
   }, []);
 
   const verifyOtp = useCallback(async (phone: string, otp: string): Promise<string> => {
-    const res = await ordersApi.verifyTrackingOtp(phone, otp);
+    const cleanPhone = normalizePhone(phone);
+    const res = await ordersApi.verifyTrackingOtp(cleanPhone, otp);
     const token = res.token;
 
     // Persist in sessionStorage (session-scoped, not cross-tab)
     sessionStorage.setItem(CUSTOMER_TOKEN_KEY, token);
-    sessionStorage.setItem(CUSTOMER_PHONE_KEY, phone);
+    sessionStorage.setItem(CUSTOMER_PHONE_KEY, cleanPhone);
 
     setState({
       isAuthenticated: true,
-      phone,
+      phone: cleanPhone,
       token,
       isLoading: false,
     });

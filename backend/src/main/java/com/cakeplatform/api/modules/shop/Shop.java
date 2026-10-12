@@ -136,4 +136,10 @@ public class Shop {
     @OneToMany(mappedBy = "shop", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("displayOrder ASC")
     private List<ShopCustomFormField> customFormFields = new ArrayList<>();
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "shop", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("displayOrder ASC")
+    private List<ShopSocialLink> socialLinks = new ArrayList<>();
 }
+

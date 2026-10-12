@@ -14,6 +14,7 @@ import {
   ShopDeliveryConfig,
   ShopStorefrontSettings,
   ShopCustomFormField,
+  ShopSocialLink,
 } from '@/types/storefrontManagement';
 import { useOwner } from '@/context/OwnerContext';
 import { Button } from '@/components/ui/Button';
@@ -27,9 +28,11 @@ import { AboutBakerySection } from '@/components/owner/storefront/AboutBakerySec
 import { FulfillmentSection } from '@/components/owner/storefront/FulfillmentSection';
 import { DeliverySettingsSection } from '@/components/owner/storefront/DeliverySettingsSection';
 import { ContactInfoSection } from '@/components/owner/storefront/ContactInfoSection';
+import { SocialLinksSection } from '@/components/owner/storefront/SocialLinksSection';
 import { BusinessHoursSection } from '@/components/owner/storefront/BusinessHoursSection';
 import { StorefrontVisibilitySection } from '@/components/owner/storefront/StorefrontVisibilitySection';
 import { CustomCakeFormBuilder } from '@/components/owner/storefront/CustomCakeFormBuilder';
+
 
 export default function OwnerWebsitePage() {
   const { shop, registerRefreshHandler } = useOwner();
@@ -92,12 +95,15 @@ export default function OwnerWebsitePage() {
   // 6. Custom Cake Form Fields
   const [customFields, setCustomFields] = useState<ShopCustomFormField[]>([]);
 
-  // Snapshot for dirty state tracking
+  // 7. Social Media & External Links
+  const [socialLinks, setSocialLinks] = useState<ShopSocialLink[]>([]);
+
+  // Snapshot for dirty state tracking (tracks only data persisted by the batch-save endpoint)
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
   const currentSnapshot = JSON.stringify({
     logoUrl, coverImageUrl, businessName, aboutStory, aboutImageUrl, showAboutImage,
     whatsappNumber, phone, email, address, mapLocationUrl,
-    banners, businessHours, deliveryConfig, storefrontSettings, customFields
+    deliveryConfig, storefrontSettings
   });
 
   useEffect(() => {
@@ -119,7 +125,7 @@ export default function OwnerWebsitePage() {
     setErrorMsg(null);
 
     try {
-      const [shopData, bannersData, hoursData, deliveryData, settingsData, fieldsData] =
+      const [shopData, bannersData, hoursData, deliveryData, settingsData, fieldsData, linksData] =
         await Promise.all([
           ownerApi.getShopSettings(),
           ownerStorefrontApi.getBanners().catch(() => []),
@@ -127,6 +133,7 @@ export default function OwnerWebsitePage() {
           ownerStorefrontApi.getDeliveryConfig().catch(() => null),
           ownerStorefrontApi.getStorefrontSettings().catch(() => null),
           ownerStorefrontApi.getCustomFormFields().catch(() => []),
+          ownerStorefrontApi.getSocialLinks().catch(() => []),
         ]);
 
       if (shopData) {
@@ -162,6 +169,8 @@ export default function OwnerWebsitePage() {
       }
 
       setCustomFields(fieldsData || []);
+      setSocialLinks(linksData || []);
+
     } catch (err: any) {
       setErrorMsg(err?.message || 'Failed to load storefront configuration');
     } finally {
@@ -345,9 +354,19 @@ export default function OwnerWebsitePage() {
         onAddressChange={setAddress}
         mapLocationUrl={mapLocationUrl}
         onMapLocationUrlChange={setMapLocationUrl}
+        hideStreetAddress={storefrontSettings.hideStreetAddress}
+        onHideStreetAddressChange={(val) =>
+          setStorefrontSettings((prev) => ({ ...prev, hideStreetAddress: val }))
+        }
       />
 
-      {/* 7. Weekly Business Schedule */}
+      {/* 7. Social Media & External Links */}
+      <SocialLinksSection
+        links={socialLinks}
+        onChange={setSocialLinks}
+      />
+
+      {/* 8. Weekly Business Schedule */}
       <BusinessHoursSection
         hours={businessHours}
         onHoursChange={setBusinessHours}

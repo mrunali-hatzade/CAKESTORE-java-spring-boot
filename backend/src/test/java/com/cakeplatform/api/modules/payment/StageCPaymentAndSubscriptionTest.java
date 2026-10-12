@@ -486,6 +486,208 @@ public class StageCPaymentAndSubscriptionTest {
                 ownerPaymentController.downloadSubscriptionInvoice(ownerDetails, 55L));
     }
 
+    @Test
+    @DisplayName("C3.4: Initiate subscription payment with configured credentials creates pending order")
+    void testInitiateSubscriptionPayment_ConfiguredCredentials() {
+        when(shopAccessValidator.getShopByOwnerId(1L)).thenReturn(testShop);
+
+        SubscriptionPlan plan = new SubscriptionPlan();
+        plan.setId(1L);
+        plan.setName("Pro Baker Studio");
+        plan.setPrice(BigDecimal.valueOf(350));
+        plan.setDurationDays(30);
+        plan.setIsActive(true);
+        when(subscriptionPlanRepository.findById(1L)).thenReturn(Optional.of(plan));
+
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> {
+            Payment p = inv.getArgument(0);
+            if (p.getId() == null) p.setId(500L);
+            return p;
+        });
+        doReturn("order_sub_rzp_500").when(razorpayService)
+                .createSubscriptionOrder(eq(BigDecimal.valueOf(350)), eq(1L), eq(testShop.getId()), any());
+
+        ResponseEntity<Map<String, Object>> res = ownerPaymentController.initiateSubscriptionPayment(
+                ownerDetails, Map.of("planId", 1L));
+
+        assertEquals(HttpStatus.OK, res.getStatusCode());
+        assertNotNull(res.getBody());
+        assertEquals("order_sub_rzp_500", res.getBody().get("razorpayOrderId"));
+        assertEquals(35000L, res.getBody().get("amountPaise"));
+        assertEquals("Sweet Delights Bakery", res.getBody().get("shopName"));
+    }
+
+    @Test
+    @DisplayName("C3.5: Initiate subscription payment in unconfigured test profile generates simulated order")
+    void testInitiateSubscriptionPayment_UnconfiguredTestProfile() {
+        when(shopAccessValidator.getShopByOwnerId(1L)).thenReturn(testShop);
+
+        SubscriptionPlan plan = new SubscriptionPlan();
+        plan.setId(1L);
+        plan.setName("Pro Baker Studio");
+        plan.setPrice(BigDecimal.valueOf(350));
+        plan.setDurationDays(30);
+        plan.setIsActive(true);
+        when(subscriptionPlanRepository.findById(1L)).thenReturn(Optional.of(plan));
+
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(inv -> {
+            Payment p = inv.getArgument(0);
+            if (p.getId() == null) p.setId(501L);
+            return p;
+        });
+
+        // Configure test environment on controller and unconfigured razorpay
+        doReturn(false).when(razorpayService).isConfigured();
+        org.springframework.mock.env.MockEnvironment mockEnv = new org.springframework.mock.env.MockEnvironment();
+        mockEnv.setActiveProfiles("test");
+        ownerPaymentController.setEnvironment(mockEnv);
+
+        ResponseEntity<Map<String, Object>> res = ownerPaymentController.initiateSubscriptionPayment(
+                ownerDetails, Map.of("planId", 1L));
+
+        assertEquals(HttpStatus.OK, res.getStatusCode());
+        assertNotNull(res.getBody());
+        assertEquals("order_mock_sub_501", res.getBody().get("razorpayOrderId"));
+    }
+
+    @Test
+    @DisplayName("C3.6: Verify subscription payment with valid HMAC signature activates subscription")
+    void testVerifySubscriptionPayment_ValidSignature() {
+        when(shopAccessValidator.getShopByOwnerId(1L)).thenReturn(testShop);
+
+        SubscriptionPlan plan = new SubscriptionPlan();
+        plan.setId(1L);
+        plan.setName("Pro Baker Studio");
+        plan.setPrice(BigDecimal.valueOf(350));
+        plan.setIsActive(true);
+        when(subscriptionPlanRepository.findById(1L)).thenReturn(Optional.of(plan));
+
+        Payment pending = new Payment();
+        pending.setId(600L);
+        pending.setShop(testShop);
+        pending.setPlan(plan);
+        pending.setAmount(BigDecimal.valueOf(350));
+        pending.setStatus("PENDING");
+        pending.setProviderOrderId("order_rzp_sub_600");
+        when(paymentRepository.findByProviderOrderId("order_rzp_sub_600")).thenReturn(Optional.of(pending));
+
+        doReturn(true).when(razorpayService).isConfigured();
+        doReturn(true).when(razorpayService).verifyPaymentSignature(eq("order_rzp_sub_600"), eq("pay_rzp_777"), eq("valid_sig_mock"));
+        doNothing().when(razorpayService).verifyOrderDetails(any(), any(), any());
+
+        when(subscriptionService.processSuccessfulPayment(eq(1L), eq(plan), eq("order_rzp_sub_600"), eq("pay_rzp_777"), any()))
+                .thenAnswer(inv -> {
+                    Payment p = inv.getArgument(4);
+                    p.setStatus("COMPLETED");
+                    return p;
+                });
+
+        ResponseEntity<Map<String, Object>> res = ownerPaymentController.verifySubscriptionPayment(
+                ownerDetails, Map.of(
+                        "razorpayOrderId", "order_rzp_sub_600",
+                        "razorpayPaymentId", "pay_rzp_777",
+                        "razorpaySignature", "valid_sig_mock",
+                        "planId", 1L
+                ));
+
+        assertEquals(HttpStatus.OK, res.getStatusCode());
+        assertNotNull(res.getBody());
+        assertEquals("SUCCESS", res.getBody().get("status"));
+        assertEquals("Subscription payment verified successfully", res.getBody().get("message"));
+    }
+
+    @Test
+    @DisplayName("C3.7: Verify subscription payment with invalid signature throws IllegalArgumentException")
+    void testVerifySubscriptionPayment_InvalidSignature_Rejected() {
+        SubscriptionPlan plan = new SubscriptionPlan();
+        plan.setId(1L);
+        plan.setIsActive(true);
+        when(subscriptionPlanRepository.findById(1L)).thenReturn(Optional.of(plan));
+
+        doReturn(true).when(razorpayService).isConfigured();
+        doReturn(false).when(razorpayService).verifyPaymentSignature(eq("order_rzp_sub_600"), eq("pay_rzp_777"), any());
+
+        assertThrows(IllegalArgumentException.class, () ->
+                ownerPaymentController.verifySubscriptionPayment(
+                        ownerDetails, Map.of(
+                                "razorpayOrderId", "order_rzp_sub_600",
+                                "razorpayPaymentId", "pay_rzp_777",
+                                "razorpaySignature", "tampered_signature_hex",
+                                "planId", 1L
+                        )));
+    }
+
+    @Test
+    @DisplayName("C3.8: Verify subscription payment in unconfigured test profile accepts simulated signature")
+    void testVerifySubscriptionPayment_SimulatedSignature_InTestProfile() {
+        when(shopAccessValidator.getShopByOwnerId(1L)).thenReturn(testShop);
+
+        SubscriptionPlan plan = new SubscriptionPlan();
+        plan.setId(1L);
+        plan.setName("Pro Baker Studio");
+        plan.setPrice(BigDecimal.valueOf(350));
+        plan.setIsActive(true);
+        when(subscriptionPlanRepository.findById(1L)).thenReturn(Optional.of(plan));
+
+        Payment pending = new Payment();
+        pending.setId(601L);
+        pending.setShop(testShop);
+        pending.setPlan(plan);
+        pending.setAmount(BigDecimal.valueOf(350));
+        pending.setStatus("PENDING");
+        pending.setProviderOrderId("order_mock_sub_601");
+        when(paymentRepository.findByProviderOrderId("order_mock_sub_601")).thenReturn(Optional.of(pending));
+
+        doReturn(false).when(razorpayService).isConfigured();
+        org.springframework.mock.env.MockEnvironment mockEnv = new org.springframework.mock.env.MockEnvironment();
+        mockEnv.setActiveProfiles("test");
+        ownerPaymentController.setEnvironment(mockEnv);
+
+        when(subscriptionService.processSuccessfulPayment(eq(1L), eq(plan), eq("order_mock_sub_601"), eq("pay_mock_999"), any()))
+                .thenAnswer(inv -> {
+                    Payment p = inv.getArgument(4);
+                    p.setStatus("COMPLETED");
+                    return p;
+                });
+
+        ResponseEntity<Map<String, Object>> res = ownerPaymentController.verifySubscriptionPayment(
+                ownerDetails, Map.of(
+                        "razorpayOrderId", "order_mock_sub_601",
+                        "razorpayPaymentId", "pay_mock_999",
+                        "razorpaySignature", "simulated_test_sig",
+                        "planId", 1L
+                ));
+
+        assertEquals(HttpStatus.OK, res.getStatusCode());
+        assertNotNull(res.getBody());
+        assertEquals("SUCCESS", res.getBody().get("status"));
+    }
+
+    @Test
+    @DisplayName("C3.9: Simulated signature is STRICTLY REJECTED in production profile")
+    void testVerifySubscriptionPayment_SimulatedSignature_RejectedInProdProfile() {
+        SubscriptionPlan plan = new SubscriptionPlan();
+        plan.setId(1L);
+        plan.setIsActive(true);
+        when(subscriptionPlanRepository.findById(1L)).thenReturn(Optional.of(plan));
+
+        doReturn(false).when(razorpayService).isConfigured();
+        org.springframework.mock.env.MockEnvironment prodEnv = new org.springframework.mock.env.MockEnvironment();
+        prodEnv.setActiveProfiles("prod");
+        ownerPaymentController.setEnvironment(prodEnv);
+
+        // In prod, even with simulated_test_sig, it must be rejected!
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
+                ownerPaymentController.verifySubscriptionPayment(
+                        ownerDetails, Map.of(
+                                "razorpayOrderId", "order_mock_sub_601",
+                                "razorpayPaymentId", "pay_mock_999",
+                                "razorpaySignature", "simulated_test_sig",
+                                "planId", 1L
+                        )));
+        assertTrue(ex.getMessage().contains("Razorpay is not configured for production use"));
+    }
+
     // =========================================================================
     // 4. C4 - Subscription Lifecycle & Administrative Invariants
     // =========================================================================

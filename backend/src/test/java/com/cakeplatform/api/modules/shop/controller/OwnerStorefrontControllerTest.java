@@ -97,4 +97,75 @@ class OwnerStorefrontControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.imageUrl").value("test.jpg"));
     }
+
+    @Test
+    void testSaveBusinessHour_Success() throws Exception {
+        com.cakeplatform.api.modules.shop.dto.ShopBusinessHoursRequest request =
+                new com.cakeplatform.api.modules.shop.dto.ShopBusinessHoursRequest();
+        request.setDayOfWeek("MONDAY");
+        request.setIsOpen(true);
+        request.setOpenTime(java.time.LocalTime.of(9, 0));
+        request.setCloseTime(java.time.LocalTime.of(21, 0));
+
+        ShopBusinessHours saved = new ShopBusinessHours();
+        saved.setId(10L);
+        saved.setDayOfWeek("MONDAY");
+        saved.setIsOpen(true);
+        saved.setOpenTime(java.time.LocalTime.of(9, 0));
+        saved.setCloseTime(java.time.LocalTime.of(21, 0));
+
+        when(ownerStorefrontService.saveBusinessHour(eq(ownerId), any(com.cakeplatform.api.modules.shop.dto.ShopBusinessHoursRequest.class)))
+                .thenReturn(saved);
+
+        mockMvc.perform(post("/api/owner/storefront/business-hours")
+                .with(user(mockUserDetails))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dayOfWeek").value("MONDAY"))
+                .andExpect(jsonPath("$.isOpen").value(true));
+    }
+
+    @Test
+    void testSaveBusinessHour_Returns400_WhenServiceThrowsIllegalArgumentException() throws Exception {
+        com.cakeplatform.api.modules.shop.dto.ShopBusinessHoursRequest request =
+                new com.cakeplatform.api.modules.shop.dto.ShopBusinessHoursRequest();
+        request.setDayOfWeek("MONDAY");
+        request.setIsOpen(true);
+        request.setOpenTime(java.time.LocalTime.of(21, 0));
+        request.setCloseTime(java.time.LocalTime.of(9, 0));
+
+        when(ownerStorefrontService.saveBusinessHour(eq(ownerId), any(com.cakeplatform.api.modules.shop.dto.ShopBusinessHoursRequest.class)))
+                .thenThrow(new IllegalArgumentException("Closing time must be strictly after opening time"));
+
+        mockMvc.perform(post("/api/owner/storefront/business-hours")
+                .with(user(mockUserDetails))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("Closing time must be strictly after opening time"));
+    }
+
+    @Test
+    void testSaveBusinessHour_Returns400_WhenMissingRequiredDayOfWeek() throws Exception {
+        String invalidJson = "{\"dayOfWeek\":\"\",\"isOpen\":true,\"openTime\":\"09:00:00\",\"closeTime\":\"21:00:00\"}";
+
+        mockMvc.perform(post("/api/owner/storefront/business-hours")
+                .with(user(mockUserDetails))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(invalidJson))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void testSaveBusinessHour_Returns400_WhenMissingIsOpenFlag() throws Exception {
+        String invalidJson = "{\"dayOfWeek\":\"MONDAY\",\"openTime\":\"09:00:00\",\"closeTime\":\"21:00:00\"}";
+
+        mockMvc.perform(post("/api/owner/storefront/business-hours")
+                .with(user(mockUserDetails))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(invalidJson))
+                .andExpect(status().isBadRequest());
+    }
 }
+

@@ -65,6 +65,10 @@ public class CustomerStorefrontService {
         }
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.shop.ShopSocialLinkRepository shopSocialLinkRepository;
+
+
     @org.springframework.beans.factory.annotation.Autowired
     public CustomerStorefrontService(
             ShopRepository shopRepository,
@@ -429,7 +433,16 @@ public class CustomerStorefrontService {
             avgRating = Math.round(avgRating * 10.0) / 10.0;
         }
 
+        boolean hideStreet = false;
+        if (p.getHideStreetAddress() != null) {
+            hideStreet = Boolean.TRUE.equals(p.getHideStreetAddress());
+        } else if (shopStorefrontSettingsRepository != null) {
+            hideStreet = shopStorefrontSettingsRepository.findByShopId(p.getId())
+                    .map(s -> Boolean.TRUE.equals(s.getHideStreetAddress()))
+                    .orElse(false);
+        }
         return StorefrontShopSummaryDTO.builder()
+
                 .id(p.getId())
                 .businessName(p.getBusinessName())
                 .description(p.getDescription())
@@ -437,17 +450,17 @@ public class CustomerStorefrontService {
                 .businessCategory(p.getBusinessCategory())
                 .logoUrl(p.getLogoUrl())
                 .coverImageUrl(p.getCoverImageUrl())
-                .address(p.getAddress())
-                .addressLine1(p.getAddressLine1())
-                .addressLine2(p.getAddressLine2())
+                .address(hideStreet ? null : p.getAddress())
+                .addressLine1(hideStreet ? null : p.getAddressLine1())
+                .addressLine2(hideStreet ? null : p.getAddressLine2())
                 .area(p.getArea())
                 .city(p.getCity())
                 .district(p.getDistrict())
                 .state(p.getState())
                 .pincode(p.getPincode())
                 .country("India")
-                .latitude(p.getLatitude())
-                .longitude(p.getLongitude())
+                .latitude(hideStreet ? null : p.getLatitude())
+                .longitude(hideStreet ? null : p.getLongitude())
                 .distanceKm(distanceKm)
                 .status(p.getStatus())
                 .verificationStatus(vStatus)
@@ -455,6 +468,7 @@ public class CustomerStorefrontService {
                 .totalReviews(p.getTotalReviews() != null ? p.getTotalReviews() : 0L)
                 .isPureVeg(false)
                 .build();
+
     }
 
     private String cleanParam(String val) {
@@ -531,15 +545,46 @@ public class CustomerStorefrontService {
         if (shopDeliveryConfigRepository != null) {
             response.setDeliveryConfig(shopDeliveryConfigRepository.findByShopId(shop.getId()).orElse(null));
         }
+        com.cakeplatform.api.modules.shop.ShopStorefrontSettings ss = null;
         if (shopStorefrontSettingsRepository != null) {
-            response.setStorefrontSettings(shopStorefrontSettingsRepository.findByShopId(shop.getId()).orElse(null));
+            ss = shopStorefrontSettingsRepository.findByShopId(shop.getId()).orElse(null);
+            response.setStorefrontSettings(ss);
         }
+        if (ss != null && Boolean.TRUE.equals(ss.getHideStreetAddress())) {
+            response.setAddress(null);
+            response.setAddressLine1(null);
+            response.setAddressLine2(null);
+            response.setMapLocationUrl(null);
+            response.setLatitude(null);
+            response.setLongitude(null);
+        }
+
         if (shopCustomFormFieldRepository != null) {
             response.setCustomCakeFormFields(shopCustomFormFieldRepository.findByShopIdAndIsEnabledTrueOrderByDisplayOrderAsc(shop.getId()));
         }
 
+        // Active Social & External Links
+        if (shopSocialLinkRepository != null) {
+            List<com.cakeplatform.api.modules.shop.ShopSocialLink> activeLinks =
+                    shopSocialLinkRepository.findByShopIdAndIsActiveTrueOrderByDisplayOrderAsc(shop.getId());
+            response.setSocialLinks(activeLinks.stream().map(link -> com.cakeplatform.api.modules.shop.dto.ShopSocialLinkResponse.builder()
+                    .id(link.getId())
+                    .platform(link.getPlatform())
+                    .title(link.getTitle())
+                    .url(link.getUrl())
+                    .iconKey(link.getIconKey())
+                    .displayOrder(link.getDisplayOrder())
+                    .isActive(link.getIsActive())
+                    .createdAt(link.getCreatedAt())
+                    .updatedAt(link.getUpdatedAt())
+                    .build()).collect(Collectors.toList()));
+        } else {
+            response.setSocialLinks(java.util.Collections.emptyList());
+        }
+
         return response;
     }
+
 
 
     public List<StorefrontDeliverySlotResponse> getShopDeliverySlots(Long shopId, java.time.LocalDate deliveryDate) {

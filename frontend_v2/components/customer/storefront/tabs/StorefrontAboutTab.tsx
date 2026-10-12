@@ -20,6 +20,7 @@ import { Shop } from '@/types/shop';
 import { StorefrontTab } from '../StorefrontTabNav';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { SocialIcon } from '@/components/common/SocialIcon';
 
 interface StorefrontAboutTabProps {
   shop: Shop;
@@ -32,18 +33,25 @@ export const StorefrontAboutTab: React.FC<StorefrontAboutTabProps> = ({
 }) => {
   const [imgError, setImgError] = useState(false);
 
-  const addressParts = [
-    shop.addressLine1 || shop.address,
-    shop.area,
-    shop.city,
-    shop.district,
-    shop.state,
-  ].filter(Boolean);
+  const isPrivacyEnabled = !!shop.storefrontSettings?.hideStreetAddress;
+  const addressParts = isPrivacyEnabled
+    ? [shop.area, shop.city, shop.district, shop.state].filter(Boolean)
+    : [
+        shop.addressLine1 || shop.address,
+        shop.area,
+        shop.city,
+        shop.district,
+        shop.state,
+      ].filter(Boolean);
 
   const fullAddress =
     addressParts.length > 0
       ? `${addressParts.join(', ')}${shop.pincode ? ` - ${shop.pincode}` : ''}`
       : `${shop.city || ''}${shop.state ? `, ${shop.state}` : ''}`;
+
+  const activeSocialLinks = (shop.socialLinks || []).filter(
+    (l) => l.isActive !== false && l.url && l.url.trim().length > 0
+  );
 
   const fallbackAboutImage =
     'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=800&q=80';
@@ -198,6 +206,25 @@ export const StorefrontAboutTab: React.FC<StorefrontAboutTabProps> = ({
                   )}
                 </div>
               )}
+              {activeSocialLinks.length > 0 && (
+                <div className="pt-2">
+                  <p className="text-xs font-bold text-brand-espresso mb-2">Connect with us:</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {activeSocialLinks.map((link) => (
+                      <a
+                        key={link.id || link.url}
+                        href={link.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-brand-cream border border-brand-border text-brand-espresso hover:text-brand-plum hover:border-brand-plum/40 transition-colors text-xs font-medium"
+                      >
+                        <SocialIcon platform={link.platform} className="w-3.5 h-3.5" />
+                        <span>{link.title || link.displayName || link.platform}</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -234,7 +261,7 @@ export const StorefrontAboutTab: React.FC<StorefrontAboutTabProps> = ({
               </div>
               <div>
                 <h3 className="text-base font-bold font-serif text-brand-espresso">
-                  Kitchen Location &amp; Service Radius
+                  {isPrivacyEnabled ? 'Kitchen Locality & Service Area' : 'Kitchen Location & Service Radius'}
                 </h3>
                 <p className="text-xs text-brand-muted">Doorstep delivery</p>
               </div>

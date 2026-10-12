@@ -55,14 +55,24 @@ public class GuestTrackingController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        String identifier = auth.getName();
-        String phone = identifier;
-        
-        com.cakeplatform.api.modules.user.User user = userRepository.findByEmail(identifier)
-                .orElseGet(() -> userRepository.findByMobile(identifier).orElse(null));
-                
-        if (user != null && user.getMobile() != null) {
-            phone = user.getMobile();
+        String phone = null;
+        if (auth.getPrincipal() instanceof com.cakeplatform.api.security.CustomUserDetails cud && cud.getUser() != null) {
+            phone = cud.getUser().getMobile();
+        }
+        if (phone == null || phone.isBlank()) {
+            String identifier = auth.getName();
+            com.cakeplatform.api.modules.user.User user = userRepository.findByEmailIgnoreCase(identifier)
+                    .orElseGet(() -> userRepository.findByMobile(identifier).orElse(null));
+            if (user != null && user.getMobile() != null) {
+                phone = user.getMobile();
+            } else {
+                phone = identifier;
+            }
+        }
+
+        String normalizedPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(phone);
+        if (normalizedPhone != null) {
+            phone = normalizedPhone;
         }
 
         Page<Order> orders = orderRepository.findVisibleOrdersByCustomerPhone(phone, PageRequest.of(page, size));
