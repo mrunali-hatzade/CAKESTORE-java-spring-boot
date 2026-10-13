@@ -66,8 +66,32 @@ export function AdminPlanModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim()) {
-      toast.error('Please enter a valid plan name');
+    if (!form.name || !form.name.trim()) {
+      toast.error('Plan name cannot be empty');
+      return;
+    }
+
+    if (form.price === undefined || form.price === null || isNaN(form.price) || form.price < 0) {
+      toast.error('Plan price cannot be negative');
+      return;
+    }
+
+    if (
+      form.durationDays === undefined ||
+      form.durationDays === null ||
+      isNaN(form.durationDays) ||
+      form.durationDays <= 0 ||
+      !Number.isInteger(form.durationDays)
+    ) {
+      toast.error('Duration days must be greater than zero');
+      return;
+    }
+
+    if (
+      !form.billingCycle ||
+      (form.billingCycle.toLowerCase() !== 'monthly' && form.billingCycle.toLowerCase() !== 'yearly')
+    ) {
+      toast.error("Billing cycle must be 'monthly' or 'yearly'");
       return;
     }
 

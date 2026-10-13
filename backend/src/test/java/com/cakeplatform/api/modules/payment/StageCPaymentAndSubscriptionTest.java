@@ -443,7 +443,7 @@ public class StageCPaymentAndSubscriptionTest {
         p2.setProviderPaymentId("pay_abc_2");
         p2.setCreatedAt(LocalDateTime.now());
 
-        when(paymentRepository.findByShopIdOrderByCreatedAtDesc(testShop.getId()))
+        when(paymentRepository.findSubscriptionPaymentsByShopId(testShop.getId()))
                 .thenReturn(List.of(p2, p1));
 
         ResponseEntity<List<OwnerPaymentResponse>> response = ownerPaymentController.getMyPayments(ownerDetails);

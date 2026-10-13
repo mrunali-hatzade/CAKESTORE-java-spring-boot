@@ -24,6 +24,7 @@ public class DashboardStatsResponse {
     private long deletedBakeries;
     
     // 3. Subscriptions
+    private long totalSubscriptions;
     private long activeSubscribedBakeries;
     private long expiringSoonSubscribedBakeries;
     private long gracePeriodSubscribedBakeries;
@@ -39,6 +40,10 @@ public class DashboardStatsResponse {
     private BigDecimal totalPlatformRevenue;
     private BigDecimal monthlyGmv;
     private BigDecimal totalGmv;
+    
+    // Semantic aliases for date-filtered period metrics
+    private BigDecimal periodPlatformRevenue;
+    private BigDecimal periodGmv;
     
     private LocalDate startDate;
     private LocalDate endDate;

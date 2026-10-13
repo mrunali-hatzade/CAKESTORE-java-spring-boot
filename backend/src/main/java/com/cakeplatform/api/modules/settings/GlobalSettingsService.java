@@ -1,6 +1,7 @@
 package com.cakeplatform.api.modules.settings;
 
 import com.cakeplatform.api.modules.settings.dto.GlobalSettingsDTO;
+import com.cakeplatform.api.modules.settings.dto.GlobalSettingsResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +27,10 @@ public class GlobalSettingsService {
             }
         }
         return cachedSettings;
+    }
+
+    public GlobalSettingsResponse getSettingsResponse() {
+        return toResponse(getSettings());
     }
 
     @Transactional
@@ -54,4 +59,25 @@ public class GlobalSettingsService {
         cachedSettings = repository.save(settings);
         return cachedSettings;
     }
+
+    @Transactional
+    public GlobalSettingsResponse updateSettingsAndGetResponse(GlobalSettingsDTO dto) {
+        return toResponse(updateSettings(dto));
+    }
+
+    public GlobalSettingsResponse toResponse(GlobalSettings settings) {
+        boolean hasKeySecret = settings.getRazorpayKeySecret() != null && !settings.getRazorpayKeySecret().isBlank();
+        boolean hasWebhookSecret = settings.getRazorpayWebhookSecret() != null && !settings.getRazorpayWebhookSecret().isBlank();
+        return GlobalSettingsResponse.builder()
+                .id(settings.getId())
+                .platformName(settings.getPlatformName())
+                .supportEmail(settings.getSupportEmail())
+                .razorpayKeyId(settings.getRazorpayKeyId())
+                .razorpayKeySecretConfigured(hasKeySecret)
+                .razorpayWebhookSecretConfigured(hasWebhookSecret)
+                .platformCurrency(settings.getPlatformCurrency())
+                .updatedAt(settings.getUpdatedAt())
+                .build();
+    }
 }
+

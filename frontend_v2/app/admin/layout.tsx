@@ -20,6 +20,8 @@ import {
   RefreshCw,
   Landmark,
   Search,
+  ShoppingBag,
+  Receipt,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
 import AdminNotificationBell from '@/components/admin/AdminNotificationBell';
@@ -70,6 +72,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const platformNavItems = [
     { label: 'Overview', href: '/admin', icon: LayoutDashboard },
     { label: 'Bakery Management', href: '/admin/shops', icon: Store },
+    { label: 'Orders Ledger', href: '/admin/orders', icon: ShoppingBag },
+    { label: 'Payments Ledger', href: '/admin/payments', icon: Receipt },
     { label: 'Plans & Subscriptions', href: '/admin/plans', icon: CreditCard },
   ];
 

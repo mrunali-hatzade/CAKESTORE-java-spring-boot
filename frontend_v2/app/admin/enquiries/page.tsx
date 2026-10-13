@@ -17,8 +17,10 @@ import { Button } from '@/components/ui/Button';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { communicationApi } from '@/lib/api/communication';
 import { ContactEnquiry } from '@/types/communication';
+import { useToast } from '@/components/common/Toast';
 
 export default function AdminContactEnquiriesPage() {
+  const toast = useToast();
   const [enquiries, setEnquiries] = useState<ContactEnquiry[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<'ALL' | 'UNREAD' | 'READ'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -96,12 +98,12 @@ export default function AdminContactEnquiriesPage() {
     setIsSending(true);
     try {
       await communicationApi.replyToEnquiry(selectedEnquiry.id, replyText);
-      alert('Reply sent successfully');
+      toast.success('Reply sent successfully');
       setReplyText('');
       setIsReplying(false);
       fetchEnquiries();
     } catch (err) {
-      alert('Failed to send reply');
+      toast.error('Failed to send reply');
     } finally {
       setIsSending(false);
     }

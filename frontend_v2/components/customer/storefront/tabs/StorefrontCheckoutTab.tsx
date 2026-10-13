@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -1043,10 +1044,13 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-brand-cream shrink-0 border border-brand-border/60 group-hover:ring-2 group-hover:ring-brand-plum/40 transition-all shadow-xs">
-                        <img
+                        <Image
                           src={i.imageUrl || FALLBACK_CAKE}
                           alt={i.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          fill
+                          sizes="48px"
+                          unoptimized
+                          className="object-cover group-hover:scale-105 transition-transform duration-300"
                           onError={(e) => {
                             (e.currentTarget as HTMLImageElement).src = FALLBACK_CAKE;
                           }}
@@ -1307,10 +1311,13 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
           <div className="relative bg-white rounded-3xl max-w-md w-full shadow-2xl border border-brand-border/80 overflow-hidden z-10 animate-scale-up">
             {/* Modal Header Image */}
             <div className="relative h-48 sm:h-52 bg-brand-cream overflow-hidden">
-              <img
+              <Image
                 src={viewingItem.imageUrl || FALLBACK_CAKE}
                 alt={viewingItem.name}
-                className="w-full h-full object-cover"
+                fill
+                sizes="(max-width: 640px) 100vw, 448px"
+                unoptimized
+                className="object-cover"
                 onError={(e) => {
                   (e.currentTarget as HTMLImageElement).src = FALLBACK_CAKE;
                 }}

@@ -19,6 +19,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     org.springframework.data.domain.Page<Order> findByShopIdOrderByCreatedAtDesc(Long shopId, Pageable pageable);
     Optional<Order> findByIdAndShopId(Long id, Long shopId);
     Optional<Order> findByOrderNumber(String orderNumber);
+    Optional<Order> findByTransactionId(String transactionId);
+    Optional<Order> findByRazorpayOrderId(String razorpayOrderId);
     long countByShopId(Long shopId);
     long countByShopIdAndOrderStatus(Long shopId, String orderStatus);
 
@@ -292,5 +294,44 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                    "  GROUP BY o.delivery_date" +
                    ") sub", nativeQuery = true)
     int findMaxActiveOrdersOnAnyUpcomingDate(@Param("slotId") Long slotId);
+
+    @Query(value = "SELECT to_char(o.created_at, 'YYYY-MM') AS period, COALESCE(SUM(o.total_amount), 0) AS total " +
+                   "FROM orders o " +
+                   "WHERE o.created_at >= :startDate " +
+                   "  AND UPPER(COALESCE(o.order_status, '')) != 'CANCELLED' " +
+                   "  AND UPPER(COALESCE(o.payment_status, '')) NOT IN ('REFUNDED', 'FAILED') " +
+                   "  AND (UPPER(COALESCE(o.payment_status, '')) IN ('PAID', 'COMPLETED') OR UPPER(COALESCE(o.order_status, '')) IN ('COMPLETED', 'DELIVERED')) " +
+                   "GROUP BY to_char(o.created_at, 'YYYY-MM') " +
+                   "ORDER BY to_char(o.created_at, 'YYYY-MM') ASC", nativeQuery = true)
+    List<Object[]> getMonthlyNetworkGmvSince(@Param("startDate") LocalDateTime startDate);
+
+    @Query("SELECT o FROM Order o " +
+           "WHERE (:shopId IS NULL OR o.shop.id = :shopId) " +
+           "AND (:status IS NULL OR :status = 'ALL' OR o.orderStatus = :status OR (:status = 'NEW' AND o.orderStatus = 'PENDING')) " +
+           "AND (:paymentStatus IS NULL OR :paymentStatus = 'ALL' " +
+           "     OR (:paymentStatus = 'PAID' AND UPPER(COALESCE(o.paymentStatus, '')) = 'PAID') " +
+           "     OR (:paymentStatus = 'PENDING' AND UPPER(COALESCE(o.paymentStatus, '')) = 'PENDING') " +
+           "     OR (:paymentStatus = 'FAILED' AND UPPER(COALESCE(o.paymentStatus, '')) = 'FAILED') " +
+           "     OR (:paymentStatus = 'REFUND_DUE' AND UPPER(COALESCE(o.orderStatus, '')) = 'CANCELLED' AND UPPER(COALESCE(o.paymentStatus, '')) = 'PAID') " +
+           "     OR (:paymentStatus = 'REFUNDED' AND UPPER(COALESCE(o.paymentStatus, '')) = 'REFUNDED') " +
+           "     OR (:paymentStatus = 'COD' AND UPPER(COALESCE(o.paymentMethod, '')) IN ('COD', 'CASH_ON_DELIVERY')) " +
+           "     OR (:paymentStatus = 'ONLINE' AND UPPER(COALESCE(o.paymentMethod, '')) NOT IN ('COD', 'CASH_ON_DELIVERY'))) " +
+           "AND o.createdAt >= :startDate " +
+           "AND o.createdAt <= :endDate " +
+           "AND (:query IS NULL OR :query = '' " +
+           "  OR LOWER(o.orderNumber) LIKE LOWER(CONCAT('%', :query, '%')) " +
+           "  OR LOWER(COALESCE(o.shop.businessName, '')) LIKE LOWER(CONCAT('%', :query, '%')) " +
+           "  OR LOWER(COALESCE(o.customerName, '')) LIKE LOWER(CONCAT('%', :query, '%')) " +
+           "  OR LOWER(COALESCE(o.customerPhone, '')) LIKE LOWER(CONCAT('%', :query, '%')) " +
+           "  OR LOWER(COALESCE(o.customerEmail, '')) LIKE LOWER(CONCAT('%', :query, '%'))) " +
+           "ORDER BY o.createdAt DESC")
+    org.springframework.data.domain.Page<Order> findAdminCrossShopOrders(
+           @Param("shopId") Long shopId,
+           @Param("status") String status,
+           @Param("paymentStatus") String paymentStatus,
+           @Param("startDate") LocalDateTime startDate,
+           @Param("endDate") LocalDateTime endDate,
+           @Param("query") String query,
+           Pageable pageable);
 }
 

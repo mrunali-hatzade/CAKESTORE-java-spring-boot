@@ -26,17 +26,28 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/common/Toast';
 
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 
-type FilterTab = 'ALL' | 'PENDING' | 'ACTIVE' | 'SUSPENDED';
+type FilterTab = 'ALL' | 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'DELETED';
+
+const parseFilterTab = (status: string | null): FilterTab => {
+  if (!status) return 'ALL';
+  const upper = status.toUpperCase();
+  if (upper === 'PENDING' || upper === 'ACTIVE' || upper === 'SUSPENDED' || upper === 'DELETED' || upper === 'ALL') {
+    return upper as FilterTab;
+  }
+  return 'ALL';
+};
 
 export default function AdminShopsPage() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [shops, setShops] = useState<AdminShopSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<FilterTab>('ALL');
+  const [activeTab, setActiveTab] = useState<FilterTab>(() => parseFilterTab(searchParams.get('status')));
   const [mutatingId, setMutatingId] = useState<number | null>(null);
   const [error, setError] = useState('');
   
@@ -52,6 +63,11 @@ export default function AdminShopsPage() {
     const q = searchParams.get('search');
     if (q !== null) {
       setSearchQuery((prev) => (q !== prev ? q : prev));
+    }
+    const statusParam = searchParams.get('status');
+    if (statusParam !== null) {
+      const parsed = parseFilterTab(statusParam);
+      setActiveTab((prev) => (parsed !== prev ? parsed : prev));
     }
   }, [searchParams]);
 
@@ -71,9 +87,30 @@ export default function AdminShopsPage() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Reset page on tab change
+  const handleTabChange = (tab: FilterTab) => {
+    setActiveTab(tab);
+    setPage(0);
+    setSelectedShopIds([]);
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === 'ALL') {
+      params.delete('status');
+    } else {
+      params.set('status', tab);
+    }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  };
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    setSelectedShopIds([]);
+  };
+
+  // Reset page and selection on tab change
   useEffect(() => {
     setPage(0);
+    setSelectedShopIds([]);
   }, [activeTab]);
 
   const fetchShops = useCallback(async (isManual = false) => {
@@ -173,6 +210,7 @@ export default function AdminShopsPage() {
     if (s === 'PENDING' || s === 'PENDING_APPROVAL') return <Badge variant="warning" size="sm">Pending Approval</Badge>;
     if (s === 'SUSPENDED') return <Badge variant="error" size="sm">Suspended</Badge>;
     if (s === 'REJECTED') return <Badge variant="default" size="sm">Rejected</Badge>;
+    if (s === 'DELETED') return <Badge variant="default" size="sm" className="bg-slate-100 text-slate-600 border-slate-200">Deleted</Badge>;
     return <Badge variant="default" size="sm">{status}</Badge>;
   };
 
@@ -197,7 +235,7 @@ export default function AdminShopsPage() {
         {/* Status Filter Tabs */}
         <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
           <button
-            onClick={() => setActiveTab('ALL')}
+            onClick={() => handleTabChange('ALL')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeTab === 'ALL'
                 ? 'bg-white text-slate-900 shadow-xs'
@@ -207,7 +245,7 @@ export default function AdminShopsPage() {
             All ({(shopCounts?.total || 0)})
           </button>
           <button
-            onClick={() => setActiveTab('PENDING')}
+            onClick={() => handleTabChange('PENDING')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
               activeTab === 'PENDING'
                 ? 'bg-white text-amber-900 shadow-xs'
@@ -222,7 +260,7 @@ export default function AdminShopsPage() {
             )}
           </button>
           <button
-            onClick={() => setActiveTab('ACTIVE')}
+            onClick={() => handleTabChange('ACTIVE')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeTab === 'ACTIVE'
                 ? 'bg-white text-emerald-900 shadow-xs'
@@ -232,7 +270,7 @@ export default function AdminShopsPage() {
             Active ({(shopCounts?.active || 0)})
           </button>
           <button
-            onClick={() => setActiveTab('SUSPENDED')}
+            onClick={() => handleTabChange('SUSPENDED')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeTab === 'SUSPENDED'
                 ? 'bg-white text-rose-900 shadow-xs'
@@ -240,6 +278,16 @@ export default function AdminShopsPage() {
             }`}
           >
             Suspended ({(shopCounts?.suspended || 0)})
+          </button>
+          <button
+            onClick={() => handleTabChange('DELETED')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeTab === 'DELETED'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Deleted{activeTab === 'DELETED' && totalElements > 0 ? ` (${totalElements})` : ''}
           </button>
         </div>
 
@@ -249,14 +297,14 @@ export default function AdminShopsPage() {
           <Input
             placeholder="Search by bakery or owner..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-9"
           />
         </div>
       </Card>
 
       {/* Bulk Actions Panel */}
-      {selectedShopIds.length > 0 && (
+      {selectedShopIds.length > 0 && activeTab !== 'DELETED' && (
         <Card className="p-4 border-slate-200 shadow-soft bg-indigo-50 border border-indigo-100 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="text-sm font-medium text-indigo-900">
             {selectedShopIds.length} bakery(s) selected
@@ -304,9 +352,27 @@ export default function AdminShopsPage() {
           icon={<Store className="w-8 h-8 text-slate-400" />}
           title="No Bakeries Found"
           description={
-            searchQuery
-              ? `No bakeries matching "${searchQuery}" in the ${activeTab.toLowerCase()} category.`
-              : `No bakeries currently in the ${activeTab.toLowerCase()} category.`
+            debouncedSearch
+              ? `No bakeries matching "${debouncedSearch}" found in the ${activeTab === 'ALL' ? 'platform directory' : activeTab.toLowerCase() + ' category'}.`
+              : `No bakeries currently found in the ${activeTab === 'ALL' ? 'platform directory' : activeTab.toLowerCase() + ' category'}.`
+          }
+          action={
+            (debouncedSearch || activeTab !== 'ALL') ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchQuery('');
+                  setDebouncedSearch('');
+                  setActiveTab('ALL');
+                  setPage(0);
+                  setSelectedShopIds([]);
+                }}
+                className="text-xs"
+              >
+                Clear Filters
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -404,7 +470,7 @@ export default function AdminShopsPage() {
                             </Button>
                           </Link>
 
-                          {shop.shopStatus !== 'ACTIVE' && (
+                          {shop.shopStatus !== 'ACTIVE' && shop.shopStatus !== 'DELETED' && (
                             <Button
                               variant="primary"
                               size="sm"
@@ -448,27 +514,29 @@ export default function AdminShopsPage() {
             </table>
           </div>
           {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="flex justify-between items-center border-t border-admin-border p-4 bg-gray-50/50">
-              <span className="text-sm text-admin-muted">
-                Showing page {page + 1} of {totalPages} ({totalElements} total shops)
+          {totalElements > 0 && (
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-3 border-t border-slate-200 p-4 bg-gray-50/50">
+              <span className="text-xs text-slate-500">
+                Showing page {page + 1} of {totalPages || 1} ({totalElements} {totalElements === 1 ? 'total shop' : 'total shops'})
               </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPage(p => Math.max(0, p - 1))}
-                  disabled={page === 0}
-                  className="px-4 py-2 text-sm rounded-xl font-medium border border-admin-border bg-white disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <button
-                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                  disabled={page >= totalPages - 1}
-                  className="px-4 py-2 text-sm rounded-xl font-medium border border-admin-border bg-white disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
+              {totalPages > 1 && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    disabled={page === 0}
+                    className="px-3 py-1.5 text-xs rounded-lg font-medium border border-slate-200 bg-white disabled:opacity-50 hover:bg-slate-50 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                    disabled={page >= totalPages - 1}
+                    className="px-3 py-1.5 text-xs rounded-lg font-medium border border-slate-200 bg-white disabled:opacity-50 hover:bg-slate-50 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </Card>

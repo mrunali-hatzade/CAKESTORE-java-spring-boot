@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
   Search,
@@ -488,12 +489,15 @@ export const OwnerCommandPalette: React.FC<OwnerCommandPaletteProps> = ({
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-xl bg-rose-50 text-brand-plum flex items-center justify-center shrink-0 overflow-hidden">
+                      <div className="relative w-8 h-8 rounded-xl bg-rose-50 text-brand-plum flex items-center justify-center shrink-0 overflow-hidden">
                         {product.imageUrl ? (
-                          <img
+                          <Image
                             src={product.imageUrl}
                             alt={product.name}
-                            className="w-full h-full object-cover"
+                            fill
+                            sizes="32px"
+                            unoptimized
+                            className="object-cover"
                           />
                         ) : (
                           <Cake className="w-4 h-4" />

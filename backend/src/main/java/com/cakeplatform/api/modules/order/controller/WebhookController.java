@@ -170,6 +170,7 @@ public class WebhookController {
                             payment.setProviderPaymentId(transactionId);
                             payment.setStatus("COMPLETED");
                             payment.setPaidAt(LocalDateTime.now());
+                            payment.setFailureReason("ORDER:" + order.getOrderNumber());
                             paymentRepository.save(payment);
                         }
 

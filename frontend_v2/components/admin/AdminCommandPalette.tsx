@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Search, LayoutDashboard, Store, CreditCard,
-  MessageSquare, MessageCircle, Mail, Bell, X, ArrowRight, Loader2
+  Search, LayoutDashboard, Store, CreditCard, ShoppingBag, Receipt,
+  MessageSquare, MessageCircle, Mail, Bell, X, ArrowRight, Loader2,
+  ShieldAlert
 } from 'lucide-react';
 import { getAllShops } from '@/lib/api/admin';
 import { communicationApi } from '@/lib/api/communication';
@@ -27,11 +28,14 @@ interface NavShortcut {
 const STATIC_NAV_SHORTCUTS: NavShortcut[] = [
   { id: 'nav-dashboard', type: 'shortcut', label: 'Platform Overview', description: 'View platform revenue and metrics', href: '/admin', icon: LayoutDashboard },
   { id: 'nav-shops', type: 'shortcut', label: 'Bakery Management', description: 'Approve KYC and manage shops', href: '/admin/shops', icon: Store },
+  { id: 'nav-orders', type: 'shortcut', label: 'Orders Ledger', description: 'Cross-shop retail orders and status', href: '/admin/orders', icon: ShoppingBag },
+  { id: 'nav-payments', type: 'shortcut', label: 'Payments Ledger', description: 'Cross-shop gateway transactions and GMV', href: '/admin/payments', icon: Receipt },
   { id: 'nav-plans', type: 'shortcut', label: 'Plans & Subscriptions', description: 'Manage pricing and billing', href: '/admin/plans', icon: CreditCard },
   { id: 'nav-feedback', type: 'shortcut', label: 'Platform Feedback', description: 'Read reviews from owners', href: '/admin/feedback', icon: MessageSquare },
   { id: 'nav-enquiries', type: 'shortcut', label: 'Contact Enquiries', description: 'Read messages from public users', href: '/admin/enquiries', icon: MessageCircle },
   { id: 'nav-broadcasts', type: 'shortcut', label: 'Broadcasts', description: 'Send mass emails and alerts', href: '/admin/messages', icon: Mail },
   { id: 'nav-notifications', type: 'shortcut', label: 'Notifications', description: 'View your platform alerts', href: '/admin/notifications', icon: Bell },
+  { id: 'nav-settings', type: 'shortcut', label: 'Global Settings', description: 'Platform configuration and security', href: '/admin/settings', icon: ShieldAlert },
 ];
 
 export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({ isOpen, onClose }) => {

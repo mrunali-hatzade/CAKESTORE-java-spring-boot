@@ -29,6 +29,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -121,7 +122,9 @@ class StageBAdminOperationsTest {
         when(shopRepository.countByStatus(ShopStatus.PENDING)).thenReturn(3L);
         when(userRepository.countByRole(com.cakeplatform.api.modules.user.UserRole.ADMIN)).thenReturn(50L);
         when(userRepository.countByRole(com.cakeplatform.api.modules.user.UserRole.SHOP_OWNER)).thenReturn(20L);
+        when(userRepository.countByRole(com.cakeplatform.api.modules.user.UserRole.CUSTOMER)).thenReturn(300L);
         when(userRepository.countByCreatedAtBetween(any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(5L);
+        when(subscriptionRepository.count()).thenReturn(18L);
         when(subscriptionRepository.countUniqueShopsByStatus(SubscriptionStatus.ACTIVE)).thenReturn(12L);
         when(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.EXPIRED)).thenReturn(4L);
         when(paymentRepository.countCompletedPaymentsBetween(any(LocalDateTime.class), any(LocalDateTime.class))).thenReturn(3L);
@@ -137,11 +140,13 @@ class StageBAdminOperationsTest {
         assertEquals(3L, stats.getInactiveBakeries());
         assertEquals(3L, stats.getPendingBakeries());
         assertEquals(50L, stats.getTotalAdmins());
+        assertEquals(300L, stats.getTotalCustomers());
         assertEquals(5L, stats.getTodayRegistrations());
+        assertEquals(18L, stats.getTotalSubscriptions());
         assertEquals(12L, stats.getActiveSubscribedBakeries());
         assertEquals(4L, stats.getExpiredSubscribedBakeries());
         assertEquals(3L, stats.getTodayPayments());
-        assertEquals(new BigDecimal("45000.00"), stats.getMonthlyPlatformRevenue());
+        assertEquals(new BigDecimal("120000.00"), stats.getMonthlyPlatformRevenue());
         assertEquals(new BigDecimal("120000.00"), stats.getTotalPlatformRevenue());
     }
 
@@ -184,7 +189,9 @@ class StageBAdminOperationsTest {
         when(orderRepository.sumRealizedRevenueBetween(startOfMonthCaptor.capture(), endOfMonthCaptor.capture()))
                 .thenReturn(new BigDecimal("82500.00"));
 
-        DashboardStatsResponse stats = adminDashboardService.getPlatformStats(null, null);
+        LocalDate firstOfMonth = LocalDate.now().withDayOfMonth(1);
+        LocalDate today = LocalDate.now();
+        DashboardStatsResponse stats = adminDashboardService.getPlatformStats(firstOfMonth, today);
 
         assertEquals(new BigDecimal("82500.00"), stats.getMonthlyGmv());
         LocalDateTime captured = startOfMonthCaptor.getValue();

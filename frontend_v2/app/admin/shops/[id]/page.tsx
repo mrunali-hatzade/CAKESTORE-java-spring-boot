@@ -24,8 +24,10 @@ import {
   AlertTriangle,
   Ban,
   FileCheck,
+  Loader2,
+  Receipt,
 } from 'lucide-react';
-import { getShopDetails, updateShopStatus, updateShopVerification } from '@/lib/api/admin';
+import { getShopDetails, updateShopStatus, updateShopVerification, getAdminDocumentViewUrl } from '@/lib/api/admin';
 import { AdminShopDetails, BusinessDocumentItem } from '@/types/admin';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -52,6 +54,9 @@ export default function AdminShopDetailPage() {
 
   // KYC Rejection Modal State (B3)
   const [isRejectKycModalOpen, setIsRejectKycModalOpen] = useState(false);
+
+  // Document Viewing State
+  const [viewingDocId, setViewingDocId] = useState<number | null>(null);
 
   const toast = useToast();
 
@@ -162,6 +167,22 @@ export default function AdminShopDetailPage() {
       toast.error(err.message || 'Failed to review verification');
     } finally {
       setIsMutating(false);
+    }
+  };
+
+  const handleViewDocument = async (docId: number) => {
+    setViewingDocId(docId);
+    try {
+      const res = await getAdminDocumentViewUrl(docId);
+      if (res && res.url) {
+        window.open(res.url, '_blank', 'noopener,noreferrer');
+      } else {
+        toast.error('Could not generate secure view link for this document.');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to open document. Please check permissions.');
+    } finally {
+      setViewingDocId(null);
     }
   };
 
@@ -475,17 +496,19 @@ export default function AdminShopDetailPage() {
                           {doc.status}
                         </span>
 
-                        {doc.fileUrl && (
-                          <a
-                            href={doc.fileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-                            title="View Document"
-                          >
+                        <button
+                          type="button"
+                          onClick={() => handleViewDocument(doc.id)}
+                          disabled={viewingDocId === doc.id}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50 cursor-pointer"
+                          title="View Document Securely"
+                        >
+                          {viewingDocId === doc.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                          ) : (
                             <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
-                        )}
+                          )}
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -639,6 +662,75 @@ export default function AdminShopDetailPage() {
                     <span className="font-bold text-slate-700">₹{sub.amount}</span>
                   </div>
                 ))}
+              </div>
+            )}
+          </Card>
+
+          {/* Subscription Billing History Card */}
+          <Card className="p-6 border-slate-200/80 shadow-soft">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-emerald-600" />
+                <h3 className="font-serif font-bold text-base text-slate-900">
+                  Subscription Billing History
+                </h3>
+              </div>
+              <Badge variant="default" size="sm">
+                {payments.length} {payments.length === 1 ? 'Invoice' : 'Invoices'}
+              </Badge>
+            </div>
+
+            {payments.length === 0 ? (
+              <p className="text-xs text-slate-500 italic py-2">
+                No subscription billing records found for this bakery.
+              </p>
+            ) : (
+              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                {payments.map((p) => {
+                  const isCompleted = p.status?.toUpperCase() === 'COMPLETED';
+                  const isFailed = p.status?.toUpperCase() === 'FAILED';
+                  return (
+                    <div
+                      key={p.id}
+                      className="p-3 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-slate-50 transition-colors space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-sm text-slate-900">
+                            ₹{Number(p.amount || 0).toLocaleString('en-IN')}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {p.currency || 'INR'}
+                          </span>
+                        </div>
+                        <Badge
+                          variant={isCompleted ? 'success' : isFailed ? 'error' : 'warning'}
+                          size="sm"
+                        >
+                          {p.status}
+                        </Badge>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-500 gap-1 pt-1 border-t border-slate-100">
+                        <span className="text-slate-400">
+                          {new Date(p.paidAt || p.createdAt).toLocaleDateString('en-IN', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </span>
+                        <div className="flex items-center gap-2 font-mono text-[10px] text-slate-400">
+                          {p.providerPaymentId && (
+                            <span title="Payment ID">{p.providerPaymentId}</span>
+                          )}
+                          {p.providerOrderId && (
+                            <span title="Order ID">• {p.providerOrderId}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </Card>

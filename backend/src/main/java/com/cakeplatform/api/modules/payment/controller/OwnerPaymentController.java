@@ -75,12 +75,14 @@ public class OwnerPaymentController {
     public ResponseEntity<List<OwnerPaymentResponse>> getMyPayments(
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         Shop shop = shopAccessValidator.getShopByOwnerId(userDetails.getId());
-        List<Payment> payments = paymentRepository.findByShopIdOrderByCreatedAtDesc(shop.getId());
+        List<Payment> payments = paymentRepository.findSubscriptionPaymentsByShopId(shop.getId());
 
         List<OwnerPaymentResponse> response = payments.stream().map(p -> {
             String planName = "Pro Baker Studio";
             if (p.getSubscription() != null && p.getSubscription().getPlan() != null) {
                 planName = p.getSubscription().getPlan().getName();
+            } else if (p.getPlan() != null) {
+                planName = p.getPlan().getName();
             }
             return OwnerPaymentResponse.builder()
                     .id(p.getId())
@@ -115,6 +117,10 @@ public class OwnerPaymentController {
 
         if (!"COMPLETED".equalsIgnoreCase(payment.getStatus())) {
             throw new IllegalStateException("Invoice is only available for completed payments");
+        }
+
+        if (payment.getSubscription() == null && payment.getPlan() == null) {
+            throw new IllegalArgumentException("Invoice is only available for subscription payments");
         }
 
         byte[] pdfBytes = invoiceService.generateSubscriptionInvoice(payment);

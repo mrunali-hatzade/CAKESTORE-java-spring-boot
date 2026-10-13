@@ -1,26 +1,28 @@
 package com.cakeplatform.api.modules.settings.controller;
 
-import com.cakeplatform.api.modules.settings.GlobalSettings;
 import com.cakeplatform.api.modules.settings.GlobalSettingsService;
 import com.cakeplatform.api.modules.settings.dto.GlobalSettingsDTO;
+import com.cakeplatform.api.modules.settings.dto.GlobalSettingsResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/admin/settings")
+@PreAuthorize("hasAuthority('ROLE_ADMIN')")
 @RequiredArgsConstructor
 public class AdminSettingsController {
 
     private final GlobalSettingsService service;
 
     @GetMapping
-    public ResponseEntity<GlobalSettings> getSettings() {
-        return ResponseEntity.ok(service.getSettings());
+    public ResponseEntity<GlobalSettingsResponse> getSettings() {
+        return ResponseEntity.ok(service.getSettingsResponse());
     }
 
     @PutMapping
-    public ResponseEntity<GlobalSettings> updateSettings(@RequestBody GlobalSettingsDTO dto) {
-        return ResponseEntity.ok(service.updateSettings(dto));
+    public ResponseEntity<GlobalSettingsResponse> updateSettings(@RequestBody GlobalSettingsDTO dto) {
+        return ResponseEntity.ok(service.updateSettingsAndGetResponse(dto));
     }
 }

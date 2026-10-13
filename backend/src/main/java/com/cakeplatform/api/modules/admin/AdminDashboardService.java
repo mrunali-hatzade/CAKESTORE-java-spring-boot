@@ -118,59 +118,85 @@ public class AdminDashboardService {
 
     
     public com.cakeplatform.api.modules.admin.dto.AnalyticsChartResponse getRevenueAnalytics() {
-        java.time.LocalDateTime sixMonthsAgo = java.time.LocalDateTime.now().minusMonths(5).withDayOfMonth(1).withHour(0).withMinute(0);
-        
-        java.util.List<com.cakeplatform.api.modules.payment.Payment> recentPayments = paymentRepository.findAll().stream()
-            .filter(p -> p.getPaidAt() != null && p.getPaidAt().isAfter(sixMonthsAgo) && "COMPLETED".equalsIgnoreCase(p.getStatus()))
-            .collect(java.util.stream.Collectors.toList());
-            
-        java.util.List<com.cakeplatform.api.modules.order.Order> recentOrders = orderRepository.findAll().stream()
-            .filter(o -> o.getCreatedAt() != null && o.getCreatedAt().isAfter(sixMonthsAgo) && ("COMPLETED".equalsIgnoreCase(o.getOrderStatus()) || "DELIVERED".equalsIgnoreCase(o.getOrderStatus())))
-            .collect(java.util.stream.Collectors.toList());
+        ZoneId zone = getOperationalZone();
+        LocalDate now = LocalDate.now(zone);
+        LocalDateTime sixMonthsAgo = now.minusMonths(5).withDayOfMonth(1).atStartOfDay();
+
+        java.util.List<Object[]> saasRows = paymentRepository.getMonthlySubscriptionRevenueSince(sixMonthsAgo);
+        java.util.List<Object[]> gmvRows = orderRepository.getMonthlyNetworkGmvSince(sixMonthsAgo);
 
         java.util.Map<String, java.math.BigDecimal> saasMap = new java.util.LinkedHashMap<>();
         java.util.Map<String, java.math.BigDecimal> gmvMap = new java.util.LinkedHashMap<>();
-        
+
+        java.time.format.DateTimeFormatter periodFmt = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM");
         java.time.format.DateTimeFormatter shortFmt = java.time.format.DateTimeFormatter.ofPattern("MMM");
         java.time.format.DateTimeFormatter longFmt = java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy");
 
-        // Initialize last 6 months in order
+        // Initialize last 6 months in chronological order with zero amounts
         for (int i = 5; i >= 0; i--) {
-            java.time.LocalDateTime m = java.time.LocalDateTime.now().minusMonths(i);
-            String key = m.format(shortFmt);
-            saasMap.put(key, java.math.BigDecimal.ZERO);
-            gmvMap.put(key, java.math.BigDecimal.ZERO);
+            LocalDate m = now.minusMonths(i);
+            String periodKey = m.format(periodFmt);
+            saasMap.put(periodKey, java.math.BigDecimal.ZERO);
+            gmvMap.put(periodKey, java.math.BigDecimal.ZERO);
         }
 
-        for (com.cakeplatform.api.modules.payment.Payment p : recentPayments) {
-            String key = p.getPaidAt().format(shortFmt);
-            if (saasMap.containsKey(key)) {
-                saasMap.put(key, saasMap.get(key).add(p.getAmount()));
+        if (saasRows != null) {
+            for (Object[] row : saasRows) {
+                if (row != null && row.length >= 2 && row[0] != null) {
+                    String periodKey = String.valueOf(row[0]).trim();
+                    java.math.BigDecimal amount = parseAggregateAmount(row[1]);
+                    if (saasMap.containsKey(periodKey)) {
+                        saasMap.put(periodKey, amount);
+                    }
+                }
             }
         }
 
-        for (com.cakeplatform.api.modules.order.Order o : recentOrders) {
-            String key = o.getCreatedAt().format(shortFmt);
-            if (gmvMap.containsKey(key)) {
-                gmvMap.put(key, gmvMap.get(key).add(o.getTotalAmount()));
+        if (gmvRows != null) {
+            for (Object[] row : gmvRows) {
+                if (row != null && row.length >= 2 && row[0] != null) {
+                    String periodKey = String.valueOf(row[0]).trim();
+                    java.math.BigDecimal amount = parseAggregateAmount(row[1]);
+                    if (gmvMap.containsKey(periodKey)) {
+                        gmvMap.put(periodKey, amount);
+                    }
+                }
             }
         }
 
         java.util.List<com.cakeplatform.api.modules.admin.dto.RevenueDataPoint> saasList = new java.util.ArrayList<>();
         java.util.List<com.cakeplatform.api.modules.admin.dto.RevenueDataPoint> gmvList = new java.util.ArrayList<>();
-        
+
         for (int i = 5; i >= 0; i--) {
-            java.time.LocalDateTime m = java.time.LocalDateTime.now().minusMonths(i);
+            LocalDate m = now.minusMonths(i);
+            String periodKey = m.format(periodFmt);
             String shortKey = m.format(shortFmt);
             String longKey = m.format(longFmt);
-            saasList.add(new com.cakeplatform.api.modules.admin.dto.RevenueDataPoint(shortKey, longKey, saasMap.get(shortKey)));
-            gmvList.add(new com.cakeplatform.api.modules.admin.dto.RevenueDataPoint(shortKey, longKey, gmvMap.get(shortKey)));
+            saasList.add(new com.cakeplatform.api.modules.admin.dto.RevenueDataPoint(shortKey, longKey, saasMap.getOrDefault(periodKey, java.math.BigDecimal.ZERO)));
+            gmvList.add(new com.cakeplatform.api.modules.admin.dto.RevenueDataPoint(shortKey, longKey, gmvMap.getOrDefault(periodKey, java.math.BigDecimal.ZERO)));
         }
 
         com.cakeplatform.api.modules.admin.dto.AnalyticsChartResponse res = new com.cakeplatform.api.modules.admin.dto.AnalyticsChartResponse();
         res.setSaasRevenue(saasList);
         res.setNetworkGmv(gmvList);
         return res;
+    }
+
+    private java.math.BigDecimal parseAggregateAmount(Object value) {
+        if (value == null) {
+            return java.math.BigDecimal.ZERO;
+        }
+        if (value instanceof java.math.BigDecimal) {
+            return (java.math.BigDecimal) value;
+        }
+        if (value instanceof Number) {
+            return java.math.BigDecimal.valueOf(((Number) value).doubleValue());
+        }
+        try {
+            return new java.math.BigDecimal(value.toString().trim());
+        } catch (Exception e) {
+            return java.math.BigDecimal.ZERO;
+        }
     }
 
     public DashboardStatsResponse getPlatformStats(LocalDate startDate, LocalDate endDate) {
@@ -199,6 +225,7 @@ public class AdminDashboardService {
         stats.setExpiredBakeries(shopRepository.countByStatus(ShopStatus.EXPIRED));
         stats.setDeletedBakeries(shopRepository.countDeletedShops());
 
+        stats.setTotalSubscriptions(subscriptionRepository.count());
         stats.setActiveSubscribedBakeries(subscriptionRepository.countUniqueShopsByStatus(SubscriptionStatus.ACTIVE));
         stats.setExpiringSoonSubscribedBakeries(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.EXPIRING_SOON));
         stats.setGracePeriodSubscribedBakeries(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.GRACE_PERIOD));
@@ -207,29 +234,54 @@ public class AdminDashboardService {
         stats.setSuspendedSubscribedBakeries(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.SUSPENDED));
         stats.setCancelledSubscribedBakeries(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.CANCELLED));
 
-        // 2. Period Metrics (Affected by date filter)
-        LocalDateTime periodStart = startOfDay;
-        LocalDateTime periodEnd = startOfDay.plusDays(1).minusNanos(1);
-        
-        if (startDate != null && endDate != null) {
-            periodStart = startDate.atStartOfDay(zone).toLocalDateTime();
-            periodEnd = endDate.atTime(23, 59, 59, 999999999).atZone(zone).toLocalDateTime();
-        }
+        // 2. Daily Counters (Always reflect today in the operational timezone)
+        LocalDateTime todayStart = startOfDay;
+        LocalDateTime todayEnd = startOfDay.plusDays(1).minusNanos(1);
+        stats.setTodayRegistrations(userRepository.countByCreatedAtBetween(todayStart, todayEnd));
+        stats.setTodayPayments(paymentRepository.countCompletedPaymentsBetween(todayStart, todayEnd));
 
-        stats.setTodayRegistrations(userRepository.countByCreatedAtBetween(periodStart, periodEnd));
-        stats.setTodayPayments(paymentRepository.countCompletedPaymentsBetween(periodStart, periodEnd));
-
-        BigDecimal periodSubRev = paymentRepository.getRevenueBetween(periodStart, periodEnd);
-        stats.setMonthlyPlatformRevenue(periodSubRev != null ? periodSubRev : BigDecimal.ZERO);
-
+        // 3. Lifetime Metrics (Cumulative across all time)
         BigDecimal totalSubRev = paymentRepository.getTotalRevenue();
         stats.setTotalPlatformRevenue(totalSubRev != null ? totalSubRev : BigDecimal.ZERO);
 
-        BigDecimal periodGmv = orderRepository.sumRealizedRevenueBetween(periodStart, periodEnd);
-        stats.setMonthlyGmv(periodGmv != null ? periodGmv : BigDecimal.ZERO);
-
         BigDecimal totalGmv = orderRepository.sumTotalRealizedRevenue();
         stats.setTotalGmv(totalGmv != null ? totalGmv : BigDecimal.ZERO);
+
+        // 4. Period Metrics (Affected by date filter)
+        boolean isAllTime = (startDate == null && endDate == null);
+        BigDecimal periodSubRev;
+        BigDecimal periodGmv;
+
+        if (isAllTime) {
+            // When no date filter is passed, All Time returns genuine lifetime totals
+            periodSubRev = stats.getTotalPlatformRevenue();
+            periodGmv = stats.getTotalGmv();
+        } else {
+            LocalDateTime periodStart;
+            LocalDateTime periodEnd;
+            if (startDate != null && endDate != null) {
+                periodStart = startDate.atStartOfDay(zone).toLocalDateTime();
+                periodEnd = endDate.atTime(23, 59, 59, 999999999).atZone(zone).toLocalDateTime();
+            } else if (startDate != null) {
+                periodStart = startDate.atStartOfDay(zone).toLocalDateTime();
+                periodEnd = LocalDate.now(zone).atTime(23, 59, 59, 999999999).atZone(zone).toLocalDateTime();
+            } else {
+                periodStart = LocalDate.of(2020, 1, 1).atStartOfDay();
+                periodEnd = endDate.atTime(23, 59, 59, 999999999).atZone(zone).toLocalDateTime();
+            }
+
+            BigDecimal querySubRev = paymentRepository.getRevenueBetween(periodStart, periodEnd);
+            periodSubRev = querySubRev != null ? querySubRev : BigDecimal.ZERO;
+
+            BigDecimal queryGmv = orderRepository.sumRealizedRevenueBetween(periodStart, periodEnd);
+            periodGmv = queryGmv != null ? queryGmv : BigDecimal.ZERO;
+        }
+
+        stats.setMonthlyPlatformRevenue(periodSubRev);
+        stats.setPeriodPlatformRevenue(periodSubRev);
+
+        stats.setMonthlyGmv(periodGmv);
+        stats.setPeriodGmv(periodGmv);
 
         return stats;
     }
@@ -301,7 +353,7 @@ public class AdminDashboardService {
         AdminShopDetailsResponse details = new AdminShopDetailsResponse();
         details.setShop(shop);
         details.setSubscriptions(subscriptionRepository.findByShopId(shopId));
-        details.setPayments(paymentRepository.findByShopId(shopId));
+        details.setPayments(paymentRepository.findSubscriptionPaymentsByShopId(shopId));
         details.setActivityLogs(activityLogRepository.findByShopIdAndEntityTypeInOrderByTimestampDesc(shopId, java.util.List.of("SHOP", "SUBSCRIPTION", "PAYMENT")));
         details.setBusinessDocuments(businessDocumentRepository.findByShopId(shopId));
         details.setTotalProducts(productRepository.countByShopId(shopId));

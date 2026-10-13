@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Image from 'next/image';
 import { Image as ImageIcon, Plus, Trash2, ArrowUp, ArrowDown, ExternalLink, Upload } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -227,11 +228,18 @@ export const HeroBannersSection: React.FC<HeroBannersSectionProps> = ({
             </div>
             {newImageUrl && (
               <div className="mt-2 relative w-full h-32 rounded-xl overflow-hidden border border-brand-border/60 bg-gray-50">
-                <img src={newImageUrl} alt="Banner Preview" className="w-full h-full object-cover" />
+                <Image
+                  src={newImageUrl}
+                  alt="Banner Preview"
+                  fill
+                  sizes="(max-width: 640px) 100vw, 600px"
+                  unoptimized
+                  className="object-cover"
+                />
                 <button
                   type="button"
                   onClick={() => setNewImageUrl('')}
-                  className="absolute top-2 right-2 px-2 py-1 text-[11px] font-bold bg-white/90 text-rose-600 rounded-lg shadow-sm hover:bg-white cursor-pointer"
+                  className="absolute top-2 right-2 px-2 py-1 text-[11px] font-bold bg-white/90 text-rose-600 rounded-lg shadow-sm hover:bg-white cursor-pointer z-10"
                 >
                   Remove
                 </button>
@@ -302,10 +310,13 @@ export const HeroBannersSection: React.FC<HeroBannersSectionProps> = ({
 
               {/* Banner Thumbnail */}
               <div className="w-24 h-14 rounded-xl overflow-hidden bg-brand-cream-light shrink-0 border border-brand-border/40 relative">
-                <img
+                <Image
                   src={banner.imageUrl}
                   alt={banner.title || 'Hero Banner'}
-                  className="w-full h-full object-cover"
+                  fill
+                  sizes="96px"
+                  unoptimized
+                  className="object-cover"
                 />
               </div>
 

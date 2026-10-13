@@ -1,12 +1,14 @@
-﻿import { apiClient } from './client';
+import { apiClient } from './client';
 
 export interface GlobalSettings {
   id?: number;
   platformName: string;
   supportEmail: string;
   razorpayKeyId: string;
-  razorpayKeySecret: string;
-  razorpayWebhookSecret: string;
+  razorpayKeySecret?: string;
+  razorpayWebhookSecret?: string;
+  razorpayKeySecretConfigured?: boolean;
+  razorpayWebhookSecretConfigured?: boolean;
   platformCurrency: string;
   updatedAt?: string;
 }

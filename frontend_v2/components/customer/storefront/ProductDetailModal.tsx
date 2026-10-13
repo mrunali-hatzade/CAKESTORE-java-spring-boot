@@ -916,11 +916,14 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                               </div>
                               {rev.reviewText && <p className="text-brand-muted italic">&ldquo;{rev.reviewText}&rdquo;</p>}
                               {rev.cakeImageUrl && (
-                                <div className="mt-1.5 w-20 h-20 rounded-xl overflow-hidden border border-brand-border/60 bg-black/5">
-                                  <img
+                                <div className="relative mt-1.5 w-20 h-20 rounded-xl overflow-hidden border border-brand-border/60 bg-black/5">
+                                  <Image
                                     src={rev.cakeImageUrl}
                                     alt="Customer cake photo"
-                                    className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
+                                    fill
+                                    sizes="80px"
+                                    unoptimized
+                                    className="object-cover cursor-pointer hover:scale-105 transition-transform"
                                     onClick={() => window.open(rev.cakeImageUrl, '_blank')}
                                   />
                                 </div>

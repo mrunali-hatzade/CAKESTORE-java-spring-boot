@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { 
   Sparkles, 
@@ -164,10 +165,17 @@ export const CustomCakeDetailsModal: React.FC<CustomCakeDetailsModalProps> = ({
                   <p className="text-[10px] text-owner-muted uppercase font-bold tracking-wider">{fv.fieldLabel || fv.fieldKey}</p>
                   {fv.fieldValue && fv.fieldValue.startsWith('http') ? (
                     <div
-                      className="mt-1.5 w-16 h-16 rounded-lg overflow-hidden border border-owner-border cursor-pointer hover:opacity-80 transition-opacity"
+                      className="relative mt-1.5 w-16 h-16 rounded-lg overflow-hidden border border-owner-border cursor-pointer hover:opacity-80 transition-opacity"
                       onClick={() => onPreviewImage(fv.fieldValue)}
                     >
-                      <img src={fv.fieldValue} alt="Attachment" className="w-full h-full object-cover" />
+                      <Image
+                        src={fv.fieldValue}
+                        alt="Attachment"
+                        fill
+                        sizes="64px"
+                        unoptimized
+                        className="object-cover"
+                      />
                     </div>
                   ) : (
                     <p className="font-semibold text-owner-heading mt-0.5 whitespace-pre-wrap">{fv.fieldValue || '—'}</p>
@@ -182,11 +190,14 @@ export const CustomCakeDetailsModal: React.FC<CustomCakeDetailsModalProps> = ({
         {cake.referenceImageUrl && (
           <div className="space-y-1">
             <label className="text-xs font-semibold text-owner-heading block">Reference Design</label>
-            <div className="h-44 w-full rounded-2xl overflow-hidden border border-owner-border bg-brand-cream">
-              <img
+            <div className="relative h-44 w-full rounded-2xl overflow-hidden border border-owner-border bg-brand-cream">
+              <Image
                 src={cake.referenceImageUrl}
                 alt="Reference design"
-                className="w-full h-full object-cover"
+                fill
+                sizes="(max-width: 640px) 100vw, 500px"
+                unoptimized
+                className="object-cover"
               />
             </div>
           </div>

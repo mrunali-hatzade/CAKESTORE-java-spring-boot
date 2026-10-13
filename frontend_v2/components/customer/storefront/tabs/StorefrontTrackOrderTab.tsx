@@ -83,7 +83,7 @@ export const StorefrontTrackOrderTab: React.FC<StorefrontTrackOrderTabProps> = (
     } finally {
       setIsLoading(false);
     }
-  }, [customerAuth]);
+  }, [customerAuth, toast]);
 
   // Sync with context
   useEffect(() => {

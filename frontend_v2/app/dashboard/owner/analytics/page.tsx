@@ -491,12 +491,15 @@ export default function OwnerAnalyticsPage() {
                   {/* Photo or Fallback Cake Icon */}
                   <div className="w-12 h-12 rounded-xl bg-white border border-owner-border overflow-hidden shrink-0 flex items-center justify-center relative">
                     {p.imageUrl ? (
-                      <img
+                      <Image
                         src={p.imageUrl}
                         alt={p.name}
-                        className="w-full h-full object-cover"
+                        fill
+                        sizes="48px"
+                        unoptimized
+                        className="object-cover"
                         onError={(e) => {
-                          e.currentTarget.style.display = 'none';
+                          (e.currentTarget as HTMLElement).style.display = 'none';
                         }}
                       />
                     ) : (

@@ -6,6 +6,10 @@ import {
   AdminShopDetails,
   AdminPlan,
   AdminMessagePayload,
+  AdminOrderSummary,
+  AdminOrderDetail,
+  AdminPaymentSummary,
+  AdminPaymentDetail,
 } from '@/types/admin';
 
 // ==========================================
@@ -136,6 +140,7 @@ export const adminApi = {
   reorderPlans,
   sendAdminMessage,
   getAdminBroadcastHistory,
+  getAdminDocumentViewUrl,
 };
 
 export async function getRecentActivity(): Promise<any[]> {
@@ -146,3 +151,91 @@ export async function getRevenueAnalytics(): Promise<{ saasRevenue: any[], netwo
   const res: any = await apiClient.get('/api/admin/dashboard/stats/analytics/revenue');
   return res.data || res;
 }
+
+/**
+ * Obtain authorized view URL for a private shop verification document.
+ */
+export async function getAdminDocumentViewUrl(documentId: number): Promise<{ url: string }> {
+  return apiClient.get<{ url: string }>(`/api/admin/documents/${documentId}/view?redirect=false`);
+}
+
+// ==========================================
+// ADMIN ORDERS & PAYMENTS LEDGER API METHODS
+// ==========================================
+
+export interface GetAdminOrdersParams {
+  page?: number;
+  size?: number;
+  query?: string;
+  status?: string;
+  orderStatus?: string;
+  paymentStatus?: string;
+  shopId?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+/**
+ * Fetch cross-shop orders with masking and pagination (size max 50).
+ */
+export async function getAdminOrders(params: GetAdminOrdersParams = {}): Promise<PaginatedResponse<AdminOrderSummary>> {
+  return apiClient.get<PaginatedResponse<AdminOrderSummary>>('/api/admin/orders', {
+    params: {
+      page: params.page ?? 0,
+      size: Math.min(params.size ?? 20, 50),
+      ...(params.query && { query: params.query }),
+      ...(params.status && params.status !== 'ALL' && { status: params.status }),
+      ...(params.orderStatus && params.orderStatus !== 'ALL' && { orderStatus: params.orderStatus }),
+      ...(params.paymentStatus && params.paymentStatus !== 'ALL' && { paymentStatus: params.paymentStatus }),
+      ...(params.shopId && { shopId: params.shopId }),
+      ...(params.startDate && { startDate: params.startDate }),
+      ...(params.endDate && { endDate: params.endDate }),
+    }
+  });
+}
+
+/**
+ * Fetch detailed order information including line items, delivery slot, and address.
+ */
+export async function getAdminOrderDetail(orderId: number): Promise<AdminOrderDetail> {
+  return apiClient.get<AdminOrderDetail>(`/api/admin/orders/${orderId}`);
+}
+
+export interface GetAdminPaymentsParams {
+  page?: number;
+  size?: number;
+  query?: string;
+  status?: string;
+  type?: string;
+  transactionType?: string;
+  shopId?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+/**
+ * Fetch cross-shop payments ledger with 3-tier classification and pagination (size max 50).
+ */
+export async function getAdminPayments(params: GetAdminPaymentsParams = {}): Promise<PaginatedResponse<AdminPaymentSummary>> {
+  return apiClient.get<PaginatedResponse<AdminPaymentSummary>>('/api/admin/payments', {
+    params: {
+      page: params.page ?? 0,
+      size: Math.min(params.size ?? 20, 50),
+      ...(params.query && { query: params.query }),
+      ...(params.status && params.status !== 'ALL' && { status: params.status }),
+      ...(params.type && params.type !== 'ALL' && { type: params.type }),
+      ...(params.transactionType && params.transactionType !== 'ALL' && { transactionType: params.transactionType }),
+      ...(params.shopId && { shopId: params.shopId }),
+      ...(params.startDate && { startDate: params.startDate }),
+      ...(params.endDate && { endDate: params.endDate }),
+    }
+  });
+}
+
+/**
+ * Fetch detailed payment record with subscription snapshot, order snapshot, or unlinked diagnostics.
+ */
+export async function getAdminPaymentDetail(paymentId: number): Promise<AdminPaymentDetail> {
+  return apiClient.get<AdminPaymentDetail>(`/api/admin/payments/${paymentId}`);
+}
+

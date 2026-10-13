@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { 
   CheckCircle2, 
@@ -250,9 +251,16 @@ export const ConvertToOrderModal: React.FC<ConvertToOrderModalProps> = ({
               {cake.referenceImageUrl && (
                 <div
                   onClick={() => onPreviewImage(cake.referenceImageUrl || '')}
-                  className="w-14 h-14 rounded-xl overflow-hidden border border-brand-blush-border shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                  className="relative w-14 h-14 rounded-xl overflow-hidden border border-brand-blush-border shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
                 >
-                  <img src={cake.referenceImageUrl} alt="Reference" className="w-full h-full object-cover" />
+                  <Image
+                    src={cake.referenceImageUrl}
+                    alt="Reference"
+                    fill
+                    sizes="56px"
+                    unoptimized
+                    className="object-cover"
+                  />
                 </div>
               )}
             </div>

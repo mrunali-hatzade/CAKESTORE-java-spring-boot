@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { X, ShoppingBag, Plus, Minus, Trash2, ArrowRight, Store, Tag, CheckCircle2, AlertCircle, Loader2, Calendar } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { useRouter } from 'next/navigation';
@@ -199,10 +200,13 @@ export const CartDrawer: React.FC = () => {
                       <div className="flex items-center gap-3">
                         <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-brand-cream shrink-0 border border-brand-border/60">
                           {item.imageUrl ? (
-                            <img
+                            <Image
                               src={item.imageUrl}
                               alt={item.name}
-                              className="w-full h-full object-cover"
+                              fill
+                              sizes="48px"
+                              unoptimized
+                              className="object-cover"
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-brand-plum">

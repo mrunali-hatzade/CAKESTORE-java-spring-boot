@@ -96,11 +96,7 @@ export const communicationApi = {
    * Super Admin: Get communication overview counts (unread feedback & enquiries).
    */
   async getCommunicationSummary(): Promise<CommunicationSummary> {
-    try {
-      return await apiClient.get<CommunicationSummary>('/api/admin/communication/summary');
-    } catch (err: any) {
-      return { unreadFeedbackCount: 0, unreadEnquiriesCount: 0 };
-    }
+    return await apiClient.get<CommunicationSummary>('/api/admin/communication/summary');
   },
 
   /**
