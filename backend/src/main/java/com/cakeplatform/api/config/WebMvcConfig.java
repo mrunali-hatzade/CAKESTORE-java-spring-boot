@@ -23,10 +23,19 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         Path uploadDir = Paths.get(fileStorageProperties.getUploadDir()).toAbsolutePath().normalize();
-        String uploadPath = uploadDir.toUri().toString();
+        String baseUri = uploadDir.toUri().toString();
+        if (!baseUri.endsWith("/")) {
+            baseUri += "/";
+        }
 
-        registry.addResourceHandler("/uploads/**")
-                .addResourceLocations(uploadPath);
+        // Only register static resource handlers for public media assets.
+        // Private compliance documents (documents, verifications) are intentionally excluded
+        // and served exclusively via authenticated, signed endpoints.
+        String[] publicCategories = {"products", "covers", "logos", "review-media", "custom-cake-references"};
+        for (String category : publicCategories) {
+            registry.addResourceHandler("/uploads/" + category + "/**")
+                    .addResourceLocations(baseUri + category + "/");
+        }
     }
 
     // CORS is handled by SecurityConfig.java

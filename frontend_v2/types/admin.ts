@@ -49,9 +49,13 @@ export interface AdminShopSummary {
   businessName: string;
   ownerName?: string;
   ownerEmail?: string;
-  shopStatus: 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'REJECTED' | string;
+  shopStatus: 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'REJECTED' | 'DELETED' | string;
   subscriptionStatus?: string;
   registeredAt: string;
+  isOwnerEnabled?: boolean;
+  isMarketplaceRestricted?: boolean;
+  marketplaceRestrictionReason?: string | null;
+  isDeleted?: boolean;
 }
 
 export interface AdminShopDetails {
@@ -66,9 +70,13 @@ export interface AdminShopDetails {
     state?: string;
     pincode?: string;
     fssaiRegistration?: string;
-    status: 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'REJECTED' | string;
+    status: 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'REJECTED' | 'DELETED' | string;
     verificationStatus?: 'PROCESSING' | 'VERIFIED' | 'ACTION_REQUIRED' | 'REJECTED' | string;
     isPureVeg?: boolean;
+    isOwnerEnabled?: boolean;
+    isMarketplaceRestricted?: boolean;
+    marketplaceRestrictionReason?: string | null;
+    isDeleted?: boolean;
     createdAt: string;
     updatedAt: string;
   };

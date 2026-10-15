@@ -317,6 +317,9 @@ export interface ShopSettings {
   mapLocationUrl?: string;
   verificationStatus?: 'PROCESSING' | 'VERIFIED' | 'ACTION_REQUIRED' | 'REJECTED' | string;
   status?: 'ACTIVE' | 'PENDING' | 'SUSPENDED' | 'EXPIRED' | 'INACTIVE' | string;
+  isOwnerEnabled?: boolean;
+  isMarketplaceRestricted?: boolean;
+  marketplaceRestrictionReason?: string | null;
 }
 
 export interface SubscriptionPlanSummary {
@@ -347,6 +350,8 @@ export interface SubscriptionRecord {
   amount: number;
   startDate?: string;
   expiryDate?: string;
+  cancelledAt?: string | null;
+  cancellationReason?: string | null;
   createdAt: string;
   updatedAt: string;
 }

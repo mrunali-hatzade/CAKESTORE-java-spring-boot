@@ -154,6 +154,11 @@ public class CustomerStorefrontService {
             }
             throw new RuntimeException("Shop is currently unavailable");
         }
+
+        // Enforce owner-disabled (vacation mode) and administrative marketplace restriction
+        if (!Boolean.TRUE.equals(shop.getIsOwnerEnabled()) || Boolean.TRUE.equals(shop.getIsMarketplaceRestricted())) {
+            throw new RuntimeException("Shop is currently unavailable");
+        }
         
         // Enforce subscription validation matching ShopAccessValidator
         if (subscriptionRepository == null) {

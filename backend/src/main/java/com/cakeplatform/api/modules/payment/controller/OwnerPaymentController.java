@@ -139,7 +139,7 @@ public class OwnerPaymentController {
     public ResponseEntity<Map<String, Object>> initiateSubscriptionPayment(
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @RequestBody Map<String, Object> payload) {
-        Shop shop = shopAccessValidator.getShopByOwnerId(userDetails.getId());
+        Shop shop = shopAccessValidator.validateBillingAccess(userDetails.getId());
 
         Number planIdNum = (Number) payload.get("planId");
         if (planIdNum == null) {

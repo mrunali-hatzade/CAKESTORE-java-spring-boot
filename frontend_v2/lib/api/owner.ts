@@ -204,6 +204,10 @@ export const ownerApi = {
     return apiClient.put<ShopSettings>('/api/shops/my-shop', data);
   },
 
+  updateOperationalStatus: async (enabled: boolean): Promise<ShopSettings> => {
+    return apiClient.put<ShopSettings>('/api/shops/my-shop/operational-status', { enabled });
+  },
+
   // Payout Details
   getPayoutDetails: async (): Promise<ShopPayoutDetails | null> => {
     try {
@@ -232,6 +236,11 @@ export const ownerApi = {
     } catch {
       return null;
     }
+  },
+
+  cancelSubscription: async (reason?: string): Promise<SubscriptionRecord> => {
+    const payload = reason && reason.trim() ? { reason: reason.trim() } : {};
+    return apiClient.post<SubscriptionRecord>('/api/owner/subscriptions/cancel', payload);
   },
 
   // Stage C: Owner Payments & Invoices

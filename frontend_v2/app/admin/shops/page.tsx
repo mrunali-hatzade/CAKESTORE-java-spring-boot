@@ -15,7 +15,7 @@ import {
   Filter,
   RefreshCw,
 } from 'lucide-react';
-import { getAllShops, updateShopStatus, getShopCounts } from '@/lib/api/admin';
+import { getAllShops, updateShopStatus, updateShopVerification, getShopCounts } from '@/lib/api/admin';
 import { AdminShopSummary } from '@/types/admin';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -25,6 +25,9 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/common/Toast';
+import { BakeryStatusBadge, computeStorefrontAvailability } from '@/components/admin/BakeryStatusBadge';
+import { AdminSuspensionModal } from '@/components/admin/shops/AdminSuspensionModal';
+import { AdminKycRejectionModal } from '@/components/admin/shops/AdminKycRejectionModal';
 
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 
@@ -51,12 +54,34 @@ export default function AdminShopsPage() {
   const [mutatingId, setMutatingId] = useState<number | null>(null);
   const [error, setError] = useState('');
   
-  const [shopCounts, setShopCounts] = useState<{ total: number; active: number; pending: number; suspended: number } | null>(null);
+  const [shopCounts, setShopCounts] = useState<{ total: number; active: number; pending: number; suspended: number; deleted: number } | null>(null);
 
   // Bulk selection state
   const [selectedShopIds, setSelectedShopIds] = useState<number[]>([]);
   const [isBulkMutating, setIsBulkMutating] = useState(false);
   const [bulkConfirm, setBulkConfirm] = useState<{ action: string; label: string } | null>(null);
+
+  // Suspend modal state (handles both single row and bulk suspension)
+  const [suspendModalState, setSuspendModalState] = useState<{
+    isOpen: boolean;
+    shopId?: number;
+    shopName?: string;
+    isBulk: boolean;
+  }>({
+    isOpen: false,
+    isBulk: false,
+  });
+
+  // KYC Rejection modal state (handles both single row and bulk rejection)
+  const [kycRejectModalState, setKycRejectModalState] = useState<{
+    isOpen: boolean;
+    shopId?: number;
+    shopName?: string;
+    isBulk: boolean;
+  }>({
+    isOpen: false,
+    isBulk: false,
+  });
 
   // Sync URL search params with local state
   useEffect(() => {
@@ -148,15 +173,37 @@ export default function AdminShopsPage() {
     };
   }, [fetchShops]);
 
-  const handleBulkAction = async (newStatus: string) => {
+  const handleBulkAction = async (newStatus: string, reason?: string) => {
     if (!selectedShopIds.length) return;
     setIsBulkMutating(true);
     try {
-      await Promise.all(
-        selectedShopIds.map((id) => updateShopStatus(id, newStatus))
+      const results = await Promise.allSettled(
+        selectedShopIds.map((id) => updateShopStatus(id, newStatus, reason?.trim()))
       );
-      toast.success(`Bulk action successful: ${selectedShopIds.length} bakeries updated to ${newStatus}`);
-      setSelectedShopIds([]);
+
+      const successfulIds: number[] = [];
+      const failedIds: number[] = [];
+
+      results.forEach((res, index) => {
+        const id = selectedShopIds[index];
+        if (res.status === 'fulfilled') {
+          successfulIds.push(id);
+        } else {
+          failedIds.push(id);
+        }
+      });
+
+      if (failedIds.length === 0) {
+        toast.success(`Bulk action successful: ${successfulIds.length} bakeries updated to ${newStatus}`);
+        setSelectedShopIds([]);
+      } else if (successfulIds.length === 0) {
+        toast.error(`Bulk action failed for all ${failedIds.length} selected bakeries`);
+      } else {
+        toast.error(`Partial success: ${successfulIds.length} bakeries updated to ${newStatus}, but ${failedIds.length} failed (#${failedIds.join(', #')})`);
+        // Keep failed IDs selected so admin can inspect or retry
+        setSelectedShopIds(failedIds);
+      }
+
       fetchShops(true);
     } catch (err: any) {
       toast.error(err.message || 'Bulk action failed');
@@ -181,10 +228,21 @@ export default function AdminShopsPage() {
     }
   };
 
-  const handleStatusChange = async (shopId: number, newStatus: string) => {
+  const handleStatusChange = async (shopId: number, newStatus: string, reason?: string) => {
+    if (newStatus === 'SUSPENDED') {
+      const targetShop = shops.find(s => s.shopId === shopId);
+      setSuspendModalState({
+        isOpen: true,
+        shopId,
+        shopName: targetShop?.businessName,
+        isBulk: false,
+      });
+      return;
+    }
+
     setMutatingId(shopId);
     try {
-      await updateShopStatus(shopId, newStatus);
+      await updateShopStatus(shopId, newStatus, reason?.trim());
       toast.success(`Bakery #${shopId} status changed to ${newStatus}`);
       // Optimistic update
       setShops((prev) =>
@@ -197,24 +255,112 @@ export default function AdminShopsPage() {
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    const s = status.toUpperCase();
-    if (s === 'ACTIVE') {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          ACTIVE • STORE LIVE
-        </span>
-      );
+  const handleConfirmSuspension = async (reason: string) => {
+    if (!reason || !reason.trim()) {
+      toast.error('Suspension reason is mandatory and cannot be blank.');
+      return;
     }
-    if (s === 'PENDING' || s === 'PENDING_APPROVAL') return <Badge variant="warning" size="sm">Pending Approval</Badge>;
-    if (s === 'SUSPENDED') return <Badge variant="error" size="sm">Suspended</Badge>;
-    if (s === 'REJECTED') return <Badge variant="default" size="sm">Rejected</Badge>;
-    if (s === 'DELETED') return <Badge variant="default" size="sm" className="bg-slate-100 text-slate-600 border-slate-200">Deleted</Badge>;
-    return <Badge variant="default" size="sm">{status}</Badge>;
+
+    if (suspendModalState.isBulk) {
+      await handleBulkAction('SUSPENDED', reason);
+      setSuspendModalState({ isOpen: false, isBulk: false });
+    } else if (suspendModalState.shopId) {
+      const shopId = suspendModalState.shopId;
+      setMutatingId(shopId);
+      try {
+        await updateShopStatus(shopId, 'SUSPENDED', reason.trim());
+        toast.success(`Bakery #${shopId} suspended successfully`);
+        setShops((prev) =>
+          prev.map((s) => (s.shopId === shopId ? { ...s, shopStatus: 'SUSPENDED' } : s))
+        );
+        setSuspendModalState({ isOpen: false, isBulk: false });
+        fetchShops(true);
+      } catch (err: any) {
+        toast.error(err.message || 'Failed to suspend bakery');
+      } finally {
+        setMutatingId(null);
+      }
+    }
   };
 
-  if (isLoading) return <LoadingState message="Loading bakery directory & compliance registry..." />;
+  const handleBulkKycAction = async (action: 'APPROVE' | 'REJECT', reason?: string) => {
+    if (!selectedShopIds.length) return;
+    setIsBulkMutating(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedShopIds.map((id) => updateShopVerification(id, action, reason?.trim()))
+      );
+
+      const successfulIds: number[] = [];
+      const failedIds: number[] = [];
+
+      results.forEach((res, index) => {
+        const id = selectedShopIds[index];
+        if (res.status === 'fulfilled') {
+          successfulIds.push(id);
+        } else {
+          failedIds.push(id);
+        }
+      });
+
+      const actionLabel = action === 'APPROVE' ? 'verified' : 'rejected';
+      if (failedIds.length === 0) {
+        toast.success(`Bulk KYC review successful: ${successfulIds.length} bakeries marked as ${actionLabel}`);
+        setSelectedShopIds([]);
+      } else if (successfulIds.length === 0) {
+        toast.error(`Bulk KYC review failed for all ${failedIds.length} selected bakeries`);
+      } else {
+        toast.error(`Partial success: ${successfulIds.length} bakeries marked as ${actionLabel}, but ${failedIds.length} failed (#${failedIds.join(', #')})`);
+        setSelectedShopIds(failedIds);
+      }
+
+      fetchShops(true);
+    } catch (err: any) {
+      toast.error(err.message || 'Bulk KYC review failed');
+    } finally {
+      setIsBulkMutating(false);
+    }
+  };
+
+  const handleConfirmKycRejection = async (reason: string) => {
+    if (!reason || !reason.trim()) {
+      toast.error('Rejection reason is mandatory and cannot be blank.');
+      return;
+    }
+
+    if (kycRejectModalState.isBulk) {
+      await handleBulkKycAction('REJECT', reason.trim());
+      setKycRejectModalState({ isOpen: false, isBulk: false });
+    } else if (kycRejectModalState.shopId) {
+      const shopId = kycRejectModalState.shopId;
+      setMutatingId(shopId);
+      try {
+        await updateShopVerification(shopId, 'REJECT', reason.trim());
+        toast.success(`Bakery #${shopId} verification status marked as REJECTED`);
+        setShops((prev) =>
+          prev.map((s) => (s.shopId === shopId ? { ...s, shopStatus: 'REJECTED' } : s))
+        );
+        setKycRejectModalState({ isOpen: false, isBulk: false });
+        fetchShops(true);
+      } catch (err: any) {
+        toast.error(err.message || 'Failed to reject verification');
+      } finally {
+        setMutatingId(null);
+      }
+    }
+  };
+
+  const getStatusBadge = (shop: AdminShopSummary) => {
+    return (
+      <BakeryStatusBadge
+        shopStatus={shop.shopStatus}
+        subscriptionStatus={shop.subscriptionStatus}
+        isOwnerEnabled={shop.isOwnerEnabled}
+        isMarketplaceRestricted={shop.isMarketplaceRestricted}
+        isDeleted={shop.isDeleted}
+      />
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -287,7 +433,7 @@ export default function AdminShopsPage() {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Deleted{activeTab === 'DELETED' && totalElements > 0 ? ` (${totalElements})` : ''}
+            Deleted{shopCounts?.deleted !== undefined ? ` (${shopCounts.deleted})` : ''}
           </button>
         </div>
 
@@ -323,7 +469,7 @@ export default function AdminShopsPage() {
               variant="danger"
               size="sm"
               disabled={isBulkMutating}
-              onClick={() => setBulkConfirm({ action: 'SUSPENDED', label: 'suspend' })}
+              onClick={() => setSuspendModalState({ isOpen: true, isBulk: true })}
               className="text-xs px-3 py-1.5"
             >
               Bulk Suspend
@@ -332,7 +478,7 @@ export default function AdminShopsPage() {
               variant="ghost"
               size="sm"
               disabled={isBulkMutating}
-              onClick={() => setBulkConfirm({ action: 'REJECTED', label: 'reject' })}
+              onClick={() => setKycRejectModalState({ isOpen: true, isBulk: true })}
               className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 text-xs px-3 py-1.5 bg-white"
             >
               Bulk Reject
@@ -347,7 +493,11 @@ export default function AdminShopsPage() {
       {error && (<div className='p-4 m-4 bg-red-100 text-red-800 border border-red-300 rounded-lg whitespace-pre-wrap'><h3 className='font-bold'>Error loading shops:</h3><p>{error}</p></div>)}
 
       {/* Bakeries Table */}
-      {shops.length === 0 ? (
+      {isLoading ? (
+        <div className="py-20">
+          <LoadingState message="Loading bakery directory & compliance registry..." />
+        </div>
+      ) : shops.length === 0 ? (
         <EmptyState
           icon={<Store className="w-8 h-8 text-slate-400" />}
           title="No Bakeries Found"
@@ -452,58 +602,102 @@ export default function AdminShopsPage() {
 
                       {/* Status */}
                       <td className="py-4 px-4">
-                        {getStatusBadge(shop.shopStatus)}
+                        {getStatusBadge(shop)}
                       </td>
 
                       {/* Action Buttons */}
                       <td className="py-4 px-5 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Link href={`/shop/${shop.shopId}`} target="_blank" rel="noopener noreferrer">
-                            <Button variant="ghost" size="sm" className="text-xs text-indigo-600 hover:text-indigo-800 gap-1">
-                              <Store className="w-3.5 h-3.5" />
-                              <span>View Storefront</span>
-                            </Button>
-                          </Link>
+                          {shop.shopStatus !== 'DELETED' && (() => {
+                            const availability = computeStorefrontAvailability({
+                              shopStatus: shop.shopStatus,
+                              subscriptionStatus: shop.subscriptionStatus,
+                              isOwnerEnabled: shop.isOwnerEnabled,
+                              isMarketplaceRestricted: shop.isMarketplaceRestricted,
+                              isDeleted: shop.isDeleted,
+                            });
+
+                            return (
+                              <Link
+                                href={`/shop/${shop.shopId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={
+                                  availability.isStoreLive
+                                    ? 'Open live customer storefront in new tab'
+                                    : 'Storefront currently unavailable to customers (Admin preview will show offline state)'
+                                }
+                              >
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className={`text-xs gap-1 ${
+                                    availability.isStoreLive
+                                      ? 'text-indigo-600 hover:text-indigo-800'
+                                      : 'text-slate-500 hover:text-slate-700'
+                                  }`}
+                                >
+                                  <Store className="w-3.5 h-3.5" />
+                                  <span>{availability.isStoreLive ? 'View Storefront' : 'Preview Storefront'}</span>
+                                </Button>
+                              </Link>
+                            );
+                          })()}
                           <Link href={`/admin/shops/${shop.shopId}`}>
                             <Button variant="outline" size="sm" className="text-xs">
-                              Manage
+                              {shop.shopStatus === 'DELETED' ? 'Inspect Archive' : 'Manage'}
                             </Button>
                           </Link>
 
-                          {shop.shopStatus !== 'ACTIVE' && shop.shopStatus !== 'DELETED' && (
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              disabled={isMutating}
-                              onClick={() => handleStatusChange(shop.shopId, 'ACTIVE')}
-                              className="bg-emerald-600 hover:bg-emerald-700 border-emerald-700 text-xs px-2.5 py-1"
-                            >
-                              Approve
-                            </Button>
-                          )}
+                          {shop.shopStatus === 'DELETED' ? (
+                            <span className="text-[11px] font-semibold text-slate-400 italic px-2">
+                              Archived
+                            </span>
+                          ) : (
+                            <>
+                              {shop.shopStatus !== 'ACTIVE' && (
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  disabled={isMutating}
+                                  onClick={() => handleStatusChange(shop.shopId, 'ACTIVE')}
+                                  className="bg-emerald-600 hover:bg-emerald-700 border-emerald-700 text-xs px-2.5 py-1"
+                                >
+                                  Approve
+                                </Button>
+                              )}
 
-                          {shop.shopStatus === 'ACTIVE' && (
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              disabled={isMutating}
-                              onClick={() => handleStatusChange(shop.shopId, 'SUSPENDED')}
-                              className="text-xs px-2.5 py-1"
-                            >
-                              Suspend
-                            </Button>
-                          )}
+                              {shop.shopStatus === 'ACTIVE' && (
+                                <Button
+                                  variant="danger"
+                                  size="sm"
+                                  disabled={isMutating}
+                                  onClick={() => handleStatusChange(shop.shopId, 'SUSPENDED')}
+                                  className="text-xs px-2.5 py-1"
+                                >
+                                  Suspend
+                                </Button>
+                              )}
 
-                          {shop.shopStatus === 'PENDING' && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={isMutating}
-                              onClick={() => handleStatusChange(shop.shopId, 'REJECTED')}
-                              className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 text-xs px-2 py-1"
-                            >
-                              Reject
-                            </Button>
+                              {shop.shopStatus === 'PENDING' && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={isMutating}
+                                  onClick={() =>
+                                    setKycRejectModalState({
+                                      isOpen: true,
+                                      shopId: shop.shopId,
+                                      shopName: shop.businessName,
+                                      isBulk: false,
+                                    })
+                                  }
+                                  className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 text-xs px-2 py-1"
+                                >
+                                  Reject
+                                </Button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
@@ -571,6 +765,46 @@ export default function AdminShopsPage() {
           </div>
         </Modal>
       )}
+
+      {/* Suspension Confirmation Modal (handles single row and bulk suspension) */}
+      <AdminSuspensionModal
+        isOpen={suspendModalState.isOpen}
+        onClose={() => setSuspendModalState({ isOpen: false, isBulk: false })}
+        onConfirm={handleConfirmSuspension}
+        isMutating={suspendModalState.isBulk ? isBulkMutating : mutatingId !== null}
+        title={
+          suspendModalState.isBulk
+            ? `Bulk Suspend ${selectedShopIds.length} Bakery Storefronts`
+            : suspendModalState.shopName
+            ? `Suspend ${suspendModalState.shopName}`
+            : 'Suspend Bakery Storefront'
+        }
+        description={
+          suspendModalState.isBulk
+            ? `Immediately revoke public storefront access and suspend operational permissions for all ${selectedShopIds.length} selected bakeries.`
+            : 'Immediately revoke public storefront access and suspend operational permissions.'
+        }
+      />
+
+      {/* KYC Rejection Modal (handles single row and bulk verification rejection) */}
+      <AdminKycRejectionModal
+        isOpen={kycRejectModalState.isOpen}
+        onClose={() => setKycRejectModalState({ isOpen: false, isBulk: false })}
+        onConfirm={handleConfirmKycRejection}
+        isMutating={kycRejectModalState.isBulk ? isBulkMutating : mutatingId !== null}
+        title={
+          kycRejectModalState.isBulk
+            ? `Bulk Reject KYC Verification (${selectedShopIds.length} Bakeries)`
+            : kycRejectModalState.shopName
+            ? `Reject Verification: ${kycRejectModalState.shopName}`
+            : 'Reject Bakery Verification'
+        }
+        description={
+          kycRejectModalState.isBulk
+            ? `Provide a clear, actionable rejection reason explaining what business compliance issues or document discrepancies must be resolved for all ${selectedShopIds.length} selected bakeries.`
+            : 'Provide a clear, actionable rejection reason explaining what business compliance issues or document discrepancies must be resolved.'
+        }
+      />
     </div>
   );
 }

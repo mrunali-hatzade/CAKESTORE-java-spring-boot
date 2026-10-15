@@ -50,6 +50,67 @@ public class SubscriptionService {
     }
 
     @Transactional
+    public Subscription cancelSubscription(Long userId, String reason) {
+        Shop shop = getShopByOwnerId(userId);
+
+        Subscription activeSub = subscriptionRepository
+                .findFirstByShopIdAndStatusOrderByCreatedAtDesc(shop.getId(), SubscriptionStatus.ACTIVE)
+                .orElseThrow(() -> new IllegalStateException("No active subscription found to cancel for your bakery."));
+
+        // Idempotency: if already scheduled for cancellation, do not overwrite or duplicate
+        if (activeSub.getCancelledAt() != null) {
+            log.info("Subscription ID {} for Shop ID {} is already scheduled for cancellation at period end.", activeSub.getId(), shop.getId());
+            return activeSub;
+        }
+
+        String normalizedReason = (reason != null && !reason.trim().isEmpty())
+                ? reason.trim()
+                : "Cancellation requested by bakery owner";
+        if (normalizedReason.length() > 500) {
+            normalizedReason = normalizedReason.substring(0, 500);
+        }
+
+        activeSub.setCancelledAt(LocalDateTime.now());
+        activeSub.setCancellationReason(normalizedReason);
+
+        Subscription savedSub = subscriptionRepository.save(activeSub);
+
+        // Audit Logging
+        if (activityLogger != null) {
+            activityLogger.logActivity(
+                    userId,
+                    shop.getId(),
+                    "SUBSCRIPTION_CANCELLATION_SCHEDULED",
+                    "SUBSCRIPTION",
+                    savedSub.getId(),
+                    "Cancellation scheduled at period end. Reason: " + normalizedReason
+            );
+        }
+
+        // Owner Notification (Confirming access preserved until expiryDate)
+        if (notificationService != null && shop.getOwner() != null) {
+            String expiryStr = (savedSub.getExpiryDate() != null)
+                    ? savedSub.getExpiryDate().toLocalDate().toString()
+                    : "the end of your current billing period";
+            String message = String.format(
+                    "Your subscription cancellation request for %s has been recorded. Your bakery access and storefront remain active until %s. No further renewals will occur.",
+                    shop.getBusinessName(),
+                    expiryStr
+            );
+            notificationService.createNotification(
+                    shop.getOwner(),
+                    com.cakeplatform.api.modules.notification.NotificationType.ADMIN_MESSAGE,
+                    "Subscription Cancellation Scheduled",
+                    message,
+                    savedSub.getId().toString(),
+                    true
+            );
+        }
+
+        return savedSub;
+    }
+
+    @Transactional
     public Payment processSuccessfulPayment(Long userId, SubscriptionPlan plan, String providerOrderId, String providerPaymentId, Payment paymentInfo) {
         Shop shop = getShopByOwnerId(userId);
 
@@ -89,11 +150,21 @@ public class SubscriptionService {
 
         activityLogger.logActivity(userId, shop.getId(), "PAYMENT_COMPLETED", "PAYMENT", savedPaymentId, "Amount: " + amount);
 
-        // 3. Update Shop Status: Payment success is the authoritative activation event (Rule 2 & 4)
-        if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED) {
+        // 3. Update Shop Status: Precise Renewal Restoration Rules (Plan Section 6.6)
+        if (shop.isDeleted()) {
+            log.warn("Shop {} is soft-deleted. Subscription payment processed, but shop remains deleted.", shop.getId());
+        } else if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED) {
             log.info("Shop {} is SUSPENDED by admin. Subscription renewed but shop remains SUSPENDED.", shop.getId());
-        } else {
+        } else if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.INACTIVE) {
+            // Legacy INACTIVE shops: Subscription activates, but shop remains INACTIVE until explicit owner re-opening.
+            // Preserves isOwnerEnabled and isMarketplaceRestricted flags.
+            log.info("Shop {} is legacy INACTIVE. Subscription renewed; shop status remains INACTIVE.", shop.getId());
+        } else if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.EXPIRED || shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.PENDING) {
+            // Eligible expired or pending onboarding shop: restore to ACTIVE
             shopStatusManager.activateShop(shop.getId(), userId);
+        } else if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.ACTIVE) {
+            // Already ACTIVE shop renewing early: preserve ACTIVE status and keep existing operational flags intact
+            log.info("Shop {} is already ACTIVE. Subscription extended; preserving existing operational flags.", shop.getId());
         }
 
         if (storefrontCacheService != null && shop.getId() != null) {
@@ -147,8 +218,11 @@ public class SubscriptionService {
         subscription.setStatus(SubscriptionStatus.EXPIRED);
         subscriptionRepository.save(subscription);
         
-        // Final CakeStore V1 Rule: shop.status becomes EXPIRED (unless SUSPENDED by admin)
-        if (shop.getStatus() != com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED) {
+        // Final CakeStore Rule: Only ACTIVE shops become EXPIRED when no active subscription remains.
+        // Soft-deleted, suspended, and legacy INACTIVE shops strictly preserve their distinct statuses.
+        if (!shop.isDeleted()
+                && shop.getStatus() != com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED 
+                && shop.getStatus() != com.cakeplatform.api.modules.shop.ShopStatus.INACTIVE) {
             boolean hasActiveSubscription = subscriptionRepository.findFirstByShopIdAndStatusOrderByCreatedAtDesc(shop.getId(), SubscriptionStatus.ACTIVE).isPresent();
             if (!hasActiveSubscription) {
                 shop.setStatus(com.cakeplatform.api.modules.shop.ShopStatus.EXPIRED);

@@ -9,13 +9,17 @@ interface AdminKycRejectionModalProps {
   onClose: () => void;
   onConfirm: (reason: string) => Promise<void> | void;
   isMutating: boolean;
+  title?: string;
+  description?: string;
 }
 
 export function AdminKycRejectionModal({
   isOpen,
   onClose,
   onConfirm,
-  isMutating
+  isMutating,
+  title = "Reject Verification Documents",
+  description = "Notify the bakery owner why their verification requires correction."
 }: AdminKycRejectionModalProps) {
   const [kycRejectionReason, setKycRejectionReason] = useState('');
   const [kycRejectionError, setKycRejectionError] = useState<string | null>(null);
@@ -46,8 +50,8 @@ export function AdminKycRejectionModal({
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      title="Reject Verification Documents"
-      description="Notify the bakery owner why their verification requires correction."
+      title={title}
+      description={description}
     >
       <div className="space-y-4">
         <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2.5">

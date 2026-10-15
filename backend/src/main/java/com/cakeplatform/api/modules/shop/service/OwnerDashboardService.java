@@ -37,7 +37,7 @@ public class OwnerDashboardService {
     private final com.cakeplatform.api.modules.security.ShopAccessValidator shopAccessValidator;
 
         public OwnerDashboardStatsResponse getDashboardStats(Long ownerId) {
-        Shop shop = shopAccessValidator.getValidShopForOwner(ownerId);
+        Shop shop = shopAccessValidator.validateDashboardAccess(ownerId);
         Long shopId = shop.getId();
 
         OwnerDashboardStatsResponse stats = new OwnerDashboardStatsResponse();

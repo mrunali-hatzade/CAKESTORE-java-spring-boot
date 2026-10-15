@@ -103,6 +103,15 @@ public class Shop {
     @Column(name = "inactive_reason", length = 500)
     private String inactiveReason;
 
+    @Column(name = "is_owner_enabled", nullable = false)
+    private Boolean isOwnerEnabled = true;
+
+    @Column(name = "is_marketplace_restricted", nullable = false)
+    private Boolean isMarketplaceRestricted = false;
+
+    @Column(name = "marketplace_restriction_reason", length = 500)
+    private String marketplaceRestrictionReason;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

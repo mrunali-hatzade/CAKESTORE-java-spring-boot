@@ -22,6 +22,14 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
     
     @Query(value = "SELECT COUNT(*) FROM shops WHERE is_deleted = true", nativeQuery = true)
     long countDeletedShops();
+
+    @Query(value = "SELECT * FROM shops WHERE id = :id", nativeQuery = true)
+    java.util.Optional<Shop> findByIdIncludingDeleted(@Param("id") Long id);
+
+    @Query("SELECT COUNT(s) FROM Shop s WHERE s.status != com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED " +
+           "AND s.id NOT IN (SELECT sub.shop.id FROM Subscription sub WHERE sub.status = com.cakeplatform.api.modules.subscription.SubscriptionStatus.ACTIVE) " +
+           "AND s.id NOT IN (SELECT sub.shop.id FROM Subscription sub WHERE sub.status = com.cakeplatform.api.modules.subscription.SubscriptionStatus.EXPIRED)")
+    long countBakeriesAwaitingInitialSubscription();
     
     @Query("SELECT s FROM Shop s WHERE " +
            "(:status IS NULL OR s.status = :status) AND " +

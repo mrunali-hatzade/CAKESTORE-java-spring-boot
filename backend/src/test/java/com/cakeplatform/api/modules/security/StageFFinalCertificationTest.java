@@ -117,7 +117,8 @@ public class StageFFinalCertificationTest {
     @Test
     @DisplayName("F5: Owner A cannot read, modify, or delete Shop B's orders (IDOR Defense)")
     void testMultiTenant_OrderIdorProtection() {
-        when(shopAccessValidator.getValidShopForOwner(101L)).thenReturn(shopA);
+        when(shopAccessValidator.validateOrderArchiveAccess(101L)).thenReturn(shopA);
+        when(shopAccessValidator.validateOrderFulfillmentAccess(101L)).thenReturn(shopA);
         // Order 999 belongs to Shop B (shopId = 2L), not Shop A (shopId = 1L)
         when(orderRepository.findByIdAndShopId(999L, 1L)).thenReturn(Optional.empty());
 
@@ -137,7 +138,7 @@ public class StageFFinalCertificationTest {
     @Test
     @DisplayName("F5: Owner A can only retrieve orders strictly belonging to Shop A")
     void testMultiTenant_OrderListScopedToShop() {
-        when(shopAccessValidator.getValidShopForOwner(101L)).thenReturn(shopA);
+        when(shopAccessValidator.validateOrderArchiveAccess(101L)).thenReturn(shopA);
 
         Order orderA = new Order();
         orderA.setId(10L);
@@ -182,7 +183,7 @@ public class StageFFinalCertificationTest {
     @Test
     @DisplayName("F11: Valid order status transitions are accepted and logged")
     void testOrderStateMachine_ValidStatusTransition() {
-        when(shopAccessValidator.getValidShopForOwner(101L)).thenReturn(shopA);
+        when(shopAccessValidator.validateOrderFulfillmentAccess(101L)).thenReturn(shopA);
 
         Order order = new Order();
         order.setId(50L);

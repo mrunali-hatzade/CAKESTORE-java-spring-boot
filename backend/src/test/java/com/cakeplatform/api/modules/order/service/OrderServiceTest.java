@@ -81,7 +81,7 @@ class OrderServiceTest {
     @Test
     @DisplayName("Valid transition updates status and saves order")
     void testValidTransition() {
-        when(shopAccessValidator.getValidShopForOwner(OWNER_ID)).thenReturn(shop);
+        when(shopAccessValidator.validateOrderFulfillmentAccess(OWNER_ID)).thenReturn(shop);
         when(orderRepository.findByIdAndShopId(ORDER_ID, SHOP_ID)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -96,7 +96,7 @@ class OrderServiceTest {
     @DisplayName("Invalid transition throws exception and does not save")
     void testInvalidTransition() {
         order.setOrderStatus("DELIVERED");
-        when(shopAccessValidator.getValidShopForOwner(OWNER_ID)).thenReturn(shop);
+        when(shopAccessValidator.validateOrderFulfillmentAccess(OWNER_ID)).thenReturn(shop);
         when(orderRepository.findByIdAndShopId(ORDER_ID, SHOP_ID)).thenReturn(Optional.of(order));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> 
@@ -112,7 +112,7 @@ class OrderServiceTest {
     @DisplayName("Terminal states cannot be modified")
     void testTerminalStateCannotTransition() {
         order.setOrderStatus("COMPLETED");
-        when(shopAccessValidator.getValidShopForOwner(OWNER_ID)).thenReturn(shop);
+        when(shopAccessValidator.validateOrderFulfillmentAccess(OWNER_ID)).thenReturn(shop);
         when(orderRepository.findByIdAndShopId(ORDER_ID, SHOP_ID)).thenReturn(Optional.of(order));
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, () -> 
@@ -128,7 +128,7 @@ class OrderServiceTest {
     @Test
     @DisplayName("Update payment to PAID sets paidAt and transaction ID")
     void testUpdatePaymentToPaid() {
-        when(shopAccessValidator.getValidShopForOwner(OWNER_ID)).thenReturn(shop);
+        when(shopAccessValidator.validateOrderFulfillmentAccess(OWNER_ID)).thenReturn(shop);
         when(orderRepository.findByIdAndShopId(ORDER_ID, SHOP_ID)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -145,7 +145,7 @@ class OrderServiceTest {
     void testOnlinePaymentCannotRevertToPending() {
         order.setPaymentStatus("PAID");
         order.setPaymentMethod("RAZORPAY");
-        when(shopAccessValidator.getValidShopForOwner(OWNER_ID)).thenReturn(shop);
+        when(shopAccessValidator.validateOrderFulfillmentAccess(OWNER_ID)).thenReturn(shop);
         when(orderRepository.findByIdAndShopId(ORDER_ID, SHOP_ID)).thenReturn(Optional.of(order));
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, () -> 
@@ -156,12 +156,58 @@ class OrderServiceTest {
         verify(orderRepository, never()).save(any());
     }
 
+    @Test
+    @DisplayName("Updating payment to REFUNDED dispatches truthful manual refund email and SMS")
+    void testUpdatePaymentToRefunded_TruthfulNotifications() {
+        order.setOrderStatus("CANCELLED");
+        order.setPaymentStatus("PAID");
+        order.setTotalAmount(new java.math.BigDecimal("750.00"));
+        when(shopAccessValidator.validateOrderFulfillmentAccess(OWNER_ID)).thenReturn(shop);
+        when(orderRepository.findByIdAndShopId(ORDER_ID, SHOP_ID)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(i -> i.getArgument(0));
+
+        Order result = orderService.updatePaymentStatus(OWNER_ID, ORDER_ID, "REFUNDED", "REFUND_ISSUED");
+
+        assertEquals("REFUNDED", result.getPaymentStatus());
+        verify(orderRepository).save(order);
+
+        // Verify truthful manual-refund email wording
+        verify(emailService).sendEmail(
+                eq("customer@test.com"),
+                eq("Manual Refund Recorded: Order #ORD-123 at Test Bakery"),
+                contains("A manual refund of ₹750.00 for your cancelled order #ORD-123 at Test Bakery has been recorded by the bakery. If you have questions regarding your refund settlement, please contact the bakery directly.")
+        );
+
+        // Verify truthful manual-refund SMS wording
+        verify(smsService).sendSms(
+                eq("1234567890"),
+                eq("Manual refund recorded: ₹750.00 for order #ORD-123 at Test Bakery. Contact the bakery for settlement details.")
+        );
+    }
+
+    @Test
+    @DisplayName("Already REFUNDED order throws exception and prevents duplicate refund or status changes")
+    void testAlreadyRefundedOrderCannotBeChanged() {
+        order.setPaymentStatus("REFUNDED");
+        when(shopAccessValidator.validateOrderFulfillmentAccess(OWNER_ID)).thenReturn(shop);
+        when(orderRepository.findByIdAndShopId(ORDER_ID, SHOP_ID)).thenReturn(Optional.of(order));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
+            orderService.updatePaymentStatus(OWNER_ID, ORDER_ID, "PAID", "ATTEMPT_REOPEN")
+        );
+
+        assertTrue(ex.getMessage().contains("already REFUNDED and cannot be changed"));
+        verify(orderRepository, never()).save(any());
+        verify(emailService, never()).sendEmail(anyString(), anyString(), anyString());
+        verify(smsService, never()).sendSms(anyString(), anyString());
+    }
+
     // --- 3. Tenant Isolation ---
 
     @Test
     @DisplayName("Accessing an order not belonging to owner's shop throws exception")
     void testTenantIsolation() {
-        when(shopAccessValidator.getValidShopForOwner(OWNER_ID)).thenReturn(shop);
+        when(shopAccessValidator.validateOrderArchiveAccess(OWNER_ID)).thenReturn(shop);
         when(orderRepository.findByIdAndShopId(ORDER_ID, SHOP_ID)).thenReturn(Optional.empty());
 
         RuntimeException ex = assertThrows(RuntimeException.class, () -> 
@@ -179,7 +225,7 @@ class OrderServiceTest {
         // Activate Spring transaction sync
         TransactionSynchronizationManager.initSynchronization();
 
-        when(shopAccessValidator.getValidShopForOwner(OWNER_ID)).thenReturn(shop);
+        when(shopAccessValidator.validateOrderFulfillmentAccess(OWNER_ID)).thenReturn(shop);
         when(orderRepository.findByIdAndShopId(ORDER_ID, SHOP_ID)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -203,7 +249,7 @@ class OrderServiceTest {
     void testNotificationTransactionSafety_Rollback() {
         TransactionSynchronizationManager.initSynchronization();
 
-        when(shopAccessValidator.getValidShopForOwner(OWNER_ID)).thenReturn(shop);
+        when(shopAccessValidator.validateOrderFulfillmentAccess(OWNER_ID)).thenReturn(shop);
         when(orderRepository.findByIdAndShopId(ORDER_ID, SHOP_ID)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(i -> i.getArgument(0));
 

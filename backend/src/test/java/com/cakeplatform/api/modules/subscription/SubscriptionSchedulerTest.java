@@ -67,4 +67,76 @@ class SubscriptionSchedulerTest {
         verify(subscriptionService).expireSubscription(10L);
         verify(subscriptionService, never()).expireSubscription(20L);
     }
+
+    @Test
+    void testRenewalRemindersSuppressedForCancelledSubscriptions() {
+        Shop shop = new Shop();
+        shop.setId(1L);
+        shop.setBusinessName("Sweet Delights");
+        com.cakeplatform.api.modules.user.User owner = new com.cakeplatform.api.modules.user.User();
+        owner.setId(99L);
+        shop.setOwner(owner);
+
+        // Sub 1: 3 days remaining, cancelledAt is SET -> Should NOT receive reminder
+        Subscription cancelledExpiring = new Subscription();
+        cancelledExpiring.setId(30L);
+        cancelledExpiring.setStatus(SubscriptionStatus.ACTIVE);
+        cancelledExpiring.setExpiryDate(LocalDateTime.now().plusDays(3));
+        cancelledExpiring.setCancelledAt(LocalDateTime.now().minusDays(2));
+        cancelledExpiring.setShop(shop);
+
+        // Sub 2: 3 days remaining, cancelledAt is NULL -> SHOULD receive reminder
+        Subscription activeExpiring = new Subscription();
+        activeExpiring.setId(31L);
+        activeExpiring.setStatus(SubscriptionStatus.ACTIVE);
+        activeExpiring.setExpiryDate(LocalDateTime.now().plusDays(3));
+        activeExpiring.setCancelledAt(null);
+        activeExpiring.setShop(shop);
+
+        when(subscriptionRepository.findByStatus(SubscriptionStatus.ACTIVE))
+                .thenReturn(List.of(cancelledExpiring, activeExpiring));
+
+        subscriptionScheduler.processSubscriptionExpiries();
+
+        // Sub 2 (active) receives notification
+        verify(notificationService, times(1)).createNotification(
+                eq(owner),
+                eq(com.cakeplatform.api.modules.notification.NotificationType.SUBSCRIPTION_EXPIRING),
+                eq("Subscription Expiring Soon"),
+                contains("expiring in 3 days"),
+                eq("31"),
+                eq(true)
+        );
+
+        // Sub 1 (cancelled) did NOT trigger notification with ID "30"
+        verify(notificationService, never()).createNotification(
+                any(),
+                any(),
+                any(),
+                any(),
+                eq("30"),
+                anyBoolean()
+        );
+    }
+
+    @Test
+    void testCancelledSubscriptionStillExpiresNormallyWhenTermEnds() {
+        Shop shop = new Shop();
+        shop.setId(2L);
+
+        Subscription cancelledExpired = new Subscription();
+        cancelledExpired.setId(40L);
+        cancelledExpired.setStatus(SubscriptionStatus.ACTIVE);
+        cancelledExpired.setExpiryDate(LocalDateTime.now().minusDays(1)); // Term ended
+        cancelledExpired.setCancelledAt(LocalDateTime.now().minusDays(10));
+        cancelledExpired.setShop(shop);
+
+        when(subscriptionRepository.findByStatus(SubscriptionStatus.ACTIVE))
+                .thenReturn(List.of(cancelledExpired));
+
+        subscriptionScheduler.processSubscriptionExpiries();
+
+        // Expire subscription must still be called for cancelled subscription whose term ended
+        verify(subscriptionService).expireSubscription(40L);
+    }
 }

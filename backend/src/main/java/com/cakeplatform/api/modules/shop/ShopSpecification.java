@@ -51,6 +51,10 @@ public class ShopSpecification {
             // 1. ALWAYS filter strictly by ACTIVE status. Never expose PENDING, INACTIVE, or SUSPENDED.
             predicates.add(cb.equal(root.get("status"), ShopStatus.ACTIVE));
 
+            // 1b. Enforce owner enabled and marketplace restriction predicates (decoupled lifecycle)
+            predicates.add(cb.isTrue(root.get("isOwnerEnabled")));
+            predicates.add(cb.isFalse(root.get("isMarketplaceRestricted")));
+
             // 2. State filter (case-insensitive, trimmed)
             if (StringUtils.hasText(state) && !isAllFilter(state)) {
                 predicates.add(cb.equal(cb.lower(cb.trim(root.get("state"))), state.trim().toLowerCase()));

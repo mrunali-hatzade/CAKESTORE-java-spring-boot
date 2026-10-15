@@ -23,10 +23,58 @@ function OwnerLayoutContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout, isAuthenticated, isLoading } = useAuth();
-  const { shop, subscription, refreshDashboard, isRefreshing, refreshStatus, refreshError, pendingOrdersCount, pendingCustomCakesCount, pendingInquiriesCount, pendingReviewsCount } = useOwner();
+  const { shop, subscription, refreshDashboard, isRefreshing, refreshStatus, refreshError, pendingOrdersCount, pendingCustomCakesCount, pendingInquiriesCount, pendingReviewsCount, setOperationalStatus } = useOwner();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [isTogglingOperational, setIsTogglingOperational] = useState(false);
+  const [operationalError, setOperationalError] = useState<string | null>(null);
+
+  // Compute whether dashboard access should be locked by full-page modal
+  // Permitted pages (billing & settings) are never locked.
+  // SUSPENDED always locks dashboard.
+  // PENDING always locks dashboard (requires initial subscription).
+  // EXPIRED locks dashboard (requires subscription renewal).
+  // INACTIVE: If owner-disabled while subscription is active, dashboard is NOT locked (vacation mode).
+  // INACTIVE with no active subscription or expired subscription locks dashboard.
+  // isMarketplaceRestricted alone NEVER locks dashboard.
+  const isDashboardLocked = React.useMemo(() => {
+    if (!shop) return false;
+    // Routes always exempt for all states (except suspended which can still view settings)
+    const isAlwaysExempt = pathname.includes('/subscription') || pathname.includes('/settings');
+    if (isAlwaysExempt) return false;
+
+    // SUSPENDED always locks dashboard across all operational routes including orders
+    if (shop.status === 'SUSPENDED') return true;
+
+    // PENDING always locks dashboard (requires initial onboarding subscription)
+    if (shop.status === 'PENDING') return true;
+
+    // EXPIRED: Under approved lifecycle domain rules (Domain 3 & Domain 6), expired owners
+    // retain access to in-progress order fulfillment and order history (/orders).
+    // All other operational routes (overview, products, gallery, delivery slots, analytics, etc.) remain locked.
+    if (shop.status === 'EXPIRED') {
+      if (pathname.includes('/orders')) {
+        return false;
+      }
+      return true;
+    }
+
+    if (shop.status === 'INACTIVE') {
+      const isSubActive = subscription?.status === 'ACTIVE' && Boolean(subscription?.expiryDate && new Date(subscription.expiryDate).getTime() > Date.now());
+      // If subscription is expired or missing, allow orders access for fulfillment/history, lock other areas
+      if (!isSubActive) {
+        if (pathname.includes('/orders')) {
+          return false;
+        }
+        return true;
+      }
+      // If subscription is active and shop is inactive due to owner toggle, do not lock
+      return false;
+    }
+
+    return false;
+  }, [shop, subscription, pathname]);
 
   // Global Ctrl+K / Cmd+K and '/' shortcut listener
   useEffect(() => {
@@ -309,6 +357,59 @@ function OwnerLayoutContent({ children }: { children: ReactNode }) {
               </span>
             </button>
 
+            {/* Operational Open/Paused Toggle (Increment 5.1) */}
+            {shop && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-xl border border-owner-border bg-owner-canvas shadow-2xs">
+                <span className="hidden md:inline text-[11px] font-semibold text-owner-muted uppercase tracking-wider pl-1">
+                  Bakery:
+                </span>
+                <button
+                  type="button"
+                  disabled={isTogglingOperational || isRefreshing}
+                  onClick={async () => {
+                    const currentEnabled = shop.isOwnerEnabled !== false;
+                    const nextEnabled = !currentEnabled;
+                    setIsTogglingOperational(true);
+                    setOperationalError(null);
+                    try {
+                      await setOperationalStatus(nextEnabled);
+                    } catch (err: any) {
+                      setOperationalError(err?.message || `Failed to ${nextEnabled ? 'reopen' : 'pause'} bakery.`);
+                    } finally {
+                      setIsTogglingOperational(false);
+                    }
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                    shop.isOwnerEnabled !== false
+                      ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                      : 'bg-amber-600 text-white hover:bg-amber-700'
+                  } disabled:opacity-60`}
+                  title={
+                    shop.isOwnerEnabled !== false
+                      ? 'Storefront is live and taking orders. Click to pause (Vacation Mode).'
+                      : 'Storefront is paused. Click to re-open bakery.'
+                  }
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isTogglingOperational
+                        ? 'bg-white animate-spin'
+                        : shop.isOwnerEnabled !== false
+                        ? 'bg-emerald-200 animate-pulse'
+                        : 'bg-amber-200'
+                    }`}
+                  />
+                  <span>
+                    {isTogglingOperational
+                      ? 'Updating...'
+                      : shop.isOwnerEnabled !== false
+                      ? 'Open'
+                      : 'Paused'}
+                  </span>
+                </button>
+              </div>
+            )}
+
             {/* WhatsApp Share Button */}
             <button
               onClick={() => {
@@ -335,6 +436,92 @@ function OwnerLayoutContent({ children }: { children: ReactNode }) {
             </Link>
           </div>
         </header>
+
+        {/* Operational Error Toast/Banner */}
+        {operationalError && (
+          <div className="bg-rose-50 border-b border-rose-200 px-4 sm:px-6 py-2 shrink-0">
+            <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 text-xs text-rose-900">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>
+                  <strong>Operational Status Error:</strong> {operationalError}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOperationalError(null)}
+                className="text-rose-700 hover:text-rose-900 font-bold px-2 py-0.5 rounded cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Administrative Marketplace Restriction Banner */}
+        {shop?.isMarketplaceRestricted && (
+          <div className="bg-amber-100 border-b border-amber-300 px-4 sm:px-6 py-2.5 shrink-0">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-amber-950">
+              <div className="flex items-start sm:items-center gap-2.5">
+                <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5 sm:mt-0" />
+                <div>
+                  <span className="font-bold uppercase tracking-wider text-[11px] text-amber-900 mr-2 bg-amber-200/80 px-1.5 py-0.5 rounded">
+                    Marketplace Restricted
+                  </span>
+                  <span>
+                    Your storefront is temporarily hidden from marketplace search and direct customer ordering.
+                    {shop.marketplaceRestrictionReason ? (
+                      <span className="ml-1 font-semibold">Reason: &ldquo;{shop.marketplaceRestrictionReason}&rdquo;.</span>
+                    ) : null}
+                    {' '}You retain full dashboard access to update menus, manage kitchen orders, and resolve compliance requirements.
+                  </span>
+                </div>
+              </div>
+              <Link href="/dashboard/owner/settings" className="shrink-0 self-end sm:self-auto">
+                <Button size="sm" variant="outline" className="bg-white border-amber-300 text-amber-900 hover:bg-amber-50 text-xs h-7 px-3">
+                  Check Settings
+                </Button>
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Owner-Paused (Vacation Mode) Banner */}
+        {shop?.isOwnerEnabled === false && (
+          <div className="bg-slate-100 border-b border-slate-300 px-4 sm:px-6 py-2.5 shrink-0">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-slate-800">
+              <div className="flex items-center gap-2.5">
+                <Clock className="w-4 h-4 text-slate-600 shrink-0" />
+                <div>
+                  <span className="font-bold uppercase tracking-wider text-[11px] text-slate-700 mr-2 bg-slate-200 px-1.5 py-0.5 rounded">
+                    Bakery Paused
+                  </span>
+                  <span>
+                    Your storefront is currently paused (Vacation Mode) and hidden from customers. New orders are temporarily stopped. You can continue updating your catalog and preparing existing orders.
+                  </span>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                disabled={isTogglingOperational}
+                onClick={async () => {
+                  setIsTogglingOperational(true);
+                  setOperationalError(null);
+                  try {
+                    await setOperationalStatus(true);
+                  } catch (err: any) {
+                    setOperationalError(err?.message || 'Failed to re-open bakery.');
+                  } finally {
+                    setIsTogglingOperational(false);
+                  }
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-7 px-3 shrink-0 self-end sm:self-auto cursor-pointer"
+              >
+                {isTogglingOperational ? 'Reopening...' : 'Re-open Bakery'}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Phase 1 Bakery Lifecycle Status Alert Banners */}
         {shop?.status === 'PENDING' && (
@@ -418,14 +605,14 @@ function OwnerLayoutContent({ children }: { children: ReactNode }) {
 
         <main className="flex-1 min-h-0 p-4 sm:p-6 lg:p-8 overflow-y-auto">
           <div className="max-w-7xl mx-auto w-full relative">
-            {shop && ['EXPIRED', 'INACTIVE', 'SUSPENDED', 'PENDING'].includes(shop.status || '') && !pathname.includes('/subscription') && !pathname.includes('/settings') && (
+            {isDashboardLocked && (
               <div className="absolute inset-0 z-50 bg-white/80 backdrop-blur-md flex flex-col items-center justify-center rounded-2xl border border-slate-200/60 shadow-2xl p-8 text-center min-h-[60vh] mt-4">
                 <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-3xl flex items-center justify-center mb-6 shadow-inner">
                   <ShieldCheck className="w-10 h-10" />
                 </div>
                 <h2 className="text-3xl font-bold font-serif text-slate-900 mb-3">Dashboard Restricted</h2>
                 <p className="text-slate-600 max-w-lg mb-8 text-sm leading-relaxed">
-                  {shop.status === 'SUSPENDED' 
+                  {shop?.status === 'SUSPENDED' 
                     ? "Your bakery account has been suspended by administration. Please contact platform support to resolve this issue."
                     : "Your subscription is inactive or has expired. Please process your payment to restore full access and manage your active storefront."}
                 </p>
@@ -437,7 +624,7 @@ function OwnerLayoutContent({ children }: { children: ReactNode }) {
               </div>
             )}
             
-            <div className={shop && ['EXPIRED', 'INACTIVE', 'SUSPENDED', 'PENDING'].includes(shop.status || '') && !pathname.includes('/subscription') && !pathname.includes('/settings') ? 'opacity-20 pointer-events-none blur-[4px] select-none transition-all duration-500' : ''}>
+            <div className={isDashboardLocked ? 'opacity-20 pointer-events-none blur-[4px] select-none transition-all duration-500' : ''}>
               {children}
             </div>
           </div>

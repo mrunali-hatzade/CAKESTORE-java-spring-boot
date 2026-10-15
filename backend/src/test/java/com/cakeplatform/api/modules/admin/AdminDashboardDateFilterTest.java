@@ -8,10 +8,15 @@ import com.cakeplatform.api.modules.order.Order;
 import com.cakeplatform.api.modules.order.OrderRepository;
 import com.cakeplatform.api.modules.payment.Payment;
 import com.cakeplatform.api.modules.payment.PaymentRepository;
+import com.cakeplatform.api.modules.shop.BusinessDocument;
+import com.cakeplatform.api.modules.shop.BusinessDocumentRepository;
+import com.cakeplatform.api.modules.shop.DocumentType;
 import com.cakeplatform.api.modules.shop.Shop;
 import com.cakeplatform.api.modules.shop.ShopRepository;
 import com.cakeplatform.api.modules.shop.ShopStatus;
 import com.cakeplatform.api.modules.shop.VerificationStatus;
+import com.cakeplatform.api.modules.notification.Notification;
+import com.cakeplatform.api.modules.notification.NotificationRepository;
 import com.cakeplatform.api.modules.subscription.Subscription;
 import com.cakeplatform.api.modules.subscription.SubscriptionPlan;
 import com.cakeplatform.api.modules.subscription.SubscriptionPlanRepository;
@@ -42,6 +47,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -69,6 +75,12 @@ public class AdminDashboardDateFilterTest {
 
     @Autowired
     private OrderRepository orderRepository;
+
+    @Autowired
+    private BusinessDocumentRepository businessDocumentRepository;
+
+    @Autowired
+    private NotificationRepository notificationRepository;
 
     @Autowired
     private JwtService jwtService;
@@ -664,4 +676,309 @@ public class AdminDashboardDateFilterTest {
         assertFalse(currentMonthGmv.toString().contains("7777"));
         assertFalse(currentMonthGmv.toString().contains("6666"));
     }
+
+    // =========================================================================
+    // BM-02: SUSPENSION INTEGRATION TESTS
+    // =========================================================================
+
+    @Test
+    @DisplayName("BM-02: Admin suspension with missing reason returns 400 Bad Request")
+    void testBM02_SuspensionMissingReason_Returns400() throws Exception {
+        String payload = "{\"status\": \"SUSPENDED\"}";
+
+        mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/status")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("BM-02: Admin suspension with blank reason returns 400 Bad Request")
+    void testBM02_SuspensionBlankReason_Returns400() throws Exception {
+        String payload = "{\"status\": \"SUSPENDED\", \"reason\": \"   \"}";
+
+        mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/status")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("BM-02: Admin suspension with valid reason successfully updates shop to SUSPENDED")
+    void testBM02_SuspensionValidReason_Returns200AndSuspends() throws Exception {
+        String payload = "{\"status\": \"SUSPENDED\", \"reason\": \"Violation of hygiene policy\"}";
+
+        mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/status")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isOk());
+
+        Shop updated = shopRepository.findById(testShop.getId()).orElseThrow();
+        assertEquals(ShopStatus.SUSPENDED, updated.getStatus());
+    }
+
+    @Test
+    @DisplayName("BM-02: Non-admin user cannot access admin status endpoint (Returns 403 Forbidden)")
+    void testBM02_NonAdminDeniedAccess() throws Exception {
+        String payload = "{\"status\": \"SUSPENDED\", \"reason\": \"Unauthorized attempt\"}";
+
+        mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/status")
+                .header("Authorization", "Bearer " + customerToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("BM-02: Unauthenticated request to admin status endpoint returns 401 Unauthorized")
+    void testBM02_UnauthenticatedDeniedAccess() throws Exception {
+        String payload = "{\"status\": \"SUSPENDED\", \"reason\": \"No token attempt\"}";
+
+        mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/status")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("BM-02: Admin reactivation to ACTIVE does NOT require a reason and succeeds with 200")
+    void testBM02_ReactivationDoesNotRequireReason() throws Exception {
+        // First suspend the shop
+        testShop.setStatus(ShopStatus.SUSPENDED);
+        shopRepository.save(testShop);
+
+        String payload = "{\"status\": \"ACTIVE\"}";
+
+        mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/status")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+                .andExpect(status().isOk());
+
+        Shop updated = shopRepository.findById(testShop.getId()).orElseThrow();
+        assertEquals(ShopStatus.ACTIVE, updated.getStatus());
+    }
+
+    // =========================================================================
+    // BM-01: ARCHIVED BAKERY DETAILS INSPECTION TESTS
+    // =========================================================================
+
+    @Test
+    @DisplayName("BM-01: Authorized admin can inspect archived bakery details with isDeleted=true and retained records")
+    void testBM01_AdminCanInspectArchivedBakeryDetails() throws Exception {
+        // Soft-delete the test shop directly in the database
+        jdbcTemplate.update("UPDATE shops SET is_deleted = true WHERE id = ?", testShop.getId());
+
+        // Perform GET request as Admin
+        MvcResult result = mockMvc.perform(get("/api/admin/shops/" + testShop.getId())
+                .header("Authorization", "Bearer " + adminToken)
+                .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String json = result.getResponse().getContentAsString();
+        com.cakeplatform.api.modules.admin.dto.AdminShopDetailsResponse details =
+                objectMapper.readValue(json, com.cakeplatform.api.modules.admin.dto.AdminShopDetailsResponse.class);
+
+        // 1. Verify Shop is present and marked as soft-deleted
+        assertNotNull(details.getShop(), "Archived shop object must not be null");
+        assertEquals(testShop.getId(), details.getShop().getId());
+        assertTrue(details.getShop().isDeleted(), "Shop isDeleted must be true");
+
+        // 2. Verify historical records are retained and returned
+        assertNotNull(details.getSubscriptions(), "Subscriptions list must not be null");
+        assertFalse(details.getSubscriptions().isEmpty(), "Subscriptions history must be preserved for archived bakery");
+
+        assertNotNull(details.getPayments(), "Payments list must not be null");
+        assertFalse(details.getPayments().isEmpty(), "Payment history must be preserved for archived bakery");
+
+        assertNotNull(details.getActivityLogs(), "Activity logs list must not be null");
+    }
+
+    @Test
+    @DisplayName("BM-01: Active bakery details continue to load normally with isDeleted=false")
+    void testBM01_ActiveBakeryDetailsLoadNormally() throws Exception {
+        // Ensure testShop is NOT deleted
+        jdbcTemplate.update("UPDATE shops SET is_deleted = false WHERE id = ?", testShop.getId());
+
+        MvcResult result = mockMvc.perform(get("/api/admin/shops/" + testShop.getId())
+                .header("Authorization", "Bearer " + adminToken)
+                .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String json = result.getResponse().getContentAsString();
+        com.cakeplatform.api.modules.admin.dto.AdminShopDetailsResponse details =
+                objectMapper.readValue(json, com.cakeplatform.api.modules.admin.dto.AdminShopDetailsResponse.class);
+
+        assertNotNull(details.getShop());
+        assertEquals(testShop.getId(), details.getShop().getId());
+        assertFalse(details.getShop().isDeleted(), "Active shop isDeleted must be false");
+    }
+
+    @Test
+    @DisplayName("BM-01: Ordinary shopRepository.findById() still strictly excludes archived bakery")
+    void testBM01_OrdinaryFindByIdExcludesArchivedBakery() {
+        // Soft-delete testShop
+        jdbcTemplate.update("UPDATE shops SET is_deleted = true WHERE id = ?", testShop.getId());
+
+        // Standard findById must NOT find the shop due to @SQLRestriction("is_deleted=false")
+        java.util.Optional<Shop> standardLookup = shopRepository.findById(testShop.getId());
+        assertTrue(standardLookup.isEmpty(), "Standard findById must strictly exclude soft-deleted shop");
+
+        // findByIdIncludingDeleted must find it
+        java.util.Optional<Shop> adminLookup = shopRepository.findByIdIncludingDeleted(testShop.getId());
+        assertTrue(adminLookup.isPresent(), "findByIdIncludingDeleted must find the soft-deleted shop");
+        assertTrue(adminLookup.get().isDeleted());
+    }
+
+    @Test
+    @DisplayName("BM-01: Unauthorized access to archived bakery details is denied (401 for unauthenticated, 403 for non-admin)")
+    void testBM01_UnauthorizedAccessToArchivedBakeryDenied() throws Exception {
+        // Soft-delete testShop
+        jdbcTemplate.update("UPDATE shops SET is_deleted = true WHERE id = ?", testShop.getId());
+
+        // Unauthenticated request receives 401
+        mockMvc.perform(get("/api/admin/shops/" + testShop.getId())
+                .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized());
+
+        // Non-admin request receives 403
+        mockMvc.perform(get("/api/admin/shops/" + testShop.getId())
+                .header("Authorization", "Bearer " + customerToken)
+                .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isForbidden());
+    }
+
+    // =========================================================================
+    // BM-03: Row-Level Reject and Bulk Reject (KYC Verification Review) Tests
+    // =========================================================================
+
+    @Test
+    @DisplayName("BM-03: Valid KYC rejection updates verification status, marks business documents REJECTED, and produces owner notification")
+    void testBM03_KycRejection_ValidReason_UpdatesStatusAndNotifies() throws Exception {
+        // Setup a pending document for the shop
+        BusinessDocument doc = new BusinessDocument();
+        doc.setShop(testShop);
+        doc.setDocumentType(DocumentType.FSSAI_CERTIFICATE);
+        doc.setFileUrl("/uploads/documents/test-fssai.jpg");
+        doc.setStatus(VerificationStatus.PROCESSING);
+        doc = businessDocumentRepository.save(doc);
+
+        String rejectionReason = "FSSAI certificate is blurry and cannot verify expiration date";
+        String payloadJson = objectMapper.writeValueAsString(java.util.Map.of(
+                "action", "REJECT",
+                "reason", rejectionReason
+        ));
+
+        MvcResult result = mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/verification")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payloadJson))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        // Verify shop verification status in DB
+        Shop reloadedShop = shopRepository.findById(testShop.getId()).orElseThrow();
+        assertEquals(VerificationStatus.REJECTED, reloadedShop.getVerificationStatus(), "Shop verification status must be REJECTED");
+
+        // Verify business document status
+        BusinessDocument reloadedDoc = businessDocumentRepository.findById(doc.getId()).orElseThrow();
+        assertEquals(VerificationStatus.REJECTED, reloadedDoc.getStatus(), "Business document must be REJECTED");
+
+        // Verify owner notification was created
+        java.util.List<Notification> notifications = notificationRepository.findTop50ByRecipientIdOrderByCreatedAtDesc(testShop.getOwner().getId());
+        assertFalse(notifications.isEmpty(), "Owner should have received a notification");
+        Notification latest = notifications.get(0);
+        assertTrue(latest.getMessage().contains(rejectionReason), "Notification message must contain rejection reason");
+    }
+
+    @Test
+    @DisplayName("BM-03: Missing, null, or whitespace-only rejection reason returns HTTP 400 Bad Request")
+    void testBM03_KycRejection_MissingOrBlankReason_Returns400() throws Exception {
+        // 1. Missing reason field
+        String missingReasonJson = objectMapper.writeValueAsString(java.util.Map.of(
+                "action", "REJECT"
+        ));
+        mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/verification")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(missingReasonJson))
+                .andExpect(status().isBadRequest());
+
+        // 2. Whitespace-only reason
+        String blankReasonJson = objectMapper.writeValueAsString(java.util.Map.of(
+                "action", "REJECT",
+                "reason", "    "
+        ));
+        mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/verification")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(blankReasonJson))
+                .andExpect(status().isBadRequest());
+
+        // 3. Invalid action returns 400
+        String invalidActionJson = objectMapper.writeValueAsString(java.util.Map.of(
+                "action", "INVALID_ACTION",
+                "reason", "Some reason"
+        ));
+        mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/verification")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(invalidActionJson))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("BM-03: Unauthorized and non-admin requests to review verification are rejected (401 / 403)")
+    void testBM03_KycRejection_Unauthorized_Returns401And403() throws Exception {
+        String payloadJson = objectMapper.writeValueAsString(java.util.Map.of(
+                "action", "REJECT",
+                "reason", "Compliance failure"
+        ));
+
+        // Unauthenticated request receives 401
+        mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/verification")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payloadJson))
+                .andExpect(status().isUnauthorized());
+
+        // Non-admin request receives 403
+        mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/verification")
+                .header("Authorization", "Bearer " + customerToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payloadJson))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("BM-03: Existing verification approval behavior remains fully functional")
+    void testBM03_KycApproval_RemainsFunctional() throws Exception {
+        BusinessDocument doc = new BusinessDocument();
+        doc.setShop(testShop);
+        doc.setDocumentType(DocumentType.GST_CERTIFICATE);
+        doc.setFileUrl("/uploads/documents/test-gst.jpg");
+        doc.setStatus(VerificationStatus.PROCESSING);
+        doc = businessDocumentRepository.save(doc);
+
+        String payloadJson = objectMapper.writeValueAsString(java.util.Map.of(
+                "action", "APPROVE"
+        ));
+
+        mockMvc.perform(patch("/api/admin/shops/" + testShop.getId() + "/verification")
+                .header("Authorization", "Bearer " + adminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payloadJson))
+                .andExpect(status().isOk());
+
+        Shop reloadedShop = shopRepository.findById(testShop.getId()).orElseThrow();
+        assertEquals(VerificationStatus.VERIFIED, reloadedShop.getVerificationStatus(), "Shop verification status must be VERIFIED");
+
+        BusinessDocument reloadedDoc = businessDocumentRepository.findById(doc.getId()).orElseThrow();
+        assertEquals(VerificationStatus.VERIFIED, reloadedDoc.getStatus(), "Business document must be VERIFIED");
+    }
 }
+

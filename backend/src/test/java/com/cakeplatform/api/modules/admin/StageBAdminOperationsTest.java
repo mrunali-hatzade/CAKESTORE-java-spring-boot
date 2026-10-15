@@ -385,4 +385,47 @@ class StageBAdminOperationsTest {
             verificationService.getVerificationStatus(999L);
         });
     }
+
+    @Test
+    @DisplayName("B3.7: Mark Under Review sets verification status to PROCESSING, preserves shop status and documents, and logs activity")
+    void testB3_MarkUnderReview_Success() {
+        testShop.setVerificationStatus(VerificationStatus.REJECTED);
+        testShop.setStatus(ShopStatus.ACTIVE);
+        testDoc.setStatus(VerificationStatus.REJECTED);
+
+        when(shopRepository.findById(10L)).thenReturn(Optional.of(testShop));
+        when(shopRepository.save(any(Shop.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(businessDocumentRepository.findByShopId(10L)).thenReturn(List.of(testDoc));
+
+        Shop updated = adminDashboardService.reviewShopVerification(10L, "MARK_UNDER_REVIEW", null, 1L);
+
+        assertNotNull(updated);
+        assertEquals(VerificationStatus.PROCESSING, updated.getVerificationStatus());
+        assertEquals(ShopStatus.ACTIVE, updated.getStatus());
+        // Verify document status was NOT changed or auto-verified
+        assertEquals(VerificationStatus.REJECTED, testDoc.getStatus());
+        verify(businessDocumentRepository, never()).save(any(BusinessDocument.class));
+
+        verify(shopRepository).save(testShop);
+        verify(activityLogger).logActivity(
+                eq(1L),
+                eq(10L),
+                eq("KYC_UNDER_REVIEW"),
+                eq("SHOP"),
+                eq(10L),
+                eq("Admin marked bakery KYC as under review")
+        );
+        verify(notificationService, never()).createNotification(any(), any(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    @DisplayName("B3.8: Invalid verification action throws IllegalArgumentException")
+    void testB3_InvalidVerificationAction_ThrowsException() {
+        when(shopRepository.findById(10L)).thenReturn(Optional.of(testShop));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> {
+            adminDashboardService.reviewShopVerification(10L, "INVALID_ACTION", null, 1L);
+        });
+        assertTrue(ex.getMessage().contains("Invalid verification action"));
+    }
 }

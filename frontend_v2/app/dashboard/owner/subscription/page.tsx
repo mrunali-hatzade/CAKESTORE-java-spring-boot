@@ -29,6 +29,8 @@ import { Badge } from '@/components/ui/Badge';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { plansApi, SubscriptionPlan } from '@/lib/api/plans';
 import { useToast } from '@/components/common/Toast';
+import { Modal } from '@/components/ui/Modal';
+import { Textarea } from '@/components/ui/Textarea';
 
 export default function OwnerSubscriptionPage() {
   const { user } = useAuth();
@@ -45,6 +47,12 @@ export default function OwnerSubscriptionPage() {
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+
+  // Cancellation modal states
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const fetchPayments = async () => {
     setLoadingPayments(true);
@@ -202,6 +210,38 @@ export default function OwnerSubscriptionPage() {
     }
   };
 
+  const handleCancelSubscription = async () => {
+    if (cancelling) return;
+    setCancelling(true);
+    setCancelError(null);
+
+    const trimmedReason = cancelReason.trim();
+    if (trimmedReason.length > 500) {
+      setCancelError('Cancellation reason must be 500 characters or fewer.');
+      setCancelling(false);
+      return;
+    }
+
+    try {
+      const updated = await ownerApi.cancelSubscription(trimmedReason ? trimmedReason : undefined);
+      setSubscription(updated);
+      setIsCancelModalOpen(false);
+      setCancelReason('');
+      setSuccessNotice('Your subscription has been scheduled for cancellation. Access remains active until the end of your billing cycle.');
+      toast.success('Subscription cancellation recorded.');
+      
+      // Refresh background context
+      if (refreshShop) refreshShop().catch(() => {});
+      if (refreshDashboard) refreshDashboard().catch(() => {});
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to cancel subscription. Please try again.';
+      setCancelError(msg);
+      toast.error(msg);
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const scrollToPlans = () => {
     const el = document.getElementById('available-plans');
     if (el) {
@@ -350,6 +390,46 @@ export default function OwnerSubscriptionPage() {
         </div>
       )}
 
+      {/* Persistent Notice When Subscription is Cancelled */}
+      {subscription?.cancelledAt && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-sm">Subscription Scheduled for Cancellation</p>
+              <p className="text-amber-800 text-[11px] mt-0.5 leading-relaxed">
+                Your cancellation request was recorded on{' '}
+                {new Date(subscription.cancelledAt).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })}
+                {subscription.cancellationReason ? ` ("${subscription.cancellationReason}")` : ''}.{' '}
+                Your storefront, custom domain, and paid entitlements remain fully active until your billing cycle ends on{' '}
+                <span className="font-semibold">
+                  {subscription.expiryDate
+                    ? new Date(subscription.expiryDate).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })
+                    : 'your current expiry date'}
+                </span>
+                . Cancellation prevents future renewal; it does not issue an immediate refund.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => handleRenewPayment()}
+            isLoading={renewing}
+            className="shrink-0 bg-brand-plum hover:bg-brand-plum/90 text-white"
+          >
+            Renew / Extend Now
+          </Button>
+        </div>
+      )}
+
       {/* Current Active Plan Status Card */}
       <div className="bg-white rounded-3xl p-6 sm:p-8 border border-brand-plum/30 shadow-card relative overflow-hidden">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
@@ -358,7 +438,9 @@ export default function OwnerSubscriptionPage() {
               <Badge
                 variant={
                   hasActiveSubscription
-                    ? subscription?.status === 'EXPIRING_SOON'
+                    ? subscription?.cancelledAt
+                      ? 'warning'
+                      : subscription?.status === 'EXPIRING_SOON'
                       ? 'warning'
                       : 'success'
                     : isPending
@@ -370,7 +452,9 @@ export default function OwnerSubscriptionPage() {
                 size="md"
               >
                 {hasActiveSubscription
-                  ? subscription?.status === 'EXPIRING_SOON'
+                  ? subscription?.cancelledAt
+                    ? 'Pending Cancellation'
+                    : subscription?.status === 'EXPIRING_SOON'
                     ? 'Expiring Soon'
                     : 'Active Plan'
                   : isPending
@@ -399,8 +483,10 @@ export default function OwnerSubscriptionPage() {
             </h2>
             <p className="text-xs text-owner-muted max-w-xl leading-relaxed">
               {hasActiveSubscription
-                ? subscription?.plan?.description ||
-                  'Includes full access to custom storefront, unlimited catalog, order invoicing, direct UPI customer payouts, and zero platform sales commission.'
+                ? subscription?.cancelledAt
+                  ? 'Your subscription is scheduled to expire at the end of the term. Your storefront remains open to customers and all features remain accessible until expiry.'
+                  : subscription?.plan?.description ||
+                    'Includes full access to custom storefront, unlimited catalog, order invoicing, direct UPI customer payouts, and zero platform sales commission.'
                 : isPending
                 ? 'Complete your initial subscription payment to unlock your online bakery storefront and begin receiving cake bookings.'
                 : isExpired
@@ -430,6 +516,21 @@ export default function OwnerSubscriptionPage() {
                   <Zap className="w-4 h-4" />
                   <span>Extend License</span>
                 </Button>
+
+                {!subscription?.cancelledAt && (
+                  <Button
+                    onClick={() => {
+                      setCancelError(null);
+                      setCancelReason('');
+                      setIsCancelModalOpen(true);
+                    }}
+                    variant="outline"
+                    size="lg"
+                    className="border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                  >
+                    Cancel Subscription
+                  </Button>
+                )}
               </>
             ) : isPending || isExpired ? (
               <>
@@ -710,6 +811,85 @@ export default function OwnerSubscriptionPage() {
           )}
         </Card>
       </div>
+
+      {/* Subscription Cancellation Confirmation Modal */}
+      <Modal
+        isOpen={isCancelModalOpen}
+        onClose={() => {
+          if (!cancelling) {
+            setIsCancelModalOpen(false);
+            setCancelError(null);
+          }
+        }}
+        title="Cancel Subscription Renewal"
+        description="Schedule your subscription for cancellation at the end of the current term."
+        maxWidth="md"
+      >
+        <div className="space-y-4 pt-2">
+          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1.5">
+            <p className="font-semibold text-amber-950">What happens when you cancel:</p>
+            <ul className="list-disc list-inside space-y-1 text-amber-800">
+              <li>
+                Your storefront, custom ordering, and owner tools remain <span className="font-semibold">fully active</span> until your current expiry date: <span className="font-semibold">{subscription?.expiryDate ? new Date(subscription.expiryDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'End of billing cycle'}</span>.
+              </li>
+              <li>
+                This records your intention <span className="font-semibold">not to renew</span>. It does not terminate access immediately.
+              </li>
+              <li>
+                <span className="font-semibold">No immediate or electronic refund</span> is issued for the current paid period.
+              </li>
+              <li>
+                You can extend or renew your plan at any time before or after expiry.
+              </li>
+            </ul>
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="cancel-reason" className="block text-xs font-semibold text-owner-heading">
+              Reason for Cancellation <span className="font-normal text-owner-muted">(Optional, max 500 characters)</span>
+            </label>
+            <Textarea
+              id="cancel-reason"
+              rows={3}
+              placeholder="Help us improve: tell us why you are choosing not to renew..."
+              value={cancelReason}
+              onChange={(e) => {
+                if (e.target.value.length <= 500) {
+                  setCancelReason(e.target.value);
+                  if (cancelError) setCancelError(null);
+                }
+              }}
+              error={cancelError || undefined}
+              helperText={`${cancelReason.length}/500 characters`}
+              disabled={cancelling}
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-owner-border">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={cancelling}
+              onClick={() => {
+                setIsCancelModalOpen(false);
+                setCancelError(null);
+              }}
+            >
+              Keep Subscription
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              isLoading={cancelling}
+              onClick={handleCancelSubscription}
+              className="bg-rose-600 hover:bg-rose-700 text-white"
+            >
+              Confirm Cancellation
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

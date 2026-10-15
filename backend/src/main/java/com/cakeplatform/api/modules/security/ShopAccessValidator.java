@@ -73,4 +73,101 @@ public class ShopAccessValidator {
 
         return shop;
     }
+
+    /**
+     * Domain 1: Dashboard Overview & Alerts (GET /api/shops/my-shop, GET /api/owner/dashboard/overview)
+     * Allowed: ACTIVE, EXPIRED, OWNER-DISABLED, ADMIN-RESTRICTED, and legacy INACTIVE.
+     * Blocked: SUSPENDED (throws SubscriptionExpiredException instructing to contact support), DELETED.
+     */
+    @Transactional(readOnly = true)
+    public Shop validateDashboardAccess(Long ownerId) {
+        Shop shop = getShopByOwnerId(ownerId);
+        if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED) {
+            throw new com.cakeplatform.api.exception.SubscriptionExpiredException("Shop is suspended by administration. Please contact support.");
+        }
+        return shop;
+    }
+
+    /**
+     * Domain 2: Billing, Invoices & Renewal (GET/POST /api/owner/payments/**, /api/subscriptions/**)
+     * Allowed: ACTIVE, EXPIRED, OWNER-DISABLED, ADMIN-RESTRICTED, and legacy INACTIVE can self-service renew.
+     * Blocked from checkout: SUSPENDED (throws SubscriptionExpiredException instructing to contact support).
+     */
+    @Transactional(readOnly = true)
+    public Shop validateBillingAccess(Long ownerId) {
+        Shop shop = getShopByOwnerId(ownerId);
+        if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED) {
+            throw new com.cakeplatform.api.exception.SubscriptionExpiredException("Shop is suspended by administration. Self-service renewal is unavailable. Please contact support.");
+        }
+        return shop;
+    }
+
+    /**
+     * Domain 4: Catalog & Slot Editing (/api/products/**, /api/delivery-slots/**, /api/coupons/**)
+     * Allowed: ACTIVE (including owner-disabled vacation and admin-restricted) with active unexpired subscription.
+     * Blocked: EXPIRED (403), SUSPENDED (403), DELETED (404/403).
+     */
+    @Transactional(readOnly = true)
+    public Shop validateCatalogAccess(Long ownerId) {
+        Shop shop = getShopByOwnerId(ownerId);
+
+        if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED) {
+            throw new com.cakeplatform.api.exception.SubscriptionExpiredException("Shop is suspended by administration. Catalog editing is blocked. Please contact support.");
+        }
+
+        Subscription latestSub = subscriptionRepository.findFirstByShopIdOrderByCreatedAtDesc(shop.getId())
+                .orElseThrow(() -> new com.cakeplatform.api.exception.SubscriptionExpiredException("No subscription found. Please subscribe to a plan."));
+
+        if (latestSub.getStatus() == SubscriptionStatus.EXPIRED || 
+            latestSub.getStatus() == SubscriptionStatus.SUSPENDED || 
+            latestSub.getStatus() == SubscriptionStatus.CANCELLED ||
+            (latestSub.getExpiryDate() != null && latestSub.getExpiryDate().isBefore(java.time.LocalDateTime.now()))) {
+            throw new com.cakeplatform.api.exception.SubscriptionExpiredException("Subscription is " + latestSub.getStatus().name() + ". Please renew to edit your catalog or capacity.");
+        }
+
+        return shop;
+    }
+
+    /**
+     * Domain 5: Compliance & Profile Remediation (PUT /api/shops/my-shop/profile, /api/compliance/**)
+     * Allowed: ACTIVE, EXPIRED, OWNER-DISABLED, ADMIN-RESTRICTED, legacy INACTIVE.
+     * Blocked: SUSPENDED (403), DELETED (404/403).
+     */
+    @Transactional(readOnly = true)
+    public Shop validateComplianceAccess(Long ownerId) {
+        Shop shop = getShopByOwnerId(ownerId);
+        if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED) {
+            throw new com.cakeplatform.api.exception.SubscriptionExpiredException("Shop is suspended by administration. Profile updates are disabled. Please contact support.");
+        }
+        return shop;
+    }
+
+    /**
+     * Domain 6: In-Progress Order Fulfillment Exception (PATCH /api/owner/orders/{id}/status, payment-status)
+     * Allowed: ACTIVE, EXPIRED, OWNER-DISABLED, ADMIN-RESTRICTED, legacy INACTIVE, and missing/pending subscription
+     *          for legitimate pre-existing orders under strict tenant isolation.
+     * Blocked: SUSPENDED (403), DELETED (404/403).
+     */
+    @Transactional(readOnly = true)
+    public Shop validateOrderFulfillmentAccess(Long ownerId) {
+        Shop shop = getShopByOwnerId(ownerId);
+        if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED) {
+            throw new com.cakeplatform.api.exception.SubscriptionExpiredException("Shop is suspended by administration. Order fulfillment is blocked. Please contact support.");
+        }
+        return shop;
+    }
+
+    /**
+     * Domain 3: Historical Order Archive (GET /api/owner/orders)
+     * Allowed: ACTIVE, EXPIRED, OWNER-DISABLED, ADMIN-RESTRICTED, legacy INACTIVE.
+     * Blocked: SUSPENDED (403), DELETED (404/403).
+     */
+    @Transactional(readOnly = true)
+    public Shop validateOrderArchiveAccess(Long ownerId) {
+        Shop shop = getShopByOwnerId(ownerId);
+        if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED) {
+            throw new com.cakeplatform.api.exception.SubscriptionExpiredException("Shop is suspended by administration. Order history access is blocked. Please contact support.");
+        }
+        return shop;
+    }
 }

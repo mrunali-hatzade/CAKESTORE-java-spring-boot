@@ -44,30 +44,129 @@ public class ShopService {
         return mapToResponse(shop);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.subscription.SubscriptionRepository subscriptionRepository;
+
     @Transactional
-        public ShopResponse updateShopStatusAndReason(Long ownerId, com.cakeplatform.api.modules.shop.ShopStatus status, String reason) {
+    public ShopResponse updateOperationalStatus(Long ownerId, boolean enabled) {
         Shop shop = getShopByOwnerId(ownerId);
+
+        if (shop.isDeleted()) {
+            throw new IllegalArgumentException("Cannot update operational status: Shop is deleted");
+        }
+        if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED) {
+            throw new com.cakeplatform.api.exception.SubscriptionExpiredException("Shop is suspended by administration. Operational status cannot be changed.");
+        }
+
+        if (enabled) {
+            // Cannot re-enable if marketplace restricted by admin
+            if (Boolean.TRUE.equals(shop.getIsMarketplaceRestricted())) {
+                throw new IllegalStateException("Bakery cannot be enabled while an administrative marketplace restriction is active. Reason: " + shop.getMarketplaceRestrictionReason());
+            }
+
+            // Must have active, unexpired subscription
+            if (subscriptionRepository != null) {
+                com.cakeplatform.api.modules.subscription.Subscription latestSub = subscriptionRepository
+                        .findFirstByShopIdOrderByCreatedAtDesc(shop.getId())
+                        .orElseThrow(() -> new com.cakeplatform.api.exception.SubscriptionExpiredException("No subscription found. Please subscribe to a plan before opening your bakery."));
+
+                if (latestSub.getStatus() == com.cakeplatform.api.modules.subscription.SubscriptionStatus.EXPIRED ||
+                    latestSub.getStatus() == com.cakeplatform.api.modules.subscription.SubscriptionStatus.SUSPENDED ||
+                    latestSub.getStatus() == com.cakeplatform.api.modules.subscription.SubscriptionStatus.CANCELLED ||
+                    (latestSub.getExpiryDate() != null && latestSub.getExpiryDate().isBefore(java.time.LocalDateTime.now()))) {
+                    throw new com.cakeplatform.api.exception.SubscriptionExpiredException("Subscription is " + latestSub.getStatus().name() + ". Please renew before opening your bakery.");
+                }
+            }
+
+            // Explicit owner re-opening transitions legacy INACTIVE to ACTIVE
+            if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.INACTIVE) {
+                shop.setStatus(com.cakeplatform.api.modules.shop.ShopStatus.ACTIVE);
+                shop.setInactiveReason(null);
+            }
+
+            shop.setIsOwnerEnabled(true);
+        } else {
+            shop.setIsOwnerEnabled(false);
+        }
+
+        shop = shopRepository.save(shop);
+        if (storefrontCacheService != null) {
+            storefrontCacheService.evictShopDetails(shop.getId());
+            storefrontCacheService.evictShopProducts(shop.getId());
+        }
+
+        if (activityLogger != null) {
+            activityLogger.logActivity(
+                    ownerId,
+                    shop.getId(),
+                    "OPERATIONAL_STATUS_CHANGED",
+                    "SHOP",
+                    shop.getId(),
+                    "Owner set operational status to: " + (enabled ? "OPEN" : "CLOSED")
+            );
+        }
+
+        return mapToResponse(shop);
+    }
+
+    @Transactional
+    public ShopResponse updateShopStatusAndReason(Long ownerId, com.cakeplatform.api.modules.shop.ShopStatus status, String reason) {
+        Shop shop = getShopByOwnerId(ownerId);
+        if (shop.isDeleted()) {
+            throw new IllegalArgumentException("Cannot update status: Shop is deleted");
+        }
         if (shop.getStatus() == com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED) {
             throw new com.cakeplatform.api.exception.SubscriptionExpiredException("Shop is suspended by administration. Cannot change status.");
         }
-        shop.setStatus(status);
-        if (status == com.cakeplatform.api.modules.shop.ShopStatus.INACTIVE && reason != null) {
-            shop.setInactiveReason(reason);
-        } else {
+
+        if (status == com.cakeplatform.api.modules.shop.ShopStatus.ACTIVE) {
+            // Re-enabling/activating requires eligibility checks
+            if (Boolean.TRUE.equals(shop.getIsMarketplaceRestricted())) {
+                throw new IllegalStateException("Bakery cannot be activated while an administrative marketplace restriction is active. Reason: " + shop.getMarketplaceRestrictionReason());
+            }
+
+            if (subscriptionRepository != null) {
+                com.cakeplatform.api.modules.subscription.Subscription latestSub = subscriptionRepository
+                        .findFirstByShopIdOrderByCreatedAtDesc(shop.getId())
+                        .orElseThrow(() -> new com.cakeplatform.api.exception.SubscriptionExpiredException("No subscription found. Please subscribe to a plan before activating your bakery."));
+
+                if (latestSub.getStatus() == com.cakeplatform.api.modules.subscription.SubscriptionStatus.EXPIRED ||
+                    latestSub.getStatus() == com.cakeplatform.api.modules.subscription.SubscriptionStatus.SUSPENDED ||
+                    latestSub.getStatus() == com.cakeplatform.api.modules.subscription.SubscriptionStatus.CANCELLED ||
+                    (latestSub.getExpiryDate() != null && latestSub.getExpiryDate().isBefore(java.time.LocalDateTime.now()))) {
+                    throw new com.cakeplatform.api.exception.SubscriptionExpiredException("Subscription is " + latestSub.getStatus().name() + ". Please renew before activating your bakery.");
+                }
+            }
+            shop.setIsOwnerEnabled(true);
+            shop.setStatus(com.cakeplatform.api.modules.shop.ShopStatus.ACTIVE);
             shop.setInactiveReason(null);
+        } else if (status == com.cakeplatform.api.modules.shop.ShopStatus.INACTIVE) {
+            shop.setIsOwnerEnabled(false);
+            shop.setStatus(com.cakeplatform.api.modules.shop.ShopStatus.INACTIVE);
+            if (reason != null && !reason.trim().isEmpty()) {
+                shop.setInactiveReason(reason.trim());
+            } else {
+                shop.setInactiveReason(null);
+            }
+        } else {
+            shop.setStatus(status);
         }
+
         shop = shopRepository.save(shop);
         if (storefrontCacheService != null) {
             storefrontCacheService.evictShopDetails(shop.getId());
             storefrontCacheService.evictShopProducts(shop.getId());
         }
         
-        // Notify admin if going inactive
-        if (status == com.cakeplatform.api.modules.shop.ShopStatus.INACTIVE) {
-            activityLogger.logActivity(ownerId, shop.getId(), "STATUS_CHANGE", "SHOP", shop.getId(), "Shop set to inactive. Reason: " + reason);
+        if (activityLogger != null) {
+            if (status == com.cakeplatform.api.modules.shop.ShopStatus.INACTIVE) {
+                activityLogger.logActivity(ownerId, shop.getId(), "STATUS_CHANGE", "SHOP", shop.getId(), "Shop set to inactive. Reason: " + reason);
+            } else {
+                activityLogger.logActivity(ownerId, shop.getId(), "STATUS_CHANGE", "SHOP", shop.getId(), "Shop status updated to: " + status.name());
+            }
         }
         
-        return getMyShopProfile(ownerId);
+        return mapToResponse(shop);
     }
 
 
@@ -166,6 +265,9 @@ public class ShopService {
                 .mapLocationUrl(shop.getMapLocationUrl())
                 .status(shop.getStatus())
                 .verificationStatus(shop.getVerificationStatus() != null ? shop.getVerificationStatus().name() : null)
+                .isOwnerEnabled(shop.getIsOwnerEnabled())
+                .isMarketplaceRestricted(shop.getIsMarketplaceRestricted())
+                .marketplaceRestrictionReason(shop.getMarketplaceRestrictionReason())
                 .createdAt(shop.getCreatedAt())
                 .updatedAt(shop.getUpdatedAt())
                 .build();

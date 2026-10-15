@@ -27,8 +27,12 @@ public class OrderService {
     private final SmsService smsService;
     private final CustomCakeRequestRepository customCakeRequestRepository;
 
-    private Shop getShopByOwnerId(Long ownerId) {
-        return shopAccessValidator.getValidShopForOwner(ownerId);
+    private Shop getShopForOrderArchive(Long ownerId) {
+        return shopAccessValidator.validateOrderArchiveAccess(ownerId);
+    }
+
+    private Shop getShopForOrderFulfillment(Long ownerId) {
+        return shopAccessValidator.validateOrderFulfillmentAccess(ownerId);
     }
 
     public org.springframework.data.domain.Page<Order> getPaginatedOrdersByUserId(
@@ -37,17 +41,17 @@ public class OrderService {
             String paymentStatus, 
             String query, 
             org.springframework.data.domain.Pageable pageable) {
-        Shop shop = getShopByOwnerId(userId);
+        Shop shop = getShopForOrderArchive(userId);
         return orderRepository.findFilteredOrdersByShopId(shop.getId(), status, paymentStatus, query, pageable);
     }
 
     public List<Order> getOrdersByUserId(Long userId) {
-        Shop shop = getShopByOwnerId(userId);
+        Shop shop = getShopForOrderArchive(userId);
         return orderRepository.findVisibleOrdersByShopId(shop.getId());
     }
 
     public Order getOrderDetails(Long userId, Long orderId) {
-        Shop shop = getShopByOwnerId(userId);
+        Shop shop = getShopForOrderArchive(userId);
         return orderRepository.findByIdAndShopId(orderId, shop.getId())
                 .orElseThrow(() -> new RuntimeException("Order not found or unauthorized"));
     }
@@ -64,7 +68,7 @@ public class OrderService {
     @Transactional
     public Order updateOrderStatus(Long userId, Long orderId, String newStatusRaw) {
         String newStatus = newStatusRaw != null ? newStatusRaw.trim().toUpperCase() : "";
-        Shop shop = getShopByOwnerId(userId);
+        Shop shop = getShopForOrderFulfillment(userId);
         Order order = orderRepository.findByIdAndShopId(orderId, shop.getId())
                 .orElseThrow(() -> new RuntimeException("Order not found or unauthorized"));
 
@@ -150,7 +154,7 @@ public class OrderService {
     @Transactional
     public Order updatePaymentStatus(Long userId, Long orderId, String newPaymentStatusRaw, String paymentNote) {
         String newStatus = newPaymentStatusRaw != null ? newPaymentStatusRaw.trim().toUpperCase() : "PAID";
-        Shop shop = getShopByOwnerId(userId);
+        Shop shop = getShopForOrderFulfillment(userId);
         Order order = orderRepository.findByIdAndShopId(orderId, shop.getId())
                 .orElseThrow(() -> new RuntimeException("Order not found or unauthorized"));
 
@@ -221,8 +225,8 @@ public class OrderService {
     private void notifyCustomerRefundProcessed(Shop shop, Order order) {
         try {
             String shopName = shop.getBusinessName() != null ? shop.getBusinessName() : "CakeStore Bakery";
-            String subject = String.format("Refund Processed: Order #%s at %s", order.getOrderNumber(), shopName);
-            String body = String.format("Hello %s,\n\nA refund of ₹%s for your cancelled order #%s at %s has been processed successfully.\n\nThank you for choosing us!",
+            String subject = String.format("Manual Refund Recorded: Order #%s at %s", order.getOrderNumber(), shopName);
+            String body = String.format("Hello %s,\n\nA manual refund of ₹%s for your cancelled order #%s at %s has been recorded by the bakery. If you have questions regarding your refund settlement, please contact the bakery directly.\n\nThank you for choosing us!",
                     order.getCustomerName() != null ? order.getCustomerName() : "Customer",
                     order.getTotalAmount(),
                     order.getOrderNumber(),
@@ -234,7 +238,7 @@ public class OrderService {
             }
 
             if (order.getCustomerPhone() != null && !order.getCustomerPhone().isBlank()) {
-                String smsBody = String.format("Refund processed: ₹%s for order #%s at %s.",
+                String smsBody = String.format("Manual refund recorded: ₹%s for order #%s at %s. Contact the bakery for settlement details.",
                         order.getTotalAmount(), order.getOrderNumber(), shopName);
                 smsService.sendSms(order.getCustomerPhone(), smsBody);
             }

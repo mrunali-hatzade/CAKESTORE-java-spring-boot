@@ -25,8 +25,8 @@ export async function getPlatformStats(startDate?: string, endDate?: string): Pr
   });
 }
 
-export async function getShopCounts(): Promise<{ total: number; active: number; pending: number; suspended: number }> {
-  return apiClient.get<{ total: number; active: number; pending: number; suspended: number }>('/api/admin/shops/counts');
+export async function getShopCounts(): Promise<{ total: number; active: number; pending: number; suspended: number; deleted: number }> {
+  return apiClient.get<{ total: number; active: number; pending: number; suspended: number; deleted: number }>('/api/admin/shops/counts');
 }
 
 /**
@@ -71,10 +71,25 @@ export async function updateShopStatus(
  */
 export async function updateShopVerification(
   shopId: number,
-  action: 'APPROVE' | 'REJECT',
+  action: 'APPROVE' | 'REJECT' | 'MARK_UNDER_REVIEW',
   reason?: string
 ): Promise<any> {
   return apiClient.patch(`/api/admin/shops/${shopId}/verification`, { action, reason });
+}
+
+/**
+ * Update bakery marketplace restriction (hide or show on customer marketplace/storefront).
+ */
+export async function updateMarketplaceRestriction(
+  shopId: number,
+  restricted: boolean,
+  reason?: string
+): Promise<any> {
+  const payload: { restricted: boolean; reason?: string } = { restricted };
+  if (restricted && reason) {
+    payload.reason = reason.trim();
+  }
+  return apiClient.patch(`/api/admin/shops/${shopId}/marketplace-restriction`, payload);
 }
 
 /**
@@ -132,6 +147,7 @@ export const adminApi = {
   getAdminShopDetails,
   updateShopStatus,
   updateShopVerification,
+  updateMarketplaceRestriction,
   getAllPlans,
   getAdminPlans,
   createPlan,

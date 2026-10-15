@@ -27,6 +27,18 @@ public class ShopController {
         return ResponseEntity.ok(shopService.updateShopStatusAndReason(userDetails.getId(), status, reason));
     }
 
+    @PutMapping("/my-shop/operational-status")
+    public ResponseEntity<ShopResponse> updateOperationalStatus(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @RequestBody java.util.Map<String, Boolean> payload
+    ) {
+        Boolean enabled = payload.get("enabled");
+        if (enabled == null) {
+            throw new IllegalArgumentException("'enabled' boolean field is required in payload");
+        }
+        return ResponseEntity.ok(shopService.updateOperationalStatus(userDetails.getId(), enabled));
+    }
+
 
     private final ShopService shopService;
     private final OwnerDashboardService dashboardService;

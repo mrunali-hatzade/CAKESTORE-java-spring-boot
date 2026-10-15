@@ -61,7 +61,15 @@ public class SecurityConfig {
                         .requestMatchers("/api/locations/**").permitAll()
                         .requestMatchers("/api/webhooks/**").permitAll()
                         .requestMatchers("/api/contact/enquiries").permitAll()
-                        .requestMatchers("/uploads/**").permitAll()   // static media — no JWT needed
+                        .requestMatchers("/uploads/documents/**", "/uploads/verifications/**").denyAll()
+                        .requestMatchers(
+                                "/uploads/products/**",
+                                "/uploads/covers/**",
+                                "/uploads/logos/**",
+                                "/uploads/review-media/**",
+                                "/uploads/custom-cake-references/**"
+                        ).permitAll()
+                        .requestMatchers("/api/documents/secure-view/**").permitAll()
                         .requestMatchers("/ws-endpoint/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()

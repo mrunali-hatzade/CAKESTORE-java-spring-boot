@@ -6,6 +6,7 @@ import com.cakeplatform.api.modules.admin.dto.DashboardStatsResponse;
 import com.cakeplatform.api.modules.shop.Shop;
 import com.cakeplatform.api.modules.shop.ShopRepository;
 import com.cakeplatform.api.modules.shop.ShopStatus;
+import com.cakeplatform.api.modules.subscription.Subscription;
 import com.cakeplatform.api.modules.subscription.SubscriptionRepository;
 import com.cakeplatform.api.modules.subscription.SubscriptionStatus;
 import com.cakeplatform.api.modules.user.User;
@@ -102,6 +103,7 @@ public class Day3AdminGovernanceTest {
         when(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.EXPIRING_SOON)).thenReturn(5L);
         when(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.GRACE_PERIOD)).thenReturn(2L);
         when(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.PENDING)).thenReturn(1L);
+        when(shopRepository.countBakeriesAwaitingInitialSubscription()).thenReturn(1L);
         when(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.EXPIRED)).thenReturn(8L);
         when(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.SUSPENDED)).thenReturn(3L);
         when(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.CANCELLED)).thenReturn(4L);
@@ -141,9 +143,51 @@ public class Day3AdminGovernanceTest {
         assertEquals("DELETED", result.getContent().get(0).getShopStatus());
         assertEquals("John Doe", result.getContent().get(0).getOwnerName());
         assertEquals("deleted_123@deleted.com", result.getContent().get(0).getOwnerEmail());
+        assertEquals(false, result.getContent().get(0).getIsOwnerEnabled());
+        assertEquals(false, result.getContent().get(0).getIsMarketplaceRestricted());
         
         verify(shopRepository).searchAndFilterDeletedShopsProjection(anyString(), any(Pageable.class));
         verify(shopRepository, never()).searchAndFilterAllShops(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Day 3: Admin bakery list correctly populates isOwnerEnabled and isMarketplaceRestricted for active shops")
+    void testGetAllShops_ActiveShopPopulatesOperationalFlags() {
+        Shop activeShop = new Shop();
+        activeShop.setId(10L);
+        activeShop.setBusinessName("Operational Bakery");
+        activeShop.setStatus(ShopStatus.ACTIVE);
+        activeShop.setIsOwnerEnabled(true);
+        activeShop.setIsMarketplaceRestricted(false);
+        activeShop.setCreatedAt(LocalDateTime.now());
+
+        User owner = new User();
+        owner.setId(20L);
+        owner.setFullName("Alice Baker");
+        owner.setEmail("alice@baker.com");
+        activeShop.setOwner(owner);
+
+        Subscription activeSub = new Subscription();
+        activeSub.setId(50L);
+        activeSub.setStatus(SubscriptionStatus.ACTIVE);
+        activeSub.setShop(activeShop);
+
+        Page<Shop> page = new PageImpl<>(List.of(activeShop));
+        when(shopRepository.searchAndFilterAllShops(eq(ShopStatus.ACTIVE), anyString(), any(Pageable.class))).thenReturn(page);
+        when(subscriptionRepository.findFirstByShopIdOrderByCreatedAtDesc(10L)).thenReturn(Optional.of(activeSub));
+
+        Page<AdminShopSummaryResponse> result = adminDashboardService.getAllShops(PageRequest.of(0, 10), "", "ACTIVE");
+
+        assertNotNull(result);
+        assertEquals(1, result.getContent().size());
+        AdminShopSummaryResponse item = result.getContent().get(0);
+        assertEquals("Operational Bakery", item.getBusinessName());
+        assertEquals("ACTIVE", item.getShopStatus());
+        assertEquals("ACTIVE", item.getSubscriptionStatus());
+        assertEquals(true, item.getIsOwnerEnabled());
+        assertEquals(false, item.getIsMarketplaceRestricted());
+        assertEquals("Alice Baker", item.getOwnerName());
+        assertEquals("alice@baker.com", item.getOwnerEmail());
     }
 
     @Test

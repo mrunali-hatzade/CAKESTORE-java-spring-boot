@@ -18,6 +18,7 @@ interface OwnerContextType {
   refreshDashboard: () => Promise<void>;
   refreshShop: () => Promise<ShopSettings | null>;
   updateShop: (newShop: ShopSettings) => void;
+  setOperationalStatus: (enabled: boolean) => Promise<void>;
   registerRefreshHandler: (handler: () => Promise<void>) => () => void;
   pendingOrdersCount: number;
   pendingCustomCakesCount: number;
@@ -209,6 +210,13 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
     }
   }, [isRefreshing, fetchShop, fetchSubscription, fetchSidebarCounts, fetchDashboardStats]);
 
+  const setOperationalStatus = useCallback(async (enabled: boolean): Promise<void> => {
+    const updated = await ownerApi.updateOperationalStatus(enabled);
+    if (updated) {
+      setShop(updated);
+    }
+  }, []);
+
   return (
     <OwnerContext.Provider
       value={{
@@ -223,6 +231,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
         refreshDashboard,
         refreshShop: fetchShop,
         updateShop,
+        setOperationalStatus,
         registerRefreshHandler,
         pendingOrdersCount,
         pendingCustomCakesCount,

@@ -64,7 +64,7 @@ class OrderStatusNotificationTest {
     @Test
     @DisplayName("updateOrderStatus dispatches customer email and SMS notification without failing if credentials are mock/missing")
     void testUpdateOrderStatus_TriggersNotifications() {
-        when(shopAccessValidator.getValidShopForOwner(1L)).thenReturn(shop);
+        when(shopAccessValidator.validateOrderFulfillmentAccess(1L)).thenReturn(shop);
         when(orderRepository.findByIdAndShopId(101L, 5L)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -86,7 +86,7 @@ class OrderStatusNotificationTest {
     @Test
     @DisplayName("updateOrderStatus does not break if notification service throws unexpected exception")
     void testUpdateOrderStatus_SafeAgainstNotificationExceptions() {
-        when(shopAccessValidator.getValidShopForOwner(1L)).thenReturn(shop);
+        when(shopAccessValidator.validateOrderFulfillmentAccess(1L)).thenReturn(shop);
         when(orderRepository.findByIdAndShopId(101L, 5L)).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 

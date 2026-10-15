@@ -323,7 +323,7 @@ export function OrderDetailsModal({
                     </div>
                   ) : (order.paymentStatus || '').toUpperCase() === 'REFUNDED' ? (
                     <span className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-800 bg-purple-100 px-2.5 py-1 rounded-lg border border-purple-300">
-                      <RotateCcw className="w-3.5 h-3.5" /> Refunded
+                      <RotateCcw className="w-3.5 h-3.5" /> Manual Refund Recorded
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-300">
@@ -351,7 +351,7 @@ export function OrderDetailsModal({
                         className="w-full py-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Confirm Refund Issued (₹{Number(order.totalAmount).toLocaleString('en-IN')})</span>
+                        <span>Record Manual Refund (₹{Number(order.totalAmount).toLocaleString('en-IN')})</span>
                       </button>
                     </div>
                   )}
@@ -360,9 +360,9 @@ export function OrderDetailsModal({
                   <div className="mt-3 p-2.5 rounded-xl bg-purple-50 border border-purple-200 flex items-center gap-2">
                     <RotateCcw className="w-4 h-4 text-purple-600 shrink-0" />
                     <div>
-                      <p className="text-xs font-bold text-purple-900">Refund Settled</p>
+                      <p className="text-xs font-bold text-purple-900">Manual Refund Recorded</p>
                       <p className="text-[11px] text-purple-700">
-                        Refund of ₹{Number(order.totalAmount).toLocaleString('en-IN')} has been completed.
+                        Manual cash/direct refund of ₹{Number(order.totalAmount).toLocaleString('en-IN')} has been recorded.
                       </p>
                     </div>
                   </div>

@@ -104,11 +104,13 @@ public class AdminDashboardService {
         long active = shopRepository.countByStatus(com.cakeplatform.api.modules.shop.ShopStatus.ACTIVE);
         long pending = shopRepository.countByStatus(com.cakeplatform.api.modules.shop.ShopStatus.PENDING);
         long suspended = shopRepository.countByStatus(com.cakeplatform.api.modules.shop.ShopStatus.SUSPENDED);
+        long deleted = shopRepository.countDeletedShops();
         return java.util.Map.of(
             "total", total,
             "active", active,
             "pending", pending,
-            "suspended", suspended
+            "suspended", suspended,
+            "deleted", deleted
         );
     }
 
@@ -229,7 +231,7 @@ public class AdminDashboardService {
         stats.setActiveSubscribedBakeries(subscriptionRepository.countUniqueShopsByStatus(SubscriptionStatus.ACTIVE));
         stats.setExpiringSoonSubscribedBakeries(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.EXPIRING_SOON));
         stats.setGracePeriodSubscribedBakeries(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.GRACE_PERIOD));
-        stats.setPendingPaymentBakeries(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.PENDING));
+        stats.setPendingPaymentBakeries(shopRepository.countBakeriesAwaitingInitialSubscription());
         stats.setExpiredSubscribedBakeries(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.EXPIRED));
         stats.setSuspendedSubscribedBakeries(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.SUSPENDED));
         stats.setCancelledSubscribedBakeries(subscriptionRepository.countUniqueShopsByStatusExcludingActive(SubscriptionStatus.CANCELLED));
@@ -319,6 +321,8 @@ public class AdminDashboardService {
                 
                 com.cakeplatform.api.modules.subscription.Subscription lastSub = subscriptionRepository.findFirstByShopIdOrderByCreatedAtDesc(proj.getShopId()).orElse(null);
                 summary.setSubscriptionStatus(lastSub != null ? lastSub.getStatus().name() : "NONE");
+                summary.setIsOwnerEnabled(false);
+                summary.setIsMarketplaceRestricted(false);
                 
                 return summary;
             });
@@ -330,6 +334,8 @@ public class AdminDashboardService {
             summary.setBusinessName(shop.getBusinessName());
             summary.setShopStatus(shop.getStatus() != null ? shop.getStatus().name() : "UNKNOWN");
             summary.setRegisteredAt(shop.getCreatedAt());
+            summary.setIsOwnerEnabled(shop.getIsOwnerEnabled());
+            summary.setIsMarketplaceRestricted(shop.getIsMarketplaceRestricted());
 
             
             com.cakeplatform.api.modules.user.User owner = shop.getOwner();
@@ -347,7 +353,7 @@ public class AdminDashboardService {
     }
 
     public AdminShopDetailsResponse getShopDetails(Long shopId) {
-        Shop shop = shopRepository.findById(shopId)
+        Shop shop = shopRepository.findByIdIncludingDeleted(shopId)
                 .orElseThrow(() -> new RuntimeException("Shop not found with id: " + shopId));
 
         AdminShopDetailsResponse details = new AdminShopDetailsResponse();
@@ -392,6 +398,88 @@ public class AdminDashboardService {
     }
 
     @Transactional
+    public Shop updateMarketplaceRestriction(Long shopId, boolean restricted, String reason, Long actorUserId) {
+        Shop shop = shopRepository.findById(shopId)
+                .orElseThrow(() -> new RuntimeException("Shop not found with id: " + shopId));
+
+        if (restricted) {
+            if (reason == null || reason.trim().isEmpty()) {
+                throw new IllegalArgumentException("Marketplace restriction reason is mandatory and cannot be blank");
+            }
+            shop.setIsMarketplaceRestricted(true);
+            shop.setMarketplaceRestrictionReason(reason.trim());
+
+            shop = shopRepository.save(shop);
+
+            // Audit log
+            if (activityLogger != null) {
+                activityLogger.logActivity(
+                        actorUserId,
+                        shopId,
+                        "MARKETPLACE_RESTRICTION_APPLIED",
+                        "SHOP",
+                        shopId,
+                        "Admin applied marketplace restriction. Reason: " + reason.trim()
+                );
+            }
+
+            // Notify owner
+            if (notificationService != null && shop.getOwner() != null) {
+                User owner = userRepository.findById(shop.getOwner().getId()).orElse(shop.getOwner());
+                if (owner != null) {
+                    notificationService.createNotification(
+                            owner,
+                            NotificationType.ADMIN_MESSAGE,
+                            "Bakery Marketplace Restriction Applied",
+                            "Your bakery has been temporarily restricted from the marketplace. Reason: " + reason.trim(),
+                            shopId.toString(),
+                            true
+                    );
+                }
+            }
+        } else {
+            shop.setIsMarketplaceRestricted(false);
+            shop.setMarketplaceRestrictionReason(null);
+
+            shop = shopRepository.save(shop);
+
+            // Audit log
+            if (activityLogger != null) {
+                activityLogger.logActivity(
+                        actorUserId,
+                        shopId,
+                        "MARKETPLACE_RESTRICTION_LIFTED",
+                        "SHOP",
+                        shopId,
+                        "Admin lifted marketplace restriction"
+                );
+            }
+
+            // Notify owner
+            if (notificationService != null && shop.getOwner() != null) {
+                User owner = userRepository.findById(shop.getOwner().getId()).orElse(shop.getOwner());
+                if (owner != null) {
+                    notificationService.createNotification(
+                            owner,
+                            NotificationType.ADMIN_MESSAGE,
+                            "Bakery Marketplace Restriction Lifted",
+                            "The temporary marketplace restriction on your bakery has been lifted.",
+                            shopId.toString(),
+                            true
+                    );
+                }
+            }
+        }
+
+        if (storefrontCacheService != null) {
+            storefrontCacheService.evictShopDetails(shopId);
+            storefrontCacheService.evictShopProducts(shopId);
+        }
+
+        return shop;
+    }
+
+    @Transactional
     public Shop updateShopStatus(Long shopId, String status, String reason, Long actorUserId) {
         if ("SUSPENDED".equals(status)) {
             if (reason == null || reason.trim().isEmpty()) {
@@ -406,6 +494,7 @@ public class AdminDashboardService {
         }
         if (storefrontCacheService != null) {
             storefrontCacheService.evictShopDetails(shopId);
+            storefrontCacheService.evictShopProducts(shopId);
         }
         return shopRepository.findById(shopId).orElseThrow();
     }
@@ -429,8 +518,8 @@ public class AdminDashboardService {
         Shop shop = shopRepository.findById(shopId)
                 .orElseThrow(() -> new RuntimeException("Shop not found with id: " + shopId));
 
-        if (action == null || (!action.equalsIgnoreCase("APPROVE") && !action.equalsIgnoreCase("REJECT"))) {
-            throw new IllegalArgumentException("Invalid verification action: " + action + ". Must be APPROVE or REJECT.");
+        if (action == null || (!action.equalsIgnoreCase("APPROVE") && !action.equalsIgnoreCase("REJECT") && !action.equalsIgnoreCase("MARK_UNDER_REVIEW"))) {
+            throw new IllegalArgumentException("Invalid verification action: " + action + ". Must be APPROVE, REJECT, or MARK_UNDER_REVIEW.");
         }
 
         List<BusinessDocument> docs = businessDocumentRepository.findByShopId(shopId);
@@ -475,7 +564,7 @@ public class AdminDashboardService {
                         true
                 );
             }
-        } else {
+        } else if (action.equalsIgnoreCase("REJECT")) {
             // REJECT
             if (reason == null || reason.trim().isEmpty()) {
                 throw new IllegalArgumentException("Rejection reason is mandatory and cannot be blank");
@@ -509,6 +598,22 @@ public class AdminDashboardService {
                         true
                 );
             }
+        } else if (action.equalsIgnoreCase("MARK_UNDER_REVIEW")) {
+            // MARK_UNDER_REVIEW
+            shop.setVerificationStatus(VerificationStatus.PROCESSING);
+            shopRepository.save(shop);
+
+            // Do NOT change document statuses; they remain as-is
+
+            activityLogger.logActivity(
+                    actorUserId,
+                    shopId,
+                    "KYC_UNDER_REVIEW",
+                    "SHOP",
+                    shopId,
+                    "Admin marked bakery KYC as under review"
+            );
+            // No owner notification for under review reset
         }
 
         if (storefrontCacheService != null) {

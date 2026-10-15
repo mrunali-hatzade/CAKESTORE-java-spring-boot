@@ -31,6 +31,7 @@ import AnalyticsCharts from '@/components/admin/AnalyticsCharts';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/common/Toast';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { BakeryStatusBadge, computeStorefrontAvailability } from '@/components/admin/BakeryStatusBadge';
 
 interface ActivityLogItem {
   id?: number;
@@ -271,19 +272,17 @@ export default function AdminOverviewPage() {
     return `₹${(val || 0).toLocaleString('en-IN')}`;
   };
 
-  const getStatusBadge = (status: string) => {
-    const s = status.toUpperCase();
-    if (s === 'ACTIVE') {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          ACTIVE • STORE LIVE
-        </span>
-      );
-    }
-    if (s === 'PENDING' || s === 'PENDING_APPROVAL') return <Badge variant="warning" size="sm">Pending Approval</Badge>;
-    if (s === 'SUSPENDED') return <Badge variant="error" size="sm">Suspended</Badge>;
-    return <Badge variant="default" size="sm">{status}</Badge>;
+  const getStatusBadge = (shop: AdminShopSummary) => {
+    return (
+      <BakeryStatusBadge
+        shopStatus={shop.shopStatus}
+        subscriptionStatus={shop.subscriptionStatus}
+        isOwnerEnabled={shop.isOwnerEnabled}
+        isMarketplaceRestricted={shop.isMarketplaceRestricted}
+        isDeleted={shop.isDeleted}
+        compact
+      />
+    );
   };
 
   return (
@@ -397,212 +396,199 @@ export default function AdminOverviewPage() {
         </div>
       )}
 
-      {/* Balanced 4-Card Executive KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {/* Card 1: Registered Users */}
-        <Card className="p-6 border-slate-200/80 shadow-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between">
+      {/* 5-Card Executive KPI Grid matching reference screenshot */}
+      {/* 4 Primary Metric Cards: 4 equal-height cards on desktop (single row on lg/xl) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card 1: Total Bakeries */}
+        <Card className="p-6 border-slate-200/90 shadow-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between rounded-2xl bg-white min-h-[220px]">
           <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Registered Users
-              </span>
-              <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-                <Users className="w-5 h-5" />
+            <div className="flex items-start justify-between">
+              <div>
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  TOTAL BAKERIES
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium">Registered bakery accounts</span>
+              </div>
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                <Store className="w-4 h-4" />
               </div>
             </div>
-            <p className="text-3xl font-bold font-serif text-slate-900 mt-2.5 tabular-nums">
-              {stats?.totalUsers ?? ((stats?.totalAdmins ?? 0) + (stats?.totalShopOwners ?? 0) + (stats?.totalCustomers ?? 0))}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5 mt-4 pt-3 border-t border-slate-100 text-xs">
-            <span className="text-indigo-600 font-medium">
-              {stats?.totalAdmins ?? 0} Admins
-            </span>
-            <span className="text-slate-300">•</span>
-            <span className="text-slate-600 font-medium">
-              {stats?.totalShopOwners ?? 0} Owners
-            </span>
-            <span className="text-slate-300">•</span>
-            <span className="text-emerald-600 font-medium">
-              {stats?.totalCustomers ?? 0} Customers
-            </span>
-            <span className="text-slate-300">•</span>
-            <span className="text-slate-400 font-medium">
-              {stats?.deletedAccounts ?? 0} deleted
-            </span>
-          </div>
-        </Card>
-
-        {/* Card 2: Registered Bakeries */}
-        <Card className="p-6 border-slate-200/80 shadow-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Registered Bakeries
-              </span>
-              <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                <Store className="w-5 h-5" />
-              </div>
-            </div>
-            <p className="text-3xl font-bold font-serif text-slate-900 mt-2.5 tabular-nums">
+            <p className="text-4xl font-serif font-bold text-slate-900 mt-2.5 tabular-nums">
               {stats?.totalRegisteredBakeries ?? 0}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5 mt-4 pt-3 border-t border-slate-100 text-xs">
-            <span className="text-emerald-700 font-medium">{stats?.activeBakeries ?? 0} active</span>
-            <span className="text-slate-300">•</span>
-            <Link
-              href="/admin/shops?status=PENDING"
-              className="text-amber-700 font-medium hover:underline hover:text-amber-800 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500 rounded-xs transition-colors inline-flex items-center"
-              title="Filter bakeries pending approval"
-            >
-              {stats?.pendingBakeries ?? 0} pending
-            </Link>
-            <span className="text-slate-300">•</span>
-            <span className="text-rose-700 font-medium">{stats?.suspendedBakeries ?? 0} suspended</span>
-            <span className="text-slate-300">•</span>
-            <span className="text-slate-500 font-medium">{stats?.inactiveBakeries ?? 0} inactive</span>
-            <span className="text-slate-300">•</span>
-            <Link
-              href="/admin/shops?status=DELETED"
-              className="text-slate-400 font-medium hover:underline hover:text-slate-600 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-slate-500 rounded-xs transition-colors inline-flex items-center"
-              title="Filter deleted bakeries"
-            >
-              {stats?.deletedBakeries ?? 0} deleted
-            </Link>
-          </div>
-        </Card>
 
-        {/* Card 3: Bakery Plans & Subscriptions */}
-        <Card className="p-6 border-slate-200/80 shadow-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
-                  Bakery Plans & Subscriptions
-                </span>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-[10px] text-slate-400 font-medium">
-                    Total Subscription Records
-                  </span>
-                  <div className="relative group inline-flex items-center">
-                    <button
-                      type="button"
-                      aria-label="Subscription count explanation"
-                      className="text-slate-400 hover:text-slate-600 focus:text-slate-600 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-plum/40 rounded-full cursor-help transition-colors"
-                    >
-                      <Info className="w-3.5 h-3.5" />
-                    </button>
-                    <div
-                      role="tooltip"
-                      className="absolute bottom-full left-0 sm:left-1/2 sm:-translate-x-1/2 mb-1.5 hidden group-hover:block group-focus-within:block w-56 sm:w-64 p-2.5 bg-slate-900/95 text-white text-[11px] leading-relaxed rounded-lg shadow-xl backdrop-blur-xs z-50 pointer-events-none transition-opacity"
-                    >
-                      Total Subscription Records counts all subscription entries, including historical records. The status figures below count distinct bakeries and may not add up to the total.
-                      <div className="absolute top-full left-4 sm:left-1/2 sm:-translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900/95" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-            </div>
-            <p className="text-3xl font-bold font-serif text-slate-900 mt-2.5 tabular-nums">
-              {stats?.totalSubscriptions ?? 0}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5 mt-4 pt-3 border-t border-slate-100 text-xs">
-            <span className="text-emerald-700 font-medium">
-              {stats?.activeSubscribedBakeries ?? 0} active
-            </span>
-            <span className="text-slate-300">•</span>
-            <span className="text-rose-600 font-medium">
-              {stats?.expiredSubscribedBakeries ?? 0} expired
-            </span>
-            <span className="text-slate-300">•</span>
-            <span className="text-amber-600 font-medium">
-              {stats?.pendingPaymentBakeries ?? 0} pending
-            </span>
-            {(stats?.gracePeriodSubscribedBakeries ?? 0) > 0 && (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800">
-                  {stats?.gracePeriodSubscribedBakeries} grace
-                </span>
-              </>
-            )}
-            {(stats?.expiringSoonSubscribedBakeries ?? 0) > 0 && (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-orange-100 text-orange-800">
-                  {stats?.expiringSoonSubscribedBakeries} expiring
-                </span>
-              </>
-            )}
-            {(stats?.suspendedSubscribedBakeries ?? 0) > 0 && (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="text-rose-700 font-medium">
-                  {stats?.suspendedSubscribedBakeries} suspended
-                </span>
-              </>
-            )}
-            {(stats?.cancelledSubscribedBakeries ?? 0) > 0 && (
-              <>
-                <span className="text-slate-300">•</span>
-                <span className="text-slate-500 font-medium">
-                  {stats?.cancelledSubscribedBakeries} cancelled
-                </span>
-              </>
-            )}
-          </div>
-        </Card>
-
-        {/* Card 4: Subscription Revenue (Financials) */}
-        <Card className="p-6 border-slate-200/80 shadow-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">
-                  Subscription Revenue
-                </span>
-                <span className="text-[10px] text-slate-400 font-medium">
-                  SaaS Subscription Fees
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                <TrendingUp className="w-5 h-5" />
-              </div>
-            </div>
-            
-            <p className="text-2xl sm:text-3xl font-bold font-serif text-emerald-700 mt-2.5 tabular-nums">
-              {formatCurrency(stats?.periodPlatformRevenue ?? stats?.monthlyPlatformRevenue)}
-            </p>
-            <p className="text-[11px] text-emerald-600/80 font-medium mt-0.5">
-              {dateRange === 'All Time'
-                ? 'Lifetime billed subscription revenue'
-                : `${formatCurrency(stats?.totalPlatformRevenue)} lifetime billed`}
-            </p>
-          </div>
-
-          {/* Embedded Bakery Sales Callout (Clearly segregated from platform revenue) */}
-          <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-between bg-slate-50/90 rounded-xl px-3 py-2">
+          <div className="mt-4 pt-3 border-t border-slate-100 space-y-3">
+            {/* Section A: Bakery Account Status */}
             <div>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block">
-                Bakery Sales
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Bakery Account Status
               </span>
-              <span className="text-[10px] text-slate-400">
-                0% platform fee
-              </span>
+              <div className="flex items-center gap-1.5 flex-wrap text-xs text-slate-600">
+                <span
+                  className="text-emerald-700 font-semibold cursor-help"
+                  title="Active bakery accounts. Note: Storefront visibility also depends on subscription and owner enablement."
+                >
+                  {stats?.activeBakeries ?? 0} active
+                </span>
+                <span className="text-slate-300">•</span>
+                <Link
+                  href="/admin/shops?status=PENDING"
+                  className="text-amber-600 font-medium hover:underline inline-flex items-center cursor-help"
+                  title="Bakeries registered and awaiting platform administrative verification/approval."
+                >
+                  {stats?.pendingBakeries ?? 0} pending
+                </Link>
+                <span className="text-slate-300">•</span>
+                <span
+                  className="text-slate-500 font-medium cursor-help"
+                  title="Inactive accounts (owner-paused or temporarily deactivated)."
+                >
+                  {stats?.inactiveBakeries ?? 0} inactive
+                </span>
+                <span className="text-slate-300">•</span>
+                <span
+                  className="text-rose-600 font-medium cursor-help"
+                  title="Accounts suspended by platform governance or compliance."
+                >
+                  {stats?.suspendedBakeries ?? 0} suspended
+                </span>
+              </div>
             </div>
-            <div className="text-right">
-              <span className="text-sm font-bold font-serif text-slate-800 tabular-nums block">
-                {formatCurrency(stats?.periodGmv ?? stats?.monthlyGmv)}
+
+            {/* Section B: Subscription Status */}
+            <div className="pt-2 border-t border-slate-100/80">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Subscription Status
               </span>
-              <span className="text-[10px] text-slate-400">
-                {dateRange === 'All Time' ? 'Processed' : `${formatCurrency(stats?.totalGmv)} lifetime`}
-              </span>
+              <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                <span
+                  className="text-emerald-600 font-semibold cursor-help"
+                  title="Distinct bakeries with an active paid platform subscription."
+                >
+                  {stats?.activeSubscribedBakeries ?? 0} paid
+                </span>
+                <span className="text-slate-300">•</span>
+                <span
+                  className="text-amber-600 font-medium cursor-help"
+                  title="Eligible registered bakeries awaiting initial subscription payment (excluding previously expired subscribers)."
+                >
+                  {stats?.pendingPaymentBakeries ?? 0} awaiting payment
+                </span>
+                <span className="text-slate-300">•</span>
+                <span
+                  className="text-rose-500 font-medium cursor-help"
+                  title="Distinct bakeries whose platform subscription has expired without renewal."
+                >
+                  {stats?.expiredSubscribedBakeries ?? 0} expired
+                </span>
+              </div>
             </div>
+
+            {/* Section C: Deleted Records */}
+            {(stats?.deletedBakeries ?? 0) > 0 && (
+              <div className="pt-1.5 border-t border-slate-100/60 text-[11px] text-slate-400 flex items-center justify-between">
+                <span title="Retained soft-deleted bakery accounts for compliance, audit logs, and transaction integrity. Not counted in total registered bakeries above.">
+                  Historical Records:
+                </span>
+                <Link
+                  href="/admin/shops?status=DELETED"
+                  className="text-slate-500 hover:text-slate-700 hover:underline font-medium"
+                  title="View retained soft-deleted bakery records"
+                >
+                  {stats?.deletedBakeries} soft-deleted
+                </Link>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Card 2: Registered Users */}
+        <Card className="p-6 border-slate-200/90 shadow-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between rounded-2xl bg-white min-h-[190px]">
+          <div>
+            <div className="flex items-start justify-between">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                REGISTERED USERS
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                <Users className="w-4 h-4" />
+              </div>
+            </div>
+            <p className="text-4xl font-serif font-bold text-slate-900 mt-3 tabular-nums">
+              {stats?.totalUsers ?? ((stats?.totalAdmins ?? 0) + (stats?.totalShopOwners ?? 0) + (stats?.totalCustomers ?? 0))}
+            </p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-100 text-xs flex flex-wrap items-center gap-1.5">
+            <span className="text-indigo-600 font-medium">{stats?.totalAdmins ?? 0} admin</span>
+            <span className="text-slate-300">•</span>
+            <span className="text-slate-700 font-medium">{stats?.totalShopOwners ?? 0} owners</span>
+            <span className="text-slate-300">•</span>
+            <span className="text-emerald-600 font-medium">{stats?.totalCustomers ?? 0} customers</span>
+          </div>
+        </Card>
+
+        {/* Card 3: Today's Activity */}
+        <Card className="p-6 border-slate-200/90 shadow-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between rounded-2xl bg-white min-h-[190px]">
+          <div>
+            <div className="flex items-start justify-between">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                TODAY&apos;S ACTIVITY
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                <Activity className="w-4 h-4" />
+              </div>
+            </div>
+            <p className="text-4xl font-serif font-bold text-slate-900 mt-3 tabular-nums">
+              {stats?.todayRegistrations ?? 0}
+            </p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-500 space-y-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-indigo-600 font-semibold">{stats?.todayRegistrations ?? 0} new registrations</span>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+              <span className="text-emerald-600 font-semibold">{stats?.todayPayments ?? 0} subscription payments</span>
+            </div>
+          </div>
+        </Card>
+
+        {/* Card 4: Financials */}
+        <Card className="p-6 border-slate-200/90 shadow-soft hover:shadow-card hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between rounded-2xl bg-white min-h-[220px]">
+          <div>
+            <div className="flex items-start justify-between">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                FINANCIALS
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+            </div>
+
+            {/* Part 1: Platform Revenue (SaaS) */}
+            <div className="mt-4">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                PLATFORM REVENUE (SAAS)
+              </span>
+              <p className="text-3xl font-serif font-bold text-emerald-700 mt-1 tabular-nums">
+                {formatCurrency(stats?.periodPlatformRevenue ?? stats?.monthlyPlatformRevenue ?? 0)}
+              </p>
+              <p className="text-xs text-emerald-600/80 font-medium mt-0.5">
+                {formatCurrency(stats?.totalPlatformRevenue ?? 0)} lifetime
+              </p>
+            </div>
+          </div>
+
+          {/* Part 2: Network GMV (Cake Sales) */}
+          <div className="mt-4 pt-3.5 border-t border-slate-100">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+              NETWORK GMV (CAKE SALES)
+            </span>
+            <p className="text-2xl font-serif font-bold text-slate-900 mt-1 tabular-nums">
+              {formatCurrency(stats?.periodGmv ?? stats?.monthlyGmv ?? 0)}
+            </p>
+            <p className="text-xs text-slate-400 font-medium mt-0.5">
+              {formatCurrency(stats?.totalGmv ?? 0)} lifetime processed
+            </p>
           </div>
         </Card>
       </div>
@@ -802,7 +788,7 @@ export default function AdminOverviewPage() {
                   </td>
                   <td className="py-3.5 px-4 whitespace-nowrap">
                     <div className="flex items-center gap-2">
-                      {getStatusBadge(shop.shopStatus)}
+                      {getStatusBadge(shop)}
                       {shop.subscriptionStatus === 'ACTIVE' && (
                          <Badge variant="default" size="sm" className="bg-indigo-50 text-indigo-700 border-indigo-200 whitespace-nowrap">Sub: Active</Badge>
                       )}
@@ -813,12 +799,44 @@ export default function AdminOverviewPage() {
                   </td>
                   <td className="py-3.5 px-4 text-right whitespace-nowrap">
                     <div className="flex items-center justify-end gap-2">
-                      <Link href={`/shop/${shop.shopId}`} target="_blank" rel="noopener noreferrer" className="focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-lg">
-                        <Button variant="ghost" size="sm" className="text-xs text-slate-500 hover:text-indigo-600 gap-1 px-2.5">
-                          <Store className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Storefront</span>
-                        </Button>
-                      </Link>
+                      {(() => {
+                        const availability = computeStorefrontAvailability({
+                          shopStatus: shop.shopStatus,
+                          subscriptionStatus: shop.subscriptionStatus,
+                          isOwnerEnabled: shop.isOwnerEnabled,
+                          isMarketplaceRestricted: shop.isMarketplaceRestricted,
+                          isDeleted: shop.isDeleted,
+                        });
+
+                        return (
+                          <Link
+                            href={`/shop/${shop.shopId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-lg"
+                            title={
+                              availability.isStoreLive
+                                ? 'Open live customer storefront in new tab'
+                                : 'Storefront currently unavailable to customers (Admin preview will show offline state)'
+                            }
+                          >
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={`text-xs gap-1 px-2.5 ${
+                                availability.isStoreLive
+                                  ? 'text-slate-500 hover:text-indigo-600'
+                                  : 'text-slate-400 hover:text-slate-600'
+                              }`}
+                            >
+                              <Store className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">
+                                {availability.isStoreLive ? 'Storefront' : 'Preview'}
+                              </span>
+                            </Button>
+                          </Link>
+                        );
+                      })()}
                       <Link href={`/admin/shops/${shop.shopId}`} className="focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-lg">
                         <Button variant="ghost" size="sm" className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 font-semibold text-xs px-2.5">
                           Manage

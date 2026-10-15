@@ -75,10 +75,36 @@ public class AdminDashboardController {
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @RequestBody Map<String, String> payload) {
         
-        String newStatus = payload.get("status");
+        String newStatus = payload != null ? payload.get("status") : null;
+        if (newStatus == null || newStatus.trim().isEmpty()) {
+            throw new IllegalArgumentException("'status' field is required in payload");
+        }
         String reason = payload.get("reason");
+        if ("SUSPENDED".equalsIgnoreCase(newStatus.trim())) {
+            if (reason == null || reason.trim().isEmpty()) {
+                throw new IllegalArgumentException("Suspension reason is mandatory and cannot be blank");
+            }
+        }
         Long actorUserId = (userDetails != null) ? userDetails.getId() : null;
-        Shop updated = adminDashboardService.updateShopStatus(shopId, newStatus, reason, actorUserId);
+        Shop updated = adminDashboardService.updateShopStatus(shopId, newStatus.trim().toUpperCase(), reason != null ? reason.trim() : null, actorUserId);
+        return ResponseEntity.ok(updated);
+    }
+
+    @PatchMapping("/shops/{shopId}/marketplace-restriction")
+    public ResponseEntity<Shop> updateMarketplaceRestriction(
+            @PathVariable Long shopId,
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @RequestBody Map<String, Object> payload) {
+        
+        Object restrictedObj = payload.get("restricted");
+        if (restrictedObj == null) {
+            throw new IllegalArgumentException("'restricted' boolean field is required in payload");
+        }
+        boolean restricted = Boolean.parseBoolean(restrictedObj.toString());
+        String reason = payload.get("reason") != null ? payload.get("reason").toString() : null;
+        Long actorUserId = (userDetails != null) ? userDetails.getId() : null;
+
+        Shop updated = adminDashboardService.updateMarketplaceRestriction(shopId, restricted, reason, actorUserId);
         return ResponseEntity.ok(updated);
     }
 

@@ -268,7 +268,7 @@ function OwnerOrdersContent() {
             : null
         );
       }
-      toast.success(`Refund processed for order #${updated.orderNumber || confirmAction.orderId}`);
+      toast.success(`Manual refund recorded for order #${updated.orderNumber || confirmAction.orderId}`);
       refreshDashboard().catch(() => {});
     } catch (err: any) {
       toast.error(err?.message || 'Failed to update payment status');
@@ -433,7 +433,7 @@ function OwnerOrdersContent() {
         <div class="row"><span><b>Payment Status:</b></span><span style="font-weight:bold; color: ${isPaid ? '#155724' : ord.paymentStatus === 'REFUNDED' ? '#6f42c1' : '#856404'};">${ord.paymentStatus === 'REFUNDED' ? 'REFUNDED' : payStatusStr}</span></div>
         ${!isPaid && isCod && ord.paymentStatus !== 'REFUNDED' ? `<div class="alert-box">💵 COD COLLECT DUE: ₹${ord.totalAmount}</div>` : ''}
         ${isPaid ? `<div class="paid-box">✓ PAYMENT SETTLED (PAID)</div>` : ''}
-        ${ord.paymentStatus === 'REFUNDED' ? `<div class="alert-box" style="background:#f3e8ff; border-color:#9333ea; color:#6b21a8;">↩️ REFUND ISSUED TO CUSTOMER</div>` : ''}
+        ${ord.paymentStatus === 'REFUNDED' ? `<div class="alert-box" style="background:#f3e8ff; border-color:#9333ea; color:#6b21a8;">↩️ MANUAL REFUND RECORDED</div>` : ''}
         <hr/>
         <p style="margin:4px 0;"><b>Address / Instructions:</b><br/>${ord.deliveryAddress || 'Self Pickup at Store Counter'}</p>
         <hr/>
@@ -762,7 +762,7 @@ function OwnerOrdersContent() {
                           <div className="mt-1">
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
                               <RotateCcw className="w-3 h-3 text-purple-600" />
-                              <span>Refunded</span>
+                              <span>Manual Refund Recorded</span>
                             </span>
                           </div>
                         ) : isCod ? (
@@ -919,13 +919,13 @@ function OwnerOrdersContent() {
         isOpen={confirmAction !== null}
         onClose={() => setConfirmAction(null)}
         onConfirm={confirmAction?.type === 'CANCEL' ? executeStatusChange : executeRefund}
-        title={confirmAction?.type === 'CANCEL' ? 'Cancel Order' : 'Issue Refund'}
+        title={confirmAction?.type === 'CANCEL' ? 'Cancel Order' : 'Record Manual Refund'}
         description={
           confirmAction?.type === 'CANCEL'
             ? `Are you sure you want to cancel order #${confirmAction?.orderNumber}? This action cannot be undone.`
-            : `Are you sure you want to mark order #${confirmAction?.orderNumber} as refunded? This indicates you have returned the customer's payment.`
+            : `Are you sure you want to record a manual refund for order #${confirmAction?.orderNumber}? This logs an offline/cash refund for internal bookkeeping and does not initiate an electronic gateway transfer.`
         }
-        confirmLabel={confirmAction?.type === 'CANCEL' ? 'Confirm Cancellation' : 'Confirm Refund'}
+        confirmLabel={confirmAction?.type === 'CANCEL' ? 'Confirm Cancellation' : 'Record Manual Refund'}
         isDestructive={true}
       />
     </div>

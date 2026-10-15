@@ -87,6 +87,9 @@ export interface Shop {
   longitude?: number;
   status: ShopStatus;
   verificationStatus?: 'VERIFIED' | 'PROCESSING' | 'UNVERIFIED' | string;
+  isOwnerEnabled?: boolean;
+  isMarketplaceRestricted?: boolean;
+  marketplaceRestrictionReason?: string | null;
   fssaiRegistration?: string;
   yearsInBusiness?: number;
   rating?: number;

@@ -489,7 +489,7 @@ public class StageCPaymentAndSubscriptionTest {
     @Test
     @DisplayName("C3.4: Initiate subscription payment with configured credentials creates pending order")
     void testInitiateSubscriptionPayment_ConfiguredCredentials() {
-        when(shopAccessValidator.getShopByOwnerId(1L)).thenReturn(testShop);
+        when(shopAccessValidator.validateBillingAccess(1L)).thenReturn(testShop);
 
         SubscriptionPlan plan = new SubscriptionPlan();
         plan.setId(1L);
@@ -520,7 +520,7 @@ public class StageCPaymentAndSubscriptionTest {
     @Test
     @DisplayName("C3.5: Initiate subscription payment in unconfigured test profile generates simulated order")
     void testInitiateSubscriptionPayment_UnconfiguredTestProfile() {
-        when(shopAccessValidator.getShopByOwnerId(1L)).thenReturn(testShop);
+        when(shopAccessValidator.validateBillingAccess(1L)).thenReturn(testShop);
 
         SubscriptionPlan plan = new SubscriptionPlan();
         plan.setId(1L);
@@ -728,7 +728,8 @@ public class StageCPaymentAndSubscriptionTest {
 
         assertNotNull(payment);
         assertEquals("COMPLETED", payment.getStatus());
-        verify(ssMgr).activateShop(10L, 1L);
+        // Phase 1 Lifecycle Specification: Subscription renewal preserves owner-disabled INACTIVE status; activateShop is not called
+        verify(ssMgr, never()).activateShop(anyLong(), anyLong());
     }
 
     @Test

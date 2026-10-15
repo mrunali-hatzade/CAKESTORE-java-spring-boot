@@ -9,13 +9,17 @@ interface AdminSuspensionModalProps {
   onClose: () => void;
   onConfirm: (reason: string) => Promise<void> | void;
   isMutating: boolean;
+  title?: string;
+  description?: string;
 }
 
 export function AdminSuspensionModal({
   isOpen,
   onClose,
   onConfirm,
-  isMutating
+  isMutating,
+  title = "Suspend Bakery Storefront",
+  description = "Immediately revoke public storefront access and suspend operational permissions."
 }: AdminSuspensionModalProps) {
   const [suspensionReason, setSuspensionReason] = useState('');
   const [suspensionError, setSuspensionError] = useState<string | null>(null);
@@ -46,8 +50,8 @@ export function AdminSuspensionModal({
     <Modal
       isOpen={isOpen}
       onClose={handleClose}
-      title="Suspend Bakery Storefront"
-      description="Immediately revoke public storefront access and suspend operational permissions."
+      title={title}
+      description={description}
     >
       <div className="space-y-4">
         <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2.5">

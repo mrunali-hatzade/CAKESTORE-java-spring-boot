@@ -27,7 +27,13 @@ import {
   Loader2,
   Receipt,
 } from 'lucide-react';
-import { getShopDetails, updateShopStatus, updateShopVerification, getAdminDocumentViewUrl } from '@/lib/api/admin';
+import {
+  getShopDetails,
+  updateShopStatus,
+  updateShopVerification,
+  updateMarketplaceRestriction,
+  getAdminDocumentViewUrl,
+} from '@/lib/api/admin';
 import { AdminShopDetails, BusinessDocumentItem } from '@/types/admin';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -36,9 +42,12 @@ import { Modal } from '@/components/ui/Modal';
 import { Textarea } from '@/components/ui/Textarea';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useToast } from '@/components/common/Toast';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 
 import { AdminSuspensionModal } from '@/components/admin/shops/AdminSuspensionModal';
 import { AdminKycRejectionModal } from '@/components/admin/shops/AdminKycRejectionModal';
+import { AdminMarketplaceRestrictionModal } from '@/components/admin/shops/AdminMarketplaceRestrictionModal';
+import { BakeryStatusBadge, computeStorefrontAvailability } from '@/components/admin/BakeryStatusBadge';
 
 export default function AdminShopDetailPage() {
   const params = useParams();
@@ -55,13 +64,21 @@ export default function AdminShopDetailPage() {
   // KYC Rejection Modal State (B3)
   const [isRejectKycModalOpen, setIsRejectKycModalOpen] = useState(false);
 
+  // Marketplace Restriction States (Step 5.3)
+  const [isRestrictModalOpen, setIsRestrictModalOpen] = useState(false);
+  const [isLiftRestrictionDialogOpen, setIsLiftRestrictionDialogOpen] = useState(false);
+
   // Document Viewing State
   const [viewingDocId, setViewingDocId] = useState<number | null>(null);
 
   const toast = useToast();
 
   const loadShop = useCallback(async () => {
-    if (!shopId) return;
+    // Validate that shopId is a valid positive integer
+    if (!Number.isFinite(shopId) || !Number.isInteger(shopId) || shopId <= 0) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
 
     try {
@@ -123,7 +140,7 @@ export default function AdminShopDetailPage() {
     }
   };
 
-  const handleVerificationReview = async (action: 'APPROVE' | 'REJECT', reason?: string) => {
+  const handleVerificationReview = async (action: 'APPROVE' | 'REJECT' | 'MARK_UNDER_REVIEW', reason?: string) => {
     if (!shopId) return;
     if (action === 'REJECT' && (!reason || !reason.trim())) {
       toast.error('Rejection reason is mandatory and cannot be blank.');
@@ -133,9 +150,12 @@ export default function AdminShopDetailPage() {
     setIsMutating(true);
     try {
       await updateShopVerification(shopId, action, reason?.trim());
-      const newStatus = action === 'APPROVE' ? 'VERIFIED' : 'REJECTED';
-      toast.success(`Bakery #${shopId} verification status marked as ${newStatus}`);
-      setIsRejectKycModalOpen(false);
+      const newStatus = action === 'APPROVE' ? 'VERIFIED' : (action === 'REJECT' ? 'REJECTED' : 'PROCESSING');
+      const actionLabel = action === 'APPROVE' ? 'VERIFIED' : (action === 'REJECT' ? 'REJECTED' : 'UNDER REVIEW');
+      toast.success(`Bakery #${shopId} verification status marked as ${actionLabel}`);
+      if (action === 'REJECT') {
+        setIsRejectKycModalOpen(false);
+      }
 
       // Optimistic update
       if (details) {
@@ -145,17 +165,22 @@ export default function AdminShopDetailPage() {
             ...details.shop,
             verificationStatus: newStatus,
           },
-          businessDocuments: (details.businessDocuments || []).map((d) => ({
-            ...d,
-            status: newStatus,
-          })),
+          // Do not mutate document statuses when marking under review; preserve existing documents
+          businessDocuments: action === 'MARK_UNDER_REVIEW'
+            ? details.businessDocuments
+            : (details.businessDocuments || []).map((d) => ({
+                ...d,
+                status: newStatus,
+              })),
           activityLogs: [
             {
               id: Date.now(),
-              action: action === 'APPROVE' ? 'VERIFIED' : 'REJECTED',
+              action: action === 'APPROVE' ? 'VERIFIED' : (action === 'REJECT' ? 'REJECTED' : 'KYC_UNDER_REVIEW'),
               details: action === 'APPROVE'
                 ? 'Admin approved bakery verification documents'
-                : `Admin rejected verification: ${reason?.trim()}`,
+                : (action === 'REJECT'
+                    ? `Admin rejected verification: ${reason?.trim()}`
+                    : 'Admin marked bakery KYC as under review'),
               createdAt: new Date().toISOString(),
               timestamp: new Date().toISOString(),
             },
@@ -165,6 +190,85 @@ export default function AdminShopDetailPage() {
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to review verification');
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  const handleApplyRestriction = async (reason: string) => {
+    if (!shopId) return;
+    const trimmed = reason.trim();
+    if (!trimmed) {
+      toast.error('Marketplace restriction reason is mandatory and cannot be blank.');
+      return;
+    }
+
+    setIsMutating(true);
+    try {
+      await updateMarketplaceRestriction(shopId, true, trimmed);
+      toast.success(`Marketplace restriction applied to Bakery #${shopId}`);
+      setIsRestrictModalOpen(false);
+
+      // Optimistic update
+      if (details) {
+        setDetails({
+          ...details,
+          shop: {
+            ...details.shop,
+            isMarketplaceRestricted: true,
+            marketplaceRestrictionReason: trimmed,
+          },
+          activityLogs: [
+            {
+              id: Date.now(),
+              action: 'MARKETPLACE_RESTRICTION_APPLIED',
+              details: `Admin applied marketplace restriction. Reason: ${trimmed}`,
+              createdAt: new Date().toISOString(),
+              timestamp: new Date().toISOString(),
+            },
+            ...(details.activityLogs || []),
+          ],
+        });
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to apply marketplace restriction');
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  const handleLiftRestriction = async () => {
+    if (!shopId) return;
+
+    setIsMutating(true);
+    try {
+      await updateMarketplaceRestriction(shopId, false);
+      toast.success(`Marketplace restriction lifted for Bakery #${shopId}`);
+      setIsLiftRestrictionDialogOpen(false);
+
+      // Optimistic update
+      if (details) {
+        setDetails({
+          ...details,
+          shop: {
+            ...details.shop,
+            isMarketplaceRestricted: false,
+            marketplaceRestrictionReason: null,
+          },
+          activityLogs: [
+            {
+              id: Date.now(),
+              action: 'MARKETPLACE_RESTRICTION_LIFTED',
+              details: 'Admin lifted marketplace restriction',
+              createdAt: new Date().toISOString(),
+              timestamp: new Date().toISOString(),
+            },
+            ...(details.activityLogs || []),
+          ],
+        });
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to lift marketplace restriction');
     } finally {
       setIsMutating(false);
     }
@@ -205,14 +309,26 @@ export default function AdminShopDetailPage() {
 
   const { shop, subscriptions = [], payments = [], activityLogs = [], businessDocuments = [] } = details;
 
-  const getStatusBadge = (status: string) => {
-    const s = status.toUpperCase();
-    if (s === 'ACTIVE') return <Badge variant="success">Active Storefront</Badge>;
-    if (s === 'PENDING' || s === 'PENDING_APPROVAL') return <Badge variant="warning">Pending Review</Badge>;
-    if (s === 'SUSPENDED') return <Badge variant="error">Suspended</Badge>;
-    if (s === 'INACTIVE') return <Badge variant="default">Inactive</Badge>;
-    if (s === 'REJECTED') return <Badge variant="error">Rejected</Badge>;
-    return <Badge variant="default">{status}</Badge>;
+  const latestSubscription = subscriptions && subscriptions.length > 0 ? subscriptions[0] : null;
+
+  const storefrontAvailability = computeStorefrontAvailability({
+    shopStatus: shop.status,
+    subscriptionStatus: latestSubscription?.status,
+    isOwnerEnabled: shop.isOwnerEnabled,
+    isMarketplaceRestricted: shop.isMarketplaceRestricted,
+    isDeleted: shop.isDeleted,
+  });
+
+  const getStatusBadge = () => {
+    return (
+      <BakeryStatusBadge
+        shopStatus={shop.status}
+        subscriptionStatus={latestSubscription?.status}
+        isOwnerEnabled={shop.isOwnerEnabled}
+        isMarketplaceRestricted={shop.isMarketplaceRestricted}
+        isDeleted={shop.isDeleted}
+      />
+    );
   };
 
   const getVerificationBadge = (vStatus?: string) => {
@@ -254,15 +370,83 @@ export default function AdminShopDetailPage() {
         </Link>
 
         <div className="flex items-center gap-2.5">
-          <Link href={`/shop/${shop.id}`} target="_blank" rel="noopener noreferrer">
-            <Button variant="outline" size="sm" className="gap-1.5 border-indigo-200 text-indigo-600 hover:bg-indigo-50">
+          <Link
+            href={`/shop/${shop.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={
+              storefrontAvailability.isStoreLive
+                ? 'Open live customer storefront in new tab'
+                : 'Storefront currently unavailable to customers (Admin preview will show offline state)'
+            }
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              className={`gap-1.5 ${
+                storefrontAvailability.isStoreLive
+                  ? 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'
+                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
               <Store className="w-4 h-4" />
-              <span>View Storefront</span>
+              <span>{storefrontAvailability.isStoreLive ? 'View Storefront' : 'Preview Storefront'}</span>
               <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
             </Button>
           </Link>
         </div>
       </div>
+      {/* Soft-Deleted Bakery Account Indicator */}
+      {(shop.isDeleted || shop.status === 'DELETED') && (
+        <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
+          <div className="flex items-start gap-3">
+            <Ban className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-sm text-slate-100 flex items-center gap-2">
+                <span>Soft-Deleted Bakery Account</span>
+                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800">
+                  Read-Only Historical Inspection
+                </span>
+              </p>
+              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                This bakery was soft-deleted and cannot be reactivated or returned to the marketplace.
+                All retained historical records, subscriptions, payments, and compliance audit logs are preserved below for regulatory compliance.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Administrative Marketplace Restriction Banner */}
+      {shop.isMarketplaceRestricted && !shop.isDeleted && shop.status !== 'DELETED' && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-sm text-amber-900 flex items-center gap-2">
+                <span>Marketplace Restriction Active</span>
+                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-200/80 text-amber-900 border border-amber-300">
+                  Hidden From Marketplace
+                </span>
+              </p>
+              <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
+                <strong>Restriction Reason:</strong> {shop.marketplaceRestrictionReason || 'Administrative restriction applied'}.
+              </p>
+              <p className="text-[11px] text-amber-700 mt-1">
+                The bakery is hidden from marketplace search and direct customer storefront visits. The owner retains dashboard access for order fulfillment and billing.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            disabled={isMutating}
+            onClick={() => setIsLiftRestrictionDialogOpen(true)}
+            className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+          >
+            Lift Restriction
+          </Button>
+        </div>
+      )}
 
       {/* Main Details Header Banner */}
       <Card className="p-6 border-slate-200 shadow-soft">
@@ -276,8 +460,14 @@ export default function AdminShopDetailPage() {
                 <h1 className="font-serif font-bold text-xl sm:text-2xl text-slate-900">
                   {shop.businessName}
                 </h1>
-                {getStatusBadge(shop.status)}
+                {getStatusBadge()}
                 {getVerificationBadge(shop.verificationStatus)}
+                {shop.isMarketplaceRestricted && (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                    <ShieldAlert className="w-3 h-3 text-amber-600" />
+                    <span>Marketplace Restricted</span>
+                  </span>
+                )}
                 {shop.isPureVeg && (
                   <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                     🌱 100% Pure Veg
@@ -288,51 +478,90 @@ export default function AdminShopDetailPage() {
                 <span className="font-mono text-slate-400">Tenant ID #{shop.id}</span>
                 <span>•</span>
                 <span>Registered: {new Date(shop.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                {shop.isOwnerEnabled === false && (
+                  <>
+                    <span>•</span>
+                    <span className="text-amber-600 font-semibold">Bakery Paused by Owner</span>
+                  </>
+                )}
               </p>
             </div>
           </div>
 
-          {/* Moderation Status Controls */}
+          {/* Moderation Status Controls (Disabled if Soft-Deleted) */}
           <div className="flex flex-wrap items-center gap-2.5">
-            {shop.status !== 'ACTIVE' && (
-              <div title={shop.verificationStatus !== 'VERIFIED' ? 'Cannot activate until KYC verification is approved' : ''}>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={isMutating || shop.verificationStatus !== 'VERIFIED'}
-                  onClick={() => handleStatusUpdate('ACTIVE')}
-                  className="bg-emerald-600 hover:bg-emerald-700 border-emerald-700 gap-1.5"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Activate Storefront</span>
-                </Button>
-              </div>
-            )}
+            {shop.isDeleted || shop.status === 'DELETED' ? (
+              <span className="text-xs font-semibold text-slate-400 px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200">
+                Action Controls Disabled (Deleted Account)
+              </span>
+            ) : (
+              <>
+                {/* Marketplace Restriction Button */}
+                {shop.isMarketplaceRestricted ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isMutating}
+                    onClick={() => setIsLiftRestrictionDialogOpen(true)}
+                    className="border-amber-300 text-amber-800 hover:bg-amber-50 gap-1.5"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>Lift Marketplace Restriction</span>
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isMutating}
+                    onClick={() => setIsRestrictModalOpen(true)}
+                    className="border-amber-300 text-amber-800 hover:bg-amber-50 gap-1.5"
+                  >
+                    <ShieldAlert className="w-4 h-4 text-amber-600" />
+                    <span>Restrict Marketplace</span>
+                  </Button>
+                )}
 
-            {shop.status === 'ACTIVE' && (
-              <Button
-                variant="danger"
-                size="sm"
-                disabled={isMutating}
-                onClick={() => setIsSuspendModalOpen(true)}
-                className="gap-1.5"
-              >
-                <Ban className="w-4 h-4" />
-                <span>Suspend Storefront</span>
-              </Button>
-            )}
+                {shop.status !== 'ACTIVE' && (
+                  <div title={shop.verificationStatus !== 'VERIFIED' ? 'Cannot activate until KYC verification is approved' : ''}>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={isMutating || shop.verificationStatus !== 'VERIFIED'}
+                      onClick={() => handleStatusUpdate('ACTIVE')}
+                      className="bg-emerald-600 hover:bg-emerald-700 border-emerald-700 gap-1.5"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Activate Storefront</span>
+                    </Button>
+                  </div>
+                )}
 
-            {shop.status !== 'PENDING' && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isMutating}
-                onClick={() => handleStatusUpdate('PENDING')}
-                className="gap-1.5 text-amber-700 hover:bg-amber-50"
-              >
-                <Clock className="w-4 h-4" />
-                <span>Mark Under Review</span>
-              </Button>
+                {shop.status === 'ACTIVE' && (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={isMutating}
+                    onClick={() => setIsSuspendModalOpen(true)}
+                    className="gap-1.5"
+                  >
+                    <Ban className="w-4 h-4" />
+                    <span>Suspend Storefront</span>
+                  </Button>
+                )}
+
+                {shop.status !== 'PENDING' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isMutating}
+                    onClick={() => handleVerificationReview('MARK_UNDER_REVIEW')}
+                    className="gap-1.5 text-amber-700 hover:bg-amber-50"
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span>Mark Under Review</span>
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -789,6 +1018,35 @@ export default function AdminShopDetailPage() {
         onClose={() => setIsRejectKycModalOpen(false)}
         onConfirm={(reason) => handleVerificationReview('REJECT', reason)}
         isMutating={isMutating}
+      />
+
+      {/* Step 5.3: Marketplace Restriction Application Modal */}
+      <AdminMarketplaceRestrictionModal
+        isOpen={isRestrictModalOpen}
+        onClose={() => setIsRestrictModalOpen(false)}
+        onConfirm={handleApplyRestriction}
+        isMutating={isMutating}
+        shopName={shop.businessName}
+      />
+
+      {/* Step 5.3: Lift Marketplace Restriction Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={isLiftRestrictionDialogOpen}
+        onClose={() => setIsLiftRestrictionDialogOpen(false)}
+        onConfirm={handleLiftRestriction}
+        title="Lift Marketplace Restriction"
+        description={
+          <div className="space-y-2 text-xs text-slate-600">
+            <p>
+              Are you sure you want to lift the administrative marketplace restriction on <span className="font-semibold text-slate-800">&ldquo;{shop.businessName}&rdquo;</span>?
+            </p>
+            <p>
+              This removes the administrative block. Marketplace visibility and customer storefront access will remain subject to the bakery&rsquo;s subscription entitlement, owner operational status, and platform account standing.
+            </p>
+          </div>
+        }
+        confirmLabel="Lift Restriction"
+        cancelLabel="Keep Restricted"
       />
     </div>
   );

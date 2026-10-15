@@ -27,4 +27,13 @@ public class OwnerSubscriptionController {
         }
         return ResponseEntity.ok(activeSub);
     }
+
+    @PostMapping("/cancel")
+    public ResponseEntity<Subscription> cancelSubscription(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @jakarta.validation.Valid @RequestBody(required = false) com.cakeplatform.api.modules.subscription.dto.CancelSubscriptionRequest request) {
+        String reason = (request != null) ? request.getReason() : null;
+        Subscription cancelledSub = subscriptionService.cancelSubscription(userDetails.getId(), reason);
+        return ResponseEntity.ok(cancelledSub);
+    }
 }

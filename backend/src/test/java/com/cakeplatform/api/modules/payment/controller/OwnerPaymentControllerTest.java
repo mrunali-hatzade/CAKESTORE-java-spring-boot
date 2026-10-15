@@ -73,6 +73,7 @@ public class OwnerPaymentControllerTest {
         testShop.setBusinessName("Test Shop");
         
         when(shopAccessValidator.getShopByOwnerId(1L)).thenReturn(testShop);
+        when(shopAccessValidator.validateBillingAccess(1L)).thenReturn(testShop);
         when(razorpayService.getKeyId()).thenReturn("test_key");
         when(razorpayService.isConfigured()).thenReturn(true);
         when(razorpayService.createSubscriptionOrder(any(), any(), any(), any())).thenReturn("order_test_123");

@@ -34,16 +34,24 @@ public class SubscriptionScheduler {
         LocalDateTime now = LocalDateTime.now();
 
         for (Subscription sub : activeSubscriptions) {
-            if (sub.getExpiryDate() == null) continue;
+            try {
+                if (sub.getExpiryDate() == null) continue;
 
-            long daysUntilExpiry = ChronoUnit.DAYS.between(now.toLocalDate(), sub.getExpiryDate().toLocalDate());
+                long daysUntilExpiry = ChronoUnit.DAYS.between(now.toLocalDate(), sub.getExpiryDate().toLocalDate());
 
-            if (daysUntilExpiry == 7 || daysUntilExpiry == 5 || daysUntilExpiry == 3 || daysUntilExpiry == 1) {
-                sendExpiringNotification(sub, daysUntilExpiry);
-            } else if (daysUntilExpiry <= 0) {
-                log.info("Subscription ID {} for Shop ID {} has expired (daysUntilExpiry: {}). Triggering expiration workflow...",
-                        sub.getId(), sub.getShop().getId(), daysUntilExpiry);
-                subscriptionService.expireSubscription(sub.getId());
+                if (daysUntilExpiry == 7 || daysUntilExpiry == 5 || daysUntilExpiry == 3 || daysUntilExpiry == 1) {
+                    if (sub.getCancelledAt() == null) {
+                        sendExpiringNotification(sub, daysUntilExpiry);
+                    } else {
+                        log.debug("Skipping expiring notification for cancelled subscription ID {}", sub.getId());
+                    }
+                } else if (daysUntilExpiry <= 0) {
+                    log.info("Subscription ID {} for Shop ID {} has expired (daysUntilExpiry: {}). Triggering expiration workflow...",
+                            sub.getId(), sub.getShop().getId(), daysUntilExpiry);
+                    subscriptionService.expireSubscription(sub.getId());
+                }
+            } catch (Exception ex) {
+                log.error("Failed to process expiration for subscription ID {}: {}", sub.getId(), ex.getMessage(), ex);
             }
         }
     }

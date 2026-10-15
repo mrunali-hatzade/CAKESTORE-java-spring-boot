@@ -12,4 +12,6 @@ public class AdminShopSummaryResponse {
     private String shopStatus;
     private LocalDateTime registeredAt;
     private String subscriptionStatus;
+    private Boolean isOwnerEnabled;
+    private Boolean isMarketplaceRestricted;
 }

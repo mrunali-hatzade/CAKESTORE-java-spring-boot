@@ -41,6 +41,9 @@ public class ShopResponse {
 
     private ShopStatus status;
     private String verificationStatus;
+    private Boolean isOwnerEnabled;
+    private Boolean isMarketplaceRestricted;
+    private String marketplaceRestrictionReason;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

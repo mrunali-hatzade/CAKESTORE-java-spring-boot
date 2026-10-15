@@ -90,7 +90,7 @@ class OwnerDashboardServiceTest {
 
     @Test
     void testDashboardStatsCalculatesAuthoritativeDataCorrectly() {
-        when(shopAccessValidator.getValidShopForOwner(1L)).thenReturn(shop);
+        when(shopAccessValidator.validateDashboardAccess(1L)).thenReturn(shop);
         when(productRepository.countByShopId(shop.getId())).thenReturn(10L);
         when(productRepository.countByShopIdAndStatusAndAvailability(shop.getId(), "ACTIVE", true)).thenReturn(8L);
         
