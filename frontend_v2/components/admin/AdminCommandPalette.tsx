@@ -142,6 +142,7 @@ export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({ isOpen
         if (item._type === 'shop') handleSelect(`/admin/shops/${item.id}`);
         if (item._type === 'feedback') handleSelect(`/admin/feedback?search=${encodeURIComponent(item.subject || query)}`);
         if (item._type === 'enquiry') handleSelect(`/admin/enquiries?search=${encodeURIComponent(item.subject || query)}`);
+        if (item._type === 'notification') handleSelect(`/admin/notifications?search=${encodeURIComponent(item.title || query)}`);
       } else {
         // Fallback generic search
         handleSelect(`/admin/shops?search=${encodeURIComponent(query.trim())}`);

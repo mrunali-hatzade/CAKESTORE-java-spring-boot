@@ -33,6 +33,7 @@ export interface AdminNotification {
   title: string;
   message: string;
   priority: AdminNotificationPriority;
+  category?: AdminNotificationCategory;
   createdAt: string;
   isRead: boolean;
   referenceId?: string | number;

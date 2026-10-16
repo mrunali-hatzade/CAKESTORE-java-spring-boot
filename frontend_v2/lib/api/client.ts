@@ -131,6 +131,8 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
         } else if (responseData.error && responseData.error !== 'Bad Request') {
           errorMessage = responseData.error;
         }
+      } else if (typeof responseData === 'string' && responseData.trim().length > 0) {
+        errorMessage = responseData;
       }
 
       if (response.status === 500) {

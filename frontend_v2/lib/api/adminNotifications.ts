@@ -54,25 +54,13 @@ export const adminNotificationsApi = {
    * Super Admin: Mark single notification as read.
    */
   async markAsRead(id: string): Promise<void> {
-    try {
-      await apiClient.patch(`/api/admin/notifications/${id}/read`, {});
-    } catch (err: any) {
-      if (err?.status !== 404) {
-        console.warn('Failed to mark notification read:', err);
-      }
-    }
+    await apiClient.patch(`/api/admin/notifications/${id}/read`, {});
   },
 
   /**
    * Super Admin: Mark all notifications as read.
    */
   async markAllAsRead(): Promise<void> {
-    try {
-      await apiClient.post('/api/admin/notifications/mark-all-read', {});
-    } catch (err: any) {
-      if (err?.status !== 404) {
-        console.warn('Failed to mark all notifications read:', err);
-      }
-    }
+    await apiClient.post('/api/admin/notifications/mark-all-read', {});
   },
 };

@@ -11,12 +11,14 @@ import com.cakeplatform.api.modules.shop.ShopRepository;
 import com.cakeplatform.api.modules.user.User;
 import com.cakeplatform.api.modules.user.UserRepository;
 import com.cakeplatform.api.modules.user.UserRole;
+import com.cakeplatform.api.modules.audit.ActivityLoggerService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -30,6 +32,7 @@ public class PlatformFeedbackService {
     private final ShopRepository shopRepository;
     private final AdminNotificationService adminNotificationService;
     private final EmailService emailService;
+    private final ActivityLoggerService activityLogger;
 
     /**
      * Submit platform feedback from an authenticated shop owner.
@@ -116,36 +119,87 @@ public class PlatformFeedbackService {
      * Mark platform feedback as read.
      */
     @Transactional
-    
-    public void replyToFeedback(Long id, String replyMessage) {
-        PlatformFeedback feedback = feedbackRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Feedback not found with ID: " + id));
-        
-        if (feedback.getOwnerEmail() != null) {
-            emailService.sendEmail(feedback.getOwnerEmail(), "Re: [CakeStore Feedback] " + String.valueOf(feedback.getCategory()), replyMessage);
-        } else if (feedback.getShopId() != null) {
-            // Find owner via shop... but let's assume getOwnerEmail is populated by submitFeedback
-            log.warn("Feedback {} has no ownerEmail attached, attempting to find it...", id);
-            Shop shop = shopRepository.findById(feedback.getShopId()).orElse(null);
-            if (shop != null && shop.getOwner() != null) {
-                emailService.sendEmail(shop.getOwner().getEmail(), "Re: [CakeStore Feedback] " + String.valueOf(feedback.getCategory()), replyMessage);
-            }
-        }
-        
-        feedback.setAdminReply(replyMessage);
-        feedback.setRepliedAt(java.time.LocalDateTime.now());
-        feedback.setIsRead(true);
-        feedbackRepository.save(feedback);
-        log.info("Sent reply to feedback ID {}", id);
+    public void markAsRead(Long id) {
+        markAsRead(id, null);
     }
 
-    public void markAsRead(Long id) {
+    @Transactional
+    public void markAsRead(Long id, Long adminUserId) {
         PlatformFeedback feedback = feedbackRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Feedback not found with ID: " + id));
 
         feedback.setIsRead(true);
         feedbackRepository.save(feedback);
         log.info("Marked platform feedback ID {} as read", id);
+
+        if (activityLogger != null && adminUserId != null) {
+            activityLogger.logActivity(
+                    adminUserId,
+                    feedback.getShopId(),
+                    "PLATFORM_FEEDBACK_READ",
+                    "PLATFORM_FEEDBACK",
+                    feedback.getId(),
+                    "Admin marked feedback #" + feedback.getId() + " as read"
+            );
+        }
+    }
+
+    /**
+     * Super Admin reply to platform feedback.
+     * Guaranteed transactional database save + isolated email dispatch + persistent activity audit log.
+     */
+    @Transactional
+    public void replyToFeedback(Long id, String replyMessage) {
+        replyToFeedback(id, replyMessage, null);
+    }
+
+    @Transactional
+    public void replyToFeedback(Long id, String replyMessage, Long adminUserId) {
+        if (replyMessage == null || replyMessage.trim().isEmpty()) {
+            throw new IllegalArgumentException("Reply message cannot be empty");
+        }
+
+        PlatformFeedback feedback = feedbackRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Feedback not found with ID: " + id));
+
+        // 1. Transactional Database Update: persist reply first
+        feedback.setAdminReply(replyMessage.trim());
+        feedback.setRepliedAt(LocalDateTime.now());
+        feedback.setIsRead(true);
+        PlatformFeedback saved = feedbackRepository.save(feedback);
+        log.info("Persisted admin reply to platform feedback ID {}", saved.getId());
+
+        // 2. Safe Asynchronous Email Dispatch (Isolated: never fails or rolls back DB record)
+        try {
+            String targetEmail = feedback.getOwnerEmail();
+            if ((targetEmail == null || targetEmail.trim().isEmpty()) && feedback.getShop() != null && feedback.getShop().getOwner() != null) {
+                targetEmail = feedback.getShop().getOwner().getEmail();
+            }
+
+            if (targetEmail != null && !targetEmail.trim().isEmpty()) {
+                emailService.sendEmail(
+                        targetEmail,
+                        "Re: [CakeStore Feedback] " + feedback.getCategory(),
+                        replyMessage.trim()
+                );
+            } else {
+                log.warn("No owner email found to send reply for feedback ID {}", id);
+            }
+        } catch (Exception ex) {
+            log.error("Failed to dispatch reply email for feedback ID {}: {}", id, ex.getMessage());
+        }
+
+        // 3. Activity Audit Trail
+        if (activityLogger != null && adminUserId != null) {
+            activityLogger.logActivity(
+                    adminUserId,
+                    feedback.getShopId(),
+                    "PLATFORM_FEEDBACK_REPLIED",
+                    "PLATFORM_FEEDBACK",
+                    feedback.getId(),
+                    String.format("Admin replied to %s feedback (#%d)", feedback.getCategory(), feedback.getId())
+            );
+        }
     }
 
     /**

@@ -82,11 +82,22 @@ export interface AdminShopDetails {
   };
   subscriptions?: {
     id: number;
+    plan?: {
+      id?: number;
+      name?: string;
+      description?: string;
+      price?: number;
+      billingCycle?: string;
+      durationDays?: number;
+    } | null;
     planName?: string;
     status?: string;
     startDate?: string;
+    expiryDate?: string;
     endDate?: string;
     amount?: number;
+    cancelledAt?: string | null;
+    cancellationReason?: string | null;
   }[];
   payments?: {
     id: number;
@@ -134,20 +145,24 @@ export interface AdminPlan {
 }
 
 export interface AdminMessagePayload {
+  idempotencyKey?: string;
   title: string;
   message: string;
+  targetType?: 'ALL' | 'SPECIFIC';
   specificOwnerId?: number | null;
   sendEmail?: boolean;
 }
 
 export interface SentBroadcastRecord {
-  id: string;
+  id: string | number;
   title: string;
   message: string;
   targetType: string;
   targetOwnerId?: number;
   sentAt: string;
   recipientCount: number;
+  status?: string;
+  sentEmail?: boolean;
 }
 
 // ==========================================

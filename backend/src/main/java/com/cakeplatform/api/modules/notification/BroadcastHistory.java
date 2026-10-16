@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "broadcast_history")
@@ -42,4 +43,25 @@ public class BroadcastHistory {
     @CreationTimestamp
     @Column(name = "sent_at", nullable = false, updatable = false)
     private LocalDateTime sentAt;
+
+    @Column(name = "idempotency_key", nullable = false, unique = true)
+    private UUID idempotencyKey;
+
+    @Column(name = "status", nullable = false, length = 20)
+    private String status;
+
+    @Column(name = "payload_hash", nullable = false, length = 64)
+    private String payloadHash;
+
+    @Column(name = "lease_token", nullable = false)
+    private UUID leaseToken;
+
+    @Column(name = "lease_expires_at", nullable = false)
+    private LocalDateTime leaseExpiresAt;
+
+    @Column(name = "worker_heartbeat")
+    private LocalDateTime workerHeartbeat;
+
+    @Column(name = "failure_reason", columnDefinition = "TEXT")
+    private String failureReason;
 }

@@ -100,6 +100,11 @@ function getNotificationIcon(type: AdminNotificationType) {
   }
 }
 
+export function getWebSocketEndpoint(): string {
+  const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080').replace(/\/$/, '');
+  return `${baseUrl}/ws-endpoint`;
+}
+
 export default function AdminNotificationBell() {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
@@ -127,14 +132,29 @@ export default function AdminNotificationBell() {
   useEffect(() => {
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 60000);
-    return () => clearInterval(interval);
+
+    const handleGlobalRefresh = () => {
+      fetchNotifications();
+    };
+    const handleNotificationsUpdated = () => {
+      fetchNotifications();
+    };
+
+    window.addEventListener('adminGlobalRefresh', handleGlobalRefresh);
+    window.addEventListener('adminNotificationsUpdated', handleNotificationsUpdated);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('adminGlobalRefresh', handleGlobalRefresh);
+      window.removeEventListener('adminNotificationsUpdated', handleNotificationsUpdated);
+    };
   }, [fetchNotifications]);
 
   useEffect(() => {
     if (!user || !token) return;
 
     const client = new Client({
-      webSocketFactory: () => new SockJS('http://localhost:8080/ws-endpoint'),
+      webSocketFactory: () => new SockJS(getWebSocketEndpoint()),
       connectHeaders: { Authorization: `Bearer ${token}` },
       onConnect: () => {
         client.subscribe(`/queue/admin-notifications-${user.id}`, (message) => {
@@ -168,18 +188,32 @@ export default function AdminNotificationBell() {
   }, [isOpen]);
 
   const handleMarkAllRead = async () => {
-    await adminNotificationsApi.markAllAsRead();
-    setUnreadCount(0);
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    try {
+      await adminNotificationsApi.markAllAsRead();
+      setUnreadCount(0);
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('adminNotificationsUpdated'));
+      }
+    } catch (err) {
+      console.error('Failed to mark all notifications as read:', err);
+    }
   };
 
   const handleItemClick = async (n: AdminNotification) => {
     if (!n.isRead) {
-      await adminNotificationsApi.markAsRead(n.id);
-      setUnreadCount((c) => Math.max(0, c - 1));
-      setNotifications((prev) =>
-        prev.map((item) => (item.id === n.id ? { ...item, isRead: true } : item))
-      );
+      try {
+        await adminNotificationsApi.markAsRead(n.id);
+        setUnreadCount((c) => Math.max(0, c - 1));
+        setNotifications((prev) =>
+          prev.map((item) => (item.id === n.id ? { ...item, isRead: true } : item))
+        );
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('adminNotificationsUpdated'));
+        }
+      } catch (err) {
+        console.error('Failed to mark notification as read:', err);
+      }
     }
     setIsOpen(false);
     const dest = getNotificationDestination(n);

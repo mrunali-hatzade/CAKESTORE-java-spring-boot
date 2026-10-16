@@ -46,6 +46,7 @@ public class PhaseGCommunicationTest {
 
     // Services
     @Mock private EmailService emailService;
+    @Mock private com.cakeplatform.api.modules.audit.ActivityLoggerService activityLogger;
 
     private AdminNotificationService adminNotificationService;
     private PlatformFeedbackService feedbackService;
@@ -68,13 +69,13 @@ public class PhaseGCommunicationTest {
 
     @BeforeEach
     void setUp() {
-        adminNotificationService = new AdminNotificationService(adminNotificationRepository, userRepository, mock(org.springframework.messaging.simp.SimpMessagingTemplate.class));
+        adminNotificationService = new AdminNotificationService(adminNotificationRepository, userRepository, mock(org.springframework.messaging.simp.SimpMessagingTemplate.class), activityLogger);
         feedbackService = new PlatformFeedbackService(
                 feedbackRepository, enquiryRepository, userRepository, shopRepository,
-                adminNotificationService, emailService
+                adminNotificationService, emailService, activityLogger
         );
         enquiryService = new ContactEnquiryService(
-                enquiryRepository, userRepository, adminNotificationService, emailService
+                enquiryRepository, userRepository, adminNotificationService, emailService, activityLogger
         );
 
         ownerFeedbackController = new OwnerFeedbackController(feedbackService);
@@ -247,7 +248,7 @@ public class PhaseGCommunicationTest {
     }
 
     @Test
-    @DisplayName("G1.6: Super Admin marks platform feedback as read")
+    @DisplayName("G1.6: Super Admin marks platform feedback as read and records audit log")
     void testMarkFeedbackRead() {
         PlatformFeedback fb = PlatformFeedback.builder()
                 .id(601L)
@@ -255,13 +256,114 @@ public class PhaseGCommunicationTest {
                 .rating(4)
                 .category(PlatformFeedbackCategory.GENERAL)
                 .message("Test")
+                .shop(testShop)
                 .build();
         when(feedbackRepository.findById(601L)).thenReturn(Optional.of(fb));
 
-        feedbackService.markAsRead(601L);
+        feedbackService.markAsRead(601L, 1L);
 
         assertTrue(fb.getIsRead());
         verify(feedbackRepository).save(fb);
+        verify(activityLogger).logActivity(
+                eq(1L),
+                eq(100L),
+                eq("PLATFORM_FEEDBACK_READ"),
+                eq("PLATFORM_FEEDBACK"),
+                eq(601L),
+                contains("Admin marked feedback #601 as read")
+        );
+    }
+
+    @Test
+    @DisplayName("G1.7: Super Admin replies to platform feedback - Persists reply, audits action, dispatches email")
+    void testReplyToFeedback_Success() {
+        PlatformFeedback fb = PlatformFeedback.builder()
+                .id(602L)
+                .isRead(false)
+                .rating(5)
+                .category(PlatformFeedbackCategory.DASHBOARD)
+                .message("Love the new chart")
+                .owner(testOwner)
+                .shop(testShop)
+                .build();
+        when(feedbackRepository.findById(602L)).thenReturn(Optional.of(fb));
+        when(feedbackRepository.save(any(PlatformFeedback.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        feedbackService.replyToFeedback(602L, "Thank you for the great feedback!", 1L);
+
+        assertEquals("Thank you for the great feedback!", fb.getAdminReply());
+        assertNotNull(fb.getRepliedAt());
+        assertTrue(fb.getIsRead());
+        verify(feedbackRepository).save(fb);
+
+        // Verify email dispatched to owner
+        verify(emailService).sendEmail(
+                eq("owner@sweetdelights.in"),
+                eq("Re: [CakeStore Feedback] DASHBOARD"),
+                eq("Thank you for the great feedback!")
+        );
+
+        // Verify audit log recorded
+        verify(activityLogger).logActivity(
+                eq(1L),
+                eq(100L),
+                eq("PLATFORM_FEEDBACK_REPLIED"),
+                eq("PLATFORM_FEEDBACK"),
+                eq(602L),
+                contains("Admin replied to DASHBOARD feedback (#602)")
+        );
+    }
+
+    @Test
+    @DisplayName("G1.8: Super Admin reply survives email service failure (Safe Failure Isolation)")
+    void testReplyToFeedback_EmailFailureIsolated() {
+        PlatformFeedback fb = PlatformFeedback.builder()
+                .id(603L)
+                .isRead(false)
+                .rating(4)
+                .category(PlatformFeedbackCategory.ORDERS)
+                .message("Order export feature request")
+                .owner(testOwner)
+                .shop(testShop)
+                .build();
+        when(feedbackRepository.findById(603L)).thenReturn(Optional.of(fb));
+        when(feedbackRepository.save(any(PlatformFeedback.class))).thenAnswer(inv -> inv.getArgument(0));
+        doThrow(new RuntimeException("Resend API down")).when(emailService).sendEmail(any(), any(), any());
+
+        // Should complete without throwing an unhandled exception
+        assertDoesNotThrow(() -> feedbackService.replyToFeedback(603L, "Feature planned for next release.", 1L));
+
+        assertEquals("Feature planned for next release.", fb.getAdminReply());
+        assertNotNull(fb.getRepliedAt());
+        assertTrue(fb.getIsRead());
+        verify(feedbackRepository).save(fb);
+    }
+
+    @Test
+    @DisplayName("G1.9: AdminCommunicationController reply endpoint delegates with admin principal")
+    void testAdminCommunicationController_ReplyEndpoint() {
+        PlatformFeedback fb = PlatformFeedback.builder()
+                .id(604L)
+                .isRead(false)
+                .rating(5)
+                .category(PlatformFeedbackCategory.GENERAL)
+                .message("Feedback")
+                .owner(testOwner)
+                .shop(testShop)
+                .build();
+        when(feedbackRepository.findById(604L)).thenReturn(Optional.of(fb));
+        when(feedbackRepository.save(any(PlatformFeedback.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        com.cakeplatform.api.modules.communication.dto.AdminReplyRequest req =
+                new com.cakeplatform.api.modules.communication.dto.AdminReplyRequest();
+        req.setMessage("Thank you!");
+
+        ResponseEntity<Map<String, Object>> response =
+                adminCommunicationController.replyToFeedback(604L, req, adminUserDetails);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Reply sent successfully", response.getBody().get("message"));
+        assertEquals(604L, response.getBody().get("id"));
     }
 
     // =========================================================================
@@ -374,7 +476,7 @@ public class PhaseGCommunicationTest {
     }
 
     @Test
-    @DisplayName("G2.5: Super Admin marks contact enquiry as read")
+    @DisplayName("G2.5: Super Admin marks contact enquiry as read and records audit log")
     void testMarkEnquiryRead() {
         ContactEnquiry enquiry = ContactEnquiry.builder()
                 .id(801L)
@@ -386,10 +488,148 @@ public class PhaseGCommunicationTest {
                 .build();
         when(enquiryRepository.findById(801L)).thenReturn(Optional.of(enquiry));
 
-        enquiryService.markAsRead(801L);
+        enquiryService.markAsRead(801L, 1L);
 
         assertTrue(enquiry.getIsRead());
         verify(enquiryRepository).save(enquiry);
+        verify(activityLogger).logActivity(
+                eq(1L),
+                isNull(),
+                eq("CONTACT_ENQUIRY_READ"),
+                eq("CONTACT_ENQUIRY"),
+                eq(801L),
+                contains("Admin marked enquiry #801 as read")
+        );
+    }
+
+    @Test
+    @DisplayName("G2.6: Super Admin replies to contact enquiry - Persists reply, audits action, dispatches email")
+    void testReplyToEnquiry_Success() {
+        ContactEnquiry enquiry = ContactEnquiry.builder()
+                .id(802L)
+                .isRead(false)
+                .name("Anita Patel")
+                .email("anita@example.com")
+                .subject("Delivery Question")
+                .message("Do you deliver to Baner?")
+                .build();
+        when(enquiryRepository.findById(802L)).thenReturn(Optional.of(enquiry));
+        when(enquiryRepository.save(any(ContactEnquiry.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        enquiryService.replyToEnquiry(802L, "Yes, we deliver to Baner daily from 9 AM to 9 PM.", 1L);
+
+        assertEquals("Yes, we deliver to Baner daily from 9 AM to 9 PM.", enquiry.getAdminReply());
+        assertNotNull(enquiry.getRepliedAt());
+        assertTrue(enquiry.getIsRead());
+        verify(enquiryRepository).save(enquiry);
+
+        // Verify email dispatched to visitor
+        verify(emailService).sendEmail(
+                eq("anita@example.com"),
+                eq("Re: [CakeStore] Delivery Question"),
+                eq("Yes, we deliver to Baner daily from 9 AM to 9 PM.")
+        );
+
+        // Verify audit log recorded
+        verify(activityLogger).logActivity(
+                eq(1L),
+                isNull(),
+                eq("CONTACT_ENQUIRY_REPLIED"),
+                eq("CONTACT_ENQUIRY"),
+                eq(802L),
+                contains("Admin replied to enquiry (#802) from anita@example.com")
+        );
+    }
+
+    @Test
+    @DisplayName("G2.7: Super Admin reply survives email service failure (Safe Failure Isolation)")
+    void testReplyToEnquiry_EmailFailureIsolated() {
+        ContactEnquiry enquiry = ContactEnquiry.builder()
+                .id(803L)
+                .isRead(false)
+                .name("Vikram Joshi")
+                .email("vikram@example.com")
+                .subject("Custom Cake Flavors")
+                .message("Can I get sugar-free red velvet?")
+                .build();
+        when(enquiryRepository.findById(803L)).thenReturn(Optional.of(enquiry));
+        when(enquiryRepository.save(any(ContactEnquiry.class))).thenAnswer(inv -> inv.getArgument(0));
+        doThrow(new RuntimeException("Resend API down")).when(emailService).sendEmail(any(), any(), any());
+
+        // Should complete without throwing an unhandled exception
+        assertDoesNotThrow(() -> enquiryService.replyToEnquiry(803L, "Yes, sugar-free red velvet is available on pre-order.", 1L));
+
+        assertEquals("Yes, sugar-free red velvet is available on pre-order.", enquiry.getAdminReply());
+        assertNotNull(enquiry.getRepliedAt());
+        assertTrue(enquiry.getIsRead());
+        verify(enquiryRepository).save(enquiry);
+    }
+
+    @Test
+    @DisplayName("G2.8: Replying with empty message throws IllegalArgumentException")
+    void testReplyToEnquiry_EmptyMessage_Throws() {
+        assertThrows(IllegalArgumentException.class, () -> enquiryService.replyToEnquiry(804L, "   ", 1L));
+        verify(enquiryRepository, never()).save(any());
+        verify(emailService, never()).sendEmail(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("G2.9: AdminCommunicationController reply to enquiry delegates with admin principal")
+    void testAdminCommunicationController_ReplyEnquiryEndpoint() {
+        ContactEnquiry enquiry = ContactEnquiry.builder()
+                .id(805L)
+                .isRead(false)
+                .name("Rohan")
+                .email("rohan@example.com")
+                .subject("Query")
+                .message("Message")
+                .build();
+        when(enquiryRepository.findById(805L)).thenReturn(Optional.of(enquiry));
+        when(enquiryRepository.save(any(ContactEnquiry.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        com.cakeplatform.api.modules.communication.dto.AdminReplyRequest req =
+                new com.cakeplatform.api.modules.communication.dto.AdminReplyRequest();
+        req.setMessage("Controller delegation verified");
+
+        ResponseEntity<Map<String, Object>> resp = adminCommunicationController.replyToEnquiry(805L, req, adminUserDetails);
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertEquals(805L, resp.getBody().get("id"));
+
+        verify(activityLogger).logActivity(
+                eq(1L),
+                isNull(),
+                eq("CONTACT_ENQUIRY_REPLIED"),
+                eq("CONTACT_ENQUIRY"),
+                eq(805L),
+                anyString()
+        );
+    }
+
+    @Test
+    @DisplayName("G2.10: AdminCommunicationController mark enquiry read delegates with admin principal")
+    void testAdminCommunicationController_MarkEnquiryReadEndpoint() {
+        ContactEnquiry enquiry = ContactEnquiry.builder()
+                .id(806L)
+                .isRead(false)
+                .name("Shreya")
+                .email("shreya@example.com")
+                .subject("Query")
+                .message("Message")
+                .build();
+        when(enquiryRepository.findById(806L)).thenReturn(Optional.of(enquiry));
+
+        ResponseEntity<Map<String, Object>> resp = adminCommunicationController.markEnquiryRead(806L, adminUserDetails);
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertTrue((Boolean) resp.getBody().get("success"));
+
+        verify(activityLogger).logActivity(
+                eq(1L),
+                isNull(),
+                eq("CONTACT_ENQUIRY_READ"),
+                eq("CONTACT_ENQUIRY"),
+                eq(806L),
+                anyString()
+        );
     }
 
     // =========================================================================
@@ -573,7 +813,7 @@ public class PhaseGCommunicationTest {
     }
 
     @Test
-    @DisplayName("G6.4: Admin cannot mark another admin's private notification as read")
+    @DisplayName("G6.4: Admin cannot mark another admin's private notification as read - throws AccessDeniedException (403)")
     void testAdminNotificationController_UnauthorizedMarkReadRejected() {
         AdminNotification n = AdminNotification.builder()
                 .id(1003L)
@@ -582,8 +822,9 @@ public class PhaseGCommunicationTest {
                 .build();
         when(adminNotificationRepository.findById(1003L)).thenReturn(Optional.of(n));
 
-        // Admin 1 attempts to mark it read
-        adminNotificationController.markAsRead(adminUserDetails, 1003L);
+        // Admin 1 attempts to mark it read -> throws AccessDeniedException
+        assertThrows(AccessDeniedException.class, () ->
+                adminNotificationController.markAsRead(adminUserDetails, 1003L));
 
         // Must remain unread and not saved
         assertFalse(n.getIsRead());
@@ -600,6 +841,68 @@ public class PhaseGCommunicationTest {
         ResponseEntity<Map<String, Object>> patchResp = adminNotificationController.markAllAsReadPatch(adminUserDetails);
         assertEquals(HttpStatus.OK, patchResp.getStatusCode());
         verify(adminNotificationRepository, times(2)).markAllAsReadForRecipient(1L);
+    }
+
+    @Test
+    @DisplayName("G6.6: AdminNotificationController markAsRead throws ResourceNotFoundException (404) on non-existent ID")
+    void testAdminNotificationController_NotFoundThrows() {
+        when(adminNotificationRepository.findById(9999L)).thenReturn(Optional.empty());
+
+        assertThrows(com.cakeplatform.api.exception.ResourceNotFoundException.class, () ->
+                adminNotificationController.markAsRead(adminUserDetails, 9999L));
+    }
+
+    @Test
+    @DisplayName("G6.7: Category=UNREAD filter is normalized to isRead=false and category=null")
+    void testAdminNotificationController_CategoryUnreadNormalization() {
+        when(adminNotificationRepository.findWithFilters(
+                eq(1L), isNull(), isNull(), eq(false), isNull(), any()))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        adminNotificationController.getNotifications(adminUserDetails, "UNREAD", null, null, 0, 20);
+
+        verify(adminNotificationRepository).findWithFilters(
+                eq(1L), isNull(), isNull(), eq(false), isNull(), any());
+    }
+
+    @Test
+    @DisplayName("G6.8: markAllAsRead records audit log with ADMIN_NOTIFICATIONS_BULK_READ action")
+    void testAdminNotificationController_MarkAllAsRead_AuditLogged() {
+        adminNotificationController.markAllAsReadPost(adminUserDetails);
+        verify(activityLogger, times(1)).logActivity(
+                eq(1L),
+                isNull(),
+                eq("ADMIN_NOTIFICATIONS_BULK_READ"),
+                eq("ADMIN_NOTIFICATION"),
+                isNull(),
+                contains("marked all notifications as read")
+        );
+    }
+
+    @Test
+    @DisplayName("G6.9: Verify actual HTTP 403 and 404 response mappings in GlobalExceptionHandler")
+    void testGlobalExceptionHandler_Mappings() {
+        com.cakeplatform.api.config.GlobalExceptionHandler handler = new com.cakeplatform.api.config.GlobalExceptionHandler();
+
+        // 404
+        ResponseEntity<Map<String, String>> notFoundResp = handler.handleResourceNotFoundException(
+                new com.cakeplatform.api.exception.ResourceNotFoundException("Notification not found with ID: 9999"));
+        assertEquals(HttpStatus.NOT_FOUND, notFoundResp.getStatusCode());
+        assertEquals("Notification not found with ID: 9999", notFoundResp.getBody().get("error"));
+
+        // 403 (when authenticated)
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        adminUserDetails, null, adminUserDetails.getAuthorities())
+        );
+        try {
+            ResponseEntity<Map<String, String>> forbiddenResp = handler.handleAccessDeniedException(
+                    new AccessDeniedException("Unauthorized to mark notification ID 1003 as read"));
+            assertEquals(HttpStatus.FORBIDDEN, forbiddenResp.getStatusCode());
+            assertEquals("Unauthorized to mark notification ID 1003 as read", forbiddenResp.getBody().get("error"));
+        } finally {
+            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+        }
     }
 
     // =========================================================================

@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import com.cakeplatform.api.security.CustomUserDetails;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import com.cakeplatform.api.modules.communication.dto.AdminReplyRequest;
 
@@ -36,9 +38,12 @@ public class AdminCommunicationController {
     }
 
     @PatchMapping("/feedback/{id}/read")
-    public ResponseEntity<Map<String, Object>> markFeedbackRead(@PathVariable Long id) {
-        log.info("Admin marking platform feedback ID {} as read", id);
-        feedbackService.markAsRead(id);
+    public ResponseEntity<Map<String, Object>> markFeedbackRead(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Long adminUserId = userDetails != null ? userDetails.getId() : null;
+        log.info("Admin {} marking platform feedback ID {} as read", adminUserId, id);
+        feedbackService.markAsRead(id, adminUserId);
         return ResponseEntity.ok(Map.of("success", true, "message", "Feedback marked as read"));
     }
 
@@ -54,23 +59,34 @@ public class AdminCommunicationController {
     }
 
     @PatchMapping("/enquiries/{id}/read")
-    public ResponseEntity<Map<String, Object>> markEnquiryRead(@PathVariable Long id) {
-        log.info("Admin marking contact enquiry ID {} as read", id);
-        enquiryService.markAsRead(id);
+    public ResponseEntity<Map<String, Object>> markEnquiryRead(
+            @PathVariable Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Long adminUserId = userDetails != null ? userDetails.getId() : null;
+        log.info("Admin {} marking contact enquiry ID {} as read", adminUserId, id);
+        enquiryService.markAsRead(id, adminUserId);
         return ResponseEntity.ok(Map.of("success", true, "message", "Enquiry marked as read"));
     }
 
     @PostMapping("/feedback/{id}/reply")
-    public ResponseEntity<Map<String, Object>> replyToFeedback(@PathVariable Long id, @RequestBody AdminReplyRequest request) {
-        log.info("Admin replying to platform feedback ID {}", id);
-        feedbackService.replyToFeedback(id, request.getMessage());
+    public ResponseEntity<Map<String, Object>> replyToFeedback(
+            @PathVariable Long id,
+            @RequestBody AdminReplyRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Long adminUserId = userDetails != null ? userDetails.getId() : null;
+        log.info("Admin {} replying to platform feedback ID {}", adminUserId, id);
+        feedbackService.replyToFeedback(id, request.getMessage(), adminUserId);
         return ResponseEntity.ok(Map.of("message", "Reply sent successfully", "id", id));
     }
 
     @PostMapping("/enquiries/{id}/reply")
-    public ResponseEntity<Map<String, Object>> replyToEnquiry(@PathVariable Long id, @RequestBody AdminReplyRequest request) {
-        log.info("Admin replying to contact enquiry ID {}", id);
-        enquiryService.replyToEnquiry(id, request.getMessage());
+    public ResponseEntity<Map<String, Object>> replyToEnquiry(
+            @PathVariable Long id,
+            @RequestBody AdminReplyRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        Long adminUserId = userDetails != null ? userDetails.getId() : null;
+        log.info("Admin {} replying to contact enquiry ID {}", adminUserId, id);
+        enquiryService.replyToEnquiry(id, request.getMessage(), adminUserId);
         return ResponseEntity.ok(Map.of("message", "Reply sent successfully", "id", id));
     }
 

@@ -13,15 +13,7 @@ export const communicationApi = {
    * Submit platform feedback from an authenticated shop owner.
    */
   async submitPlatformFeedback(payload: CreatePlatformFeedbackPayload): Promise<{ success: boolean; message: string }> {
-    try {
-      return await apiClient.post<{ success: boolean; message: string }>('/api/owner/feedback', payload);
-    } catch (err: any) {
-      // If backend endpoint is not yet mounted, gracefully acknowledge receipt for UI refinement
-      if (err?.status === 404 || err?.status === 500) {
-        return { success: true, message: 'Feedback received by CakeStore team' };
-      }
-      throw err;
-    }
+    return await apiClient.post<{ success: boolean; message: string }>('/api/owner/feedback', payload);
   },
 
   /**
@@ -55,14 +47,7 @@ export const communicationApi = {
    * Public: Submit a Contact Us enquiry.
    */
   async submitContactEnquiry(payload: CreateContactEnquiryPayload): Promise<{ success: boolean; message: string }> {
-    try {
-      return await apiClient.post<{ success: boolean; message: string }>('/api/contact/enquiries', payload);
-    } catch (err: any) {
-      if (err?.status === 404 || err?.status === 500) {
-        return { success: true, message: 'Enquiry submitted successfully' };
-      }
-      throw err;
-    }
+    return await apiClient.post<{ success: boolean; message: string }>('/api/contact/enquiries', payload);
   },
 
   /**
@@ -103,27 +88,13 @@ export const communicationApi = {
    * Super Admin: Reply to a contact enquiry.
    */
   async replyToEnquiry(id: string | number, message: string): Promise<void> {
-    try {
-      await apiClient.post(`/api/admin/enquiries/${id}/reply`, { message });
-    } catch (err: any) {
-      if (err?.status !== 404 && err?.status !== 500) {
-        throw err;
-      }
-      console.warn('Backend enquiry reply unavailable:', err);
-    }
+    await apiClient.post(`/api/admin/enquiries/${id}/reply`, { message });
   },
 
   /**
    * Super Admin: Reply to feedback.
    */
   async replyToFeedback(id: string | number, message: string): Promise<void> {
-    try {
-      await apiClient.post(`/api/admin/feedback/${id}/reply`, { message });
-    } catch (err: any) {
-      if (err?.status !== 404 && err?.status !== 500) {
-        throw err;
-      }
-      console.warn('Backend feedback reply unavailable:', err);
-    }
+    await apiClient.post(`/api/admin/feedback/${id}/reply`, { message });
   },
 };

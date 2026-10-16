@@ -13,6 +13,7 @@ import { communicationApi } from '@/lib/api/communication';
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -24,6 +25,7 @@ export default function ContactPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setErrorMessage(null);
     try {
       await communicationApi.submitContactEnquiry({
         name: form.name,
@@ -33,8 +35,13 @@ export default function ContactPage() {
         message: form.message,
       });
       setSubmitted(true);
-    } catch {
-      setSubmitted(true);
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to submit enquiry. Please check your information and try again.';
+      setErrorMessage(errorMsg);
+      // Form inputs are preserved in state
     } finally {
       setIsSubmitting(false);
     }
@@ -121,6 +128,18 @@ export default function ContactPage() {
                   <h2 className="text-xl font-bold font-serif text-brand-espresso">Send Us a Message</h2>
                   <p className="text-xs text-brand-muted mt-1">Fill in the form and we will get back to you shortly</p>
                 </div>
+                {errorMessage && (
+                  <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 flex items-center justify-between">
+                    <span>{errorMessage}</span>
+                    <button
+                      type="button"
+                      onClick={() => setErrorMessage(null)}
+                      className="text-red-500 hover:text-red-700 font-bold ml-2 text-sm leading-none"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Input
                     label="Your Name"

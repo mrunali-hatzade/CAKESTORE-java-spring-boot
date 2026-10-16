@@ -331,6 +331,14 @@ export default function AdminShopDetailPage() {
     );
   };
 
+  const getSubPlanName = (sub?: any): string => {
+    return sub?.plan?.name || sub?.planName || 'No Active Plan';
+  };
+
+  const getSubExpiryDate = (sub?: any): string | undefined => {
+    return sub?.expiryDate || sub?.endDate;
+  };
+
   const getVerificationBadge = (vStatus?: string) => {
     const s = (vStatus || 'PROCESSING').toUpperCase();
     if (s === 'VERIFIED') {
@@ -608,7 +616,7 @@ export default function AdminShopDetailPage() {
             <CreditCard className="w-5 h-5 text-amber-500" />
           </div>
           <p className="text-sm font-bold text-slate-900 mt-2 truncate">
-            {subscriptions[0]?.planName || 'Starter Bakery'}
+            {subscriptions[0]?.plan?.name || subscriptions[0]?.planName || 'Starter Bakery'}
           </p>
           <span className="text-xs text-amber-600 mt-1 block">
             {subscriptions[0]?.status || 'No Active Plan'}
@@ -846,7 +854,7 @@ export default function AdminShopDetailPage() {
             <div className="p-4 rounded-xl bg-purple-50/40 border border-purple-100 space-y-3 text-xs mb-4">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-slate-800 text-sm">
-                  {subscriptions[0]?.planName || 'No Active Plan'}
+                  {getSubPlanName(subscriptions[0])}
                 </span>
                 <span className="font-extrabold text-purple-700 text-sm">
                   {subscriptions[0]?.amount ? `₹${subscriptions[0].amount} / billing cycle` : '—'}
@@ -856,17 +864,17 @@ export default function AdminShopDetailPage() {
                 <div>
                   <span className="text-slate-400 block font-medium">Start Date</span>
                   <span className="font-semibold text-slate-700">
-                    {subscriptions[0]?.startDate || '—'}
+                    {subscriptions[0]?.startDate ? new Date(subscriptions[0].startDate).toLocaleDateString('en-IN') : '—'}
                   </span>
                 </div>
                 <div>
                   <span className="text-slate-400 block font-medium">Renewal / Expiry</span>
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-slate-700">
-                      {subscriptions[0]?.endDate || '—'}
+                      {getSubExpiryDate(subscriptions[0]) ? new Date(getSubExpiryDate(subscriptions[0])!).toLocaleDateString('en-IN') : '—'}
                     </span>
-                    {subscriptions[0]?.endDate && (() => {
-                      const daysLeft = Math.ceil((new Date(subscriptions[0].endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                    {getSubExpiryDate(subscriptions[0]) && (() => {
+                      const daysLeft = Math.ceil((new Date(getSubExpiryDate(subscriptions[0])!).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
                       if (daysLeft < 0) return <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">⚠️ EXPIRED</span>;
                       if (daysLeft <= 7) return <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">⚠️ Expires in {daysLeft} day(s)</span>;
                       return null;
@@ -885,8 +893,10 @@ export default function AdminShopDetailPage() {
                     className="p-2.5 rounded-lg border border-slate-100 bg-slate-50/60 flex items-center justify-between text-xs"
                   >
                     <div>
-                      <p className="font-semibold text-slate-800">{sub.planName}</p>
-                      <p className="text-[10px] text-slate-400">{sub.startDate} - {sub.endDate}</p>
+                      <p className="font-semibold text-slate-800">{getSubPlanName(sub)}</p>
+                      <p className="text-[10px] text-slate-400">
+                        {sub.startDate ? new Date(sub.startDate).toLocaleDateString('en-IN') : '—'} - {getSubExpiryDate(sub) ? new Date(getSubExpiryDate(sub)!).toLocaleDateString('en-IN') : '—'}
+                      </p>
                     </div>
                     <span className="font-bold text-slate-700">₹{sub.amount}</span>
                   </div>

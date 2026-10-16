@@ -94,16 +94,36 @@ export default function AdminContactEnquiriesPage() {
   };
 
   const handleSendReply = async () => {
-    if (!selectedEnquiry || !replyText.trim()) return;
-    setIsSending(true);
+    if (!selectedEnquiry) return;
+    if (!replyText.trim()) {
+      toast.error('Reply message cannot be empty');
+      return;
+    }
+
     try {
+      setIsSending(true);
       await communicationApi.replyToEnquiry(selectedEnquiry.id, replyText);
       toast.success('Reply sent successfully');
+      setSelectedEnquiry((prev) =>
+        prev
+          ? {
+              ...prev,
+              adminReply: replyText.trim(),
+              repliedAt: new Date().toISOString(),
+              isRead: true,
+            }
+          : null
+      );
       setReplyText('');
       setIsReplying(false);
       fetchEnquiries();
-    } catch (err) {
-      toast.error('Failed to send reply');
+    } catch (error: any) {
+      const errorMsg =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to send reply. Please try again.';
+      toast.error(errorMsg);
+      // Draft replyText is deliberately preserved so admin does not lose their input
     } finally {
       setIsSending(false);
     }
@@ -336,6 +356,25 @@ export default function AdminContactEnquiriesPage() {
               <div className="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap leading-relaxed text-[13px]">
                 {selectedEnquiry.message}
               </div>
+
+              {selectedEnquiry.adminReply && (
+                <div className="mt-6 p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Reply className="w-3.5 h-3.5 text-indigo-600" />
+                      Admin Reply
+                    </span>
+                    {selectedEnquiry.repliedAt && (
+                      <span className="text-[11px] text-slate-400">
+                        {formatDateTime(selectedEnquiry.repliedAt)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed">
+                    {selectedEnquiry.adminReply}
+                  </div>
+                </div>
+              )}
               
               {isReplying && (
                 <div className="mt-6 border-t border-slate-100 pt-4">

@@ -108,7 +108,12 @@ export default function AdminPlatformFeedbackPage() {
       setIsReplying(false);
       fetchFeedback();
     } catch (error: any) {
-      toast.error(error.message || 'Failed to send reply');
+      const errorMsg =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to send reply. Please try again.';
+      toast.error(errorMsg);
+      // Draft replyText is deliberately preserved so admin does not lose their input
     } finally {
       setIsSending(false);
     }

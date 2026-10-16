@@ -5,9 +5,14 @@ import com.cakeplatform.api.modules.subscription.SubscriptionPlanRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/admin/plans")
@@ -66,16 +71,46 @@ public class AdminSubscriptionPlanController {
         return ResponseEntity.ok(planRepository.save(plan));
     }
 
+    @Transactional
     @PutMapping("/reorder")
-    public ResponseEntity<Void> reorderPlans(@RequestBody List<Long> planIds) {
-        for (int i = 0; i < planIds.size(); i++) {
-            Long id = planIds.get(i);
-            SubscriptionPlan plan = planRepository.findById(id).orElse(null);
-            if (plan != null) {
-                plan.setDisplayOrder(i);
-                planRepository.save(plan);
+    public ResponseEntity<Void> reorderPlans(@RequestBody(required = false) List<Long> planIds) {
+        if (planIds == null || planIds.isEmpty()) {
+            throw new IllegalArgumentException("Plan IDs list cannot be null or empty");
+        }
+
+        for (Long id : planIds) {
+            if (id == null) {
+                throw new IllegalArgumentException("Plan IDs list cannot contain null elements");
             }
         }
+
+        Set<Long> uniqueIds = new HashSet<>(planIds);
+        if (uniqueIds.size() != planIds.size()) {
+            throw new IllegalArgumentException("Plan IDs list cannot contain duplicate IDs");
+        }
+
+        List<SubscriptionPlan> allPlans = planRepository.findAll();
+        if (allPlans.size() != planIds.size()) {
+            throw new IllegalArgumentException(String.format(
+                    "Reorder list must contain all %d subscription plans (received %d)",
+                    allPlans.size(), planIds.size()));
+        }
+
+        Map<Long, SubscriptionPlan> planMap = allPlans.stream()
+                .collect(Collectors.toMap(SubscriptionPlan::getId, p -> p));
+
+        for (Long id : planIds) {
+            if (!planMap.containsKey(id)) {
+                throw new IllegalArgumentException("Plan ID not found: " + id);
+            }
+        }
+
+        for (int i = 0; i < planIds.size(); i++) {
+            SubscriptionPlan plan = planMap.get(planIds.get(i));
+            plan.setDisplayOrder(i);
+        }
+
+        planRepository.saveAll(allPlans);
         return ResponseEntity.ok().build();
     }
 }

@@ -164,8 +164,8 @@ export default function AdminNotificationCenterPage() {
       if (selectedCategory === 'UNREAD' && !debouncedSearch.trim()) {
         setUnreadCount(data?.totalElements || 0);
       } else {
-        const unreadData = await adminNotificationsApi.getNotifications({ isRead: false, page: 0, size: 1 });
-        setUnreadCount(unreadData?.totalElements || 0);
+        const count = await adminNotificationsApi.getUnreadCount();
+        setUnreadCount(count);
       }
     } catch {
       setNotifications([]);
@@ -188,11 +188,18 @@ export default function AdminNotificationCenterPage() {
   }, [fetchNotifications]);
 
   const handleMarkRead = async (id: string) => {
-    await adminNotificationsApi.markAsRead(id);
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-    );
-    setUnreadCount((prev) => Math.max(0, prev - 1));
+    try {
+      await adminNotificationsApi.markAsRead(id);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+      );
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('adminNotificationsUpdated'));
+      }
+    } catch (err: any) {
+      toast.error(err?.data?.error || err?.message || 'Failed to mark notification as read');
+    }
   };
 
   const handleMarkAllRead = async () => {
@@ -200,11 +207,14 @@ export default function AdminNotificationCenterPage() {
     try {
       await adminNotificationsApi.markAllAsRead();
       toast.success('All notifications marked as read');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('adminNotificationsUpdated'));
+      }
       // Reset to first page and refetch
       setPage(0);
       await fetchNotifications();
-    } catch (err) {
-      toast.error('Failed to mark all as read');
+    } catch (err: any) {
+      toast.error(err?.data?.error || err?.message || 'Failed to mark all as read');
     } finally {
       setIsMarkingAllRead(false);
     }
@@ -334,7 +344,7 @@ export default function AdminNotificationCenterPage() {
                         {n.title}
                       </span>
                       <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                        {getCategoryFromType(n.type)}
+                        {n.category || getCategoryFromType(n.type)}
                       </span>
                       {n.priority === 'CRITICAL' && (
                         <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">

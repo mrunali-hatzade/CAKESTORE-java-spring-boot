@@ -1,11 +1,14 @@
 package com.cakeplatform.api.modules.notification;
 
+import com.cakeplatform.api.exception.ResourceNotFoundException;
+import com.cakeplatform.api.modules.audit.ActivityLoggerService;
 import com.cakeplatform.api.modules.user.User;
 import com.cakeplatform.api.modules.user.UserRepository;
 import com.cakeplatform.api.modules.user.UserRole;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -21,6 +24,7 @@ public class AdminNotificationService {
     private final AdminNotificationRepository notificationRepository;
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final ActivityLoggerService activityLogger;
 
     /**
      * Broadcasts an administrative platform notification to all active administrators.
@@ -119,19 +123,31 @@ public class AdminNotificationService {
             org.springframework.data.domain.Pageable pageable) {
 
         AdminNotificationCategory categoryEnum = null;
-        if (categoryStr != null && !categoryStr.trim().isEmpty() && !"ALL".equalsIgnoreCase(categoryStr)) {
-            try {
-                categoryEnum = AdminNotificationCategory.valueOf(categoryStr.trim().toUpperCase());
-            } catch (IllegalArgumentException e) {
-                log.debug("Invalid notification category filter: {}", categoryStr);
+        String effectiveCategoryStr = categoryStr != null ? categoryStr.trim().toUpperCase() : null;
+        Boolean effectiveIsRead = isRead;
+
+        if (effectiveCategoryStr != null && !effectiveCategoryStr.isEmpty()) {
+            if ("UNREAD".equals(effectiveCategoryStr)) {
+                effectiveCategoryStr = null;
+                if (effectiveIsRead == null) {
+                    effectiveIsRead = false;
+                }
+            } else if ("ALL".equals(effectiveCategoryStr)) {
+                effectiveCategoryStr = null;
+            } else {
+                try {
+                    categoryEnum = AdminNotificationCategory.valueOf(effectiveCategoryStr);
+                } catch (IllegalArgumentException e) {
+                    log.debug("Invalid notification category filter: {}", categoryStr);
+                }
             }
         }
 
         return notificationRepository.findWithFilters(
                 adminId,
-                categoryStr != null ? categoryStr.trim().toUpperCase() : null,
+                effectiveCategoryStr,
                 categoryEnum,
-                isRead,
+                effectiveIsRead,
                 search != null ? search.trim() : null, pageable
         );
     }
@@ -149,16 +165,13 @@ public class AdminNotificationService {
      */
     @Transactional
     public void markAsRead(Long notificationId, Long adminId) {
-        AdminNotification notification = notificationRepository.findById(notificationId).orElse(null);
-        if (notification == null) {
-            log.warn("Notification ID {} not found to mark read", notificationId);
-            return;
-        }
+        AdminNotification notification = notificationRepository.findById(notificationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Notification not found with ID: " + notificationId));
 
-        // Security check: Only recipient or broadcast can be marked read
+        // Security check: Only recipient or broadcast (recipient == null) can be marked read
         if (notification.getRecipient() != null && !notification.getRecipient().getId().equals(adminId)) {
             log.warn("Admin ID {} unauthorized to mark notification ID {} read", adminId, notificationId);
-            return;
+            throw new AccessDeniedException("Unauthorized to mark notification ID " + notificationId + " as read");
         }
 
         notification.setIsRead(true);
@@ -172,5 +185,19 @@ public class AdminNotificationService {
     @Transactional
     public void markAllAsRead(Long adminId) {
         notificationRepository.markAllAsReadForRecipient(adminId);
+        if (activityLogger != null && adminId != null) {
+            try {
+                activityLogger.logActivity(
+                        adminId,
+                        null,
+                        "ADMIN_NOTIFICATIONS_BULK_READ",
+                        "ADMIN_NOTIFICATION",
+                        null,
+                        "Admin marked all notifications as read"
+                );
+            } catch (Exception ex) {
+                log.warn("Failed to record activity log for markAllAsRead by admin ID {}: {}", adminId, ex.getMessage());
+            }
+        }
     }
 }

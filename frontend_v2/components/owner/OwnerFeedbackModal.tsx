@@ -58,7 +58,12 @@ export default function OwnerFeedbackModal({ isOpen, onClose }: OwnerFeedbackMod
       });
       setIsSubmitted(true);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to submit feedback. Please try again.');
+      const error =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to submit feedback. Please try again.';
+      setErrorMsg(error);
+      // Feedback message and rating are deliberately preserved in state
     } finally {
       setIsSubmitting(false);
     }
