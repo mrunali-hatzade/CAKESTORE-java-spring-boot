@@ -5,8 +5,16 @@ import { adminSettingsApi, GlobalSettings } from '@/lib/api/adminSettings';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Save, Shield, CreditCard, Building2, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Select } from '@/components/ui/Select';
+import { Save, Building2, CreditCard, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useToast } from '@/components/common/Toast';
+
+const CURRENCY_OPTIONS = [
+  { value: 'INR', label: 'INR (₹) - Indian Rupee' },
+  { value: 'USD', label: 'USD ($) - US Dollar' },
+  { value: 'EUR', label: 'EUR (€) - European Euro' },
+  { value: 'GBP', label: 'GBP (£) - British Pound' },
+];
 
 export default function AdminSettingsPage() {
   const [settings, setSettings] = useState<Partial<GlobalSettings>>({});
@@ -32,7 +40,7 @@ export default function AdminSettingsPage() {
     fetchSettings();
   }, [fetchSettings]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setSettings((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
@@ -44,7 +52,7 @@ export default function AdminSettingsPage() {
         platformName: settings.platformName,
         supportEmail: settings.supportEmail,
         razorpayKeyId: settings.razorpayKeyId,
-        platformCurrency: settings.platformCurrency,
+        platformCurrency: settings.platformCurrency || 'INR',
       };
 
       if (settings.razorpayKeySecret && settings.razorpayKeySecret.trim()) {
@@ -72,6 +80,10 @@ export default function AdminSettingsPage() {
     return <div className="p-8 text-center text-slate-500">Loading platform settings...</div>;
   }
 
+  const currencyOptions = CURRENCY_OPTIONS.some((c) => c.value === (settings.platformCurrency || 'INR'))
+    ? CURRENCY_OPTIONS
+    : [{ value: settings.platformCurrency!, label: settings.platformCurrency! }, ...CURRENCY_OPTIONS];
+
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-8 pb-32">
       <div>
@@ -86,15 +98,32 @@ export default function AdminSettingsPage() {
             <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600"><Building2 className="w-5 h-5" /></div>
             <h2 className="text-lg font-semibold text-slate-800">Platform Identity</h2>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Platform Name</label>
-              <Input name="platformName" value={settings.platformName || ''} onChange={handleChange} placeholder="e.g. CakeStore" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Support Email</label>
-              <Input name="supportEmail" value={settings.supportEmail || ''} onChange={handleChange} placeholder="e.g. support@cakestore.com" />
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Input
+              id="platformName"
+              name="platformName"
+              label="Platform Name"
+              value={settings.platformName || ''}
+              onChange={handleChange}
+              placeholder="e.g. CakeStore"
+            />
+            <Input
+              id="supportEmail"
+              name="supportEmail"
+              label="Support Email"
+              type="email"
+              value={settings.supportEmail || ''}
+              onChange={handleChange}
+              placeholder="e.g. support@cakestore.com"
+            />
+            <Select
+              id="platformCurrency"
+              name="platformCurrency"
+              label="Platform Currency"
+              value={settings.platformCurrency || 'INR'}
+              onChange={handleChange}
+              options={currencyOptions}
+            />
           </div>
         </Card>
 
@@ -109,20 +138,21 @@ export default function AdminSettingsPage() {
           </p>
           
           <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Razorpay Key ID</label>
-              <Input 
-                name="razorpayKeyId" 
-                value={settings.razorpayKeyId || ''} 
-                onChange={handleChange} 
-                placeholder="rzp_live_... or rzp_test_..." 
-                className="font-mono text-sm" 
-              />
-            </div>
+            <Input 
+              id="razorpayKeyId"
+              name="razorpayKeyId" 
+              label="Razorpay Key ID"
+              value={settings.razorpayKeyId || ''} 
+              onChange={handleChange} 
+              placeholder="rzp_live_... or rzp_test_..." 
+              className="font-mono text-sm" 
+            />
             
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-slate-700">Razorpay Key Secret</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="razorpayKeySecret" className="block text-sm font-medium text-brand-espresso">
+                  Razorpay Key Secret
+                </label>
                 {settings.razorpayKeySecretConfigured ? (
                   <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
@@ -137,6 +167,7 @@ export default function AdminSettingsPage() {
               </div>
               <div className="relative">
                 <Input 
+                  id="razorpayKeySecret"
                   name="razorpayKeySecret" 
                   type={showSecret ? 'text' : 'password'} 
                   value={settings.razorpayKeySecret || ''} 
@@ -144,15 +175,22 @@ export default function AdminSettingsPage() {
                   placeholder={settings.razorpayKeySecretConfigured ? '•••••••• (Secret configured — leave blank to keep unchanged)' : 'Enter Secret Key'} 
                   className="font-mono text-sm pr-10" 
                 />
-                <button type="button" onClick={() => setShowSecret(!showSecret)} className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600">
+                <button
+                  type="button"
+                  onClick={() => setShowSecret(!showSecret)}
+                  aria-label={showSecret ? 'Hide Razorpay key secret' : 'Show Razorpay key secret'}
+                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-hidden"
+                >
                   {showSecret ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm font-medium text-slate-700">Webhook Secret</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="razorpayWebhookSecret" className="block text-sm font-medium text-brand-espresso">
+                  Webhook Secret
+                </label>
                 {settings.razorpayWebhookSecretConfigured ? (
                   <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
@@ -167,6 +205,7 @@ export default function AdminSettingsPage() {
               </div>
               <div className="relative">
                 <Input 
+                  id="razorpayWebhookSecret"
                   name="razorpayWebhookSecret" 
                   type={showWebhook ? 'text' : 'password'} 
                   value={settings.razorpayWebhookSecret || ''} 
@@ -174,7 +213,12 @@ export default function AdminSettingsPage() {
                   placeholder={settings.razorpayWebhookSecretConfigured ? '•••••••• (Webhook secret configured — leave blank to keep unchanged)' : 'Enter Webhook Secret'} 
                   className="font-mono text-sm pr-10" 
                 />
-                <button type="button" onClick={() => setShowWebhook(!showWebhook)} className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600">
+                <button
+                  type="button"
+                  onClick={() => setShowWebhook(!showWebhook)}
+                  aria-label={showWebhook ? 'Hide Razorpay webhook secret' : 'Show Razorpay webhook secret'}
+                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 focus:outline-hidden"
+                >
                   {showWebhook ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>

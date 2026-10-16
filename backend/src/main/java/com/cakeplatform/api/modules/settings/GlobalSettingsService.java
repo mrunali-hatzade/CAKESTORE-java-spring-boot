@@ -37,8 +37,20 @@ public class GlobalSettingsService {
     public GlobalSettings updateSettings(GlobalSettingsDTO dto) {
         GlobalSettings settings = getSettings();
         
-        if (dto.getPlatformName() != null) settings.setPlatformName(dto.getPlatformName());
-        if (dto.getSupportEmail() != null) settings.setSupportEmail(dto.getSupportEmail());
+        if (dto.getPlatformName() != null) {
+            String name = dto.getPlatformName().trim();
+            if (name.isBlank()) {
+                throw new IllegalArgumentException("Platform name cannot be blank");
+            }
+            settings.setPlatformName(name);
+        }
+        if (dto.getSupportEmail() != null) {
+            String email = dto.getSupportEmail().trim();
+            if (email.isBlank()) {
+                throw new IllegalArgumentException("Support email cannot be blank");
+            }
+            settings.setSupportEmail(email);
+        }
         
         // Validation & Update logic
         if (dto.getRazorpayKeyId() != null && !dto.getRazorpayKeyId().isBlank()) {
@@ -54,7 +66,9 @@ public class GlobalSettingsService {
         if (dto.getRazorpayWebhookSecret() != null && !dto.getRazorpayWebhookSecret().isBlank()) {
             settings.setRazorpayWebhookSecret(dto.getRazorpayWebhookSecret().trim());
         }
-        if (dto.getPlatformCurrency() != null) settings.setPlatformCurrency(dto.getPlatformCurrency());
+        if (dto.getPlatformCurrency() != null && !dto.getPlatformCurrency().isBlank()) {
+            settings.setPlatformCurrency(dto.getPlatformCurrency().trim());
+        }
 
         cachedSettings = repository.save(settings);
         return cachedSettings;

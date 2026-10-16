@@ -3,6 +3,7 @@ package com.cakeplatform.api.modules.settings.controller;
 import com.cakeplatform.api.modules.settings.GlobalSettingsService;
 import com.cakeplatform.api.modules.settings.dto.GlobalSettingsDTO;
 import com.cakeplatform.api.modules.settings.dto.GlobalSettingsResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,7 +23,7 @@ public class AdminSettingsController {
     }
 
     @PutMapping
-    public ResponseEntity<GlobalSettingsResponse> updateSettings(@RequestBody GlobalSettingsDTO dto) {
+    public ResponseEntity<GlobalSettingsResponse> updateSettings(@Valid @RequestBody GlobalSettingsDTO dto) {
         return ResponseEntity.ok(service.updateSettingsAndGetResponse(dto));
     }
 }

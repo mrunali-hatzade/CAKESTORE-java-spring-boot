@@ -236,4 +236,157 @@ public class AdminSettingsSecurityE2ETest {
         assertEquals(TEST_RAW_KEY_SECRET, internalSettings.getRazorpayKeySecret());
         assertEquals(TEST_RAW_WEBHOOK_SECRET, internalSettings.getRazorpayWebhookSecret());
     }
+
+    @Test
+    @DisplayName("VALIDATION: Blank platformName (empty string) is rejected with HTTP 400")
+    void testBlankPlatformNameEmptyRejected() throws Exception {
+        GlobalSettingsDTO invalidDTO = new GlobalSettingsDTO();
+        invalidDTO.setPlatformName("");
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidDTO)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("VALIDATION: Blank platformName (whitespace only) is rejected with HTTP 400")
+    void testBlankPlatformNameWhitespaceRejected() throws Exception {
+        GlobalSettingsDTO invalidDTO = new GlobalSettingsDTO();
+        invalidDTO.setPlatformName("    ");
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidDTO)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("VALIDATION: Oversized platformName (> 255 chars) is rejected with HTTP 400")
+    void testOversizedPlatformNameRejected() throws Exception {
+        GlobalSettingsDTO invalidDTO = new GlobalSettingsDTO();
+        invalidDTO.setPlatformName("A".repeat(256));
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidDTO)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("VALIDATION: Malformed non-empty supportEmail is rejected with HTTP 400")
+    void testMalformedSupportEmailRejected() throws Exception {
+        GlobalSettingsDTO invalidDTO = new GlobalSettingsDTO();
+        invalidDTO.setSupportEmail("not-a-valid-email");
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidDTO)))
+                .andExpect(status().isBadRequest());
+
+        GlobalSettingsDTO invalidDTO2 = new GlobalSettingsDTO();
+        invalidDTO2.setSupportEmail("missingdomain@");
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidDTO2)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("VALIDATION: Blank supportEmail is rejected with HTTP 400")
+    void testBlankSupportEmailRejected() throws Exception {
+        GlobalSettingsDTO invalidDTO = new GlobalSettingsDTO();
+        invalidDTO.setSupportEmail("   ");
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidDTO)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("VALIDATION: Oversized supportEmail (> 255 chars) is rejected with HTTP 400")
+    void testOversizedSupportEmailRejected() throws Exception {
+        GlobalSettingsDTO invalidDTO = new GlobalSettingsDTO();
+        invalidDTO.setSupportEmail("a".repeat(245) + "@domain.com");
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidDTO)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("VALIDATION: Valid platformName and supportEmail update successfully with HTTP 200")
+    void testValidPlatformNameAndEmailAccepted() throws Exception {
+        GlobalSettingsDTO validDTO = new GlobalSettingsDTO();
+        validDTO.setPlatformName("Sweet Delights Co.");
+        validDTO.setSupportEmail("contact@sweetdelights.co");
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validDTO)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.platformName").value("Sweet Delights Co."))
+                .andExpect(jsonPath("$.supportEmail").value("contact@sweetdelights.co"));
+    }
+
+    @Test
+    @DisplayName("PARTIAL UPDATE: Omitted fields preserve existing values without overwrite")
+    void testPartialUpdatePreservesOmittedFields() throws Exception {
+        // Current state: platformName="CakeStore Platform", supportEmail="support@cakestore.test", platformCurrency="INR"
+        GlobalSettingsDTO partialDTO = new GlobalSettingsDTO();
+        partialDTO.setPlatformName("New Single Updated Name");
+        // supportEmail, razorpayKeyId, secrets, platformCurrency are all omitted (null)
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(partialDTO)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.platformName").value("New Single Updated Name"))
+                .andExpect(jsonPath("$.supportEmail").value("support@cakestore.test"))
+                .andExpect(jsonPath("$.platformCurrency").value("INR"))
+                .andExpect(jsonPath("$.razorpayKeyId").value("rzp_test_initial_key_id"))
+                .andExpect(jsonPath("$.razorpayKeySecretConfigured").value(true))
+                .andExpect(jsonPath("$.razorpayWebhookSecretConfigured").value(true));
+
+        GlobalSettings settings = globalSettingsService.getSettings();
+        assertEquals("New Single Updated Name", settings.getPlatformName());
+        assertEquals("support@cakestore.test", settings.getSupportEmail());
+        assertEquals("INR", settings.getPlatformCurrency());
+        assertEquals(TEST_RAW_KEY_SECRET, settings.getRazorpayKeySecret());
+    }
+
+    @Test
+    @DisplayName("CURRENCY: Updating platformCurrency persists and returns on reload")
+    void testPlatformCurrencyUpdateAndPersistence() throws Exception {
+        GlobalSettingsDTO currencyDTO = new GlobalSettingsDTO();
+        currencyDTO.setPlatformCurrency("USD");
+
+        mockMvc.perform(put("/api/admin/settings")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(currencyDTO)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.platformCurrency").value("USD"));
+
+        // Verify GET returns updated currency
+        mockMvc.perform(get("/api/admin/settings")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.platformCurrency").value("USD"));
+
+        GlobalSettings settings = globalSettingsService.getSettings();
+        assertEquals("USD", settings.getPlatformCurrency());
+    }
 }
