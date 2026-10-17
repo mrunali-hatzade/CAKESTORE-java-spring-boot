@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Send,
   Users,
@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { useToast } from '@/components/common/Toast';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 
 const STORAGE_KEY = 'cake_admin_broadcast_active_submission';
 
@@ -57,6 +58,12 @@ export default function AdminMessagesPage() {
   // Uncertain submission state
   const [activeSubmission, setActiveSubmission] = useState<ActiveBroadcastSubmission | null>(null);
   const [showAbandonModal, setShowAbandonModal] = useState(false);
+
+  useRegisterAdminRefresh(
+    useCallback(async () => {
+      await fetchHistory();
+    }, [])
+  );
 
   useEffect(() => {
     fetchHistory();

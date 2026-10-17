@@ -5,6 +5,7 @@ import { ShopSettings, SubscriptionRecord, OwnerDashboardStats } from '@/types/o
 import { ownerApi } from '@/lib/api/owner';
 import { notificationsApi } from '@/lib/api/notifications';
 import { useAuth } from '@/lib/auth/AuthContext';
+import { createOwnerRefreshCoordinator } from '@/lib/owner/ownerRefreshCoordinator';
 
 interface OwnerContextType {
   shop: ShopSettings | null;
@@ -13,8 +14,9 @@ interface OwnerContextType {
   isLoadingSubscription: boolean;
   refreshSubscription: () => Promise<SubscriptionRecord | null>;
   isRefreshing: boolean;
-  refreshStatus: 'idle' | 'refreshing' | 'updated' | 'error';
+  refreshStatus: 'idle' | 'refreshing' | 'updated' | 'warning' | 'error';
   refreshError: string | null;
+  clearRefreshError: () => void;
   refreshDashboard: () => Promise<void>;
   refreshShop: () => Promise<ShopSettings | null>;
   updateShop: (newShop: ShopSettings) => void;
@@ -40,7 +42,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
   const [subscription, setSubscription] = useState<SubscriptionRecord | null>(null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [refreshStatus, setRefreshStatus] = useState<'idle' | 'refreshing' | 'updated' | 'error'>('idle');
+  const [refreshStatus, setRefreshStatus] = useState<'idle' | 'refreshing' | 'updated' | 'warning' | 'error'>('idle');
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [pendingOrdersCount, setPendingOrdersCount] = useState<number>(0);
   const [pendingCustomCakesCount, setPendingCustomCakesCount] = useState<number>(0);
@@ -50,40 +52,83 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
   const [dashboardStats, setDashboardStats] = useState<OwnerDashboardStats | null>(null);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-  // Active page-level refresh handler (e.g. registered by OwnerOverviewPage)
-  const refreshHandlerRef = useRef<(() => Promise<void>) | null>(null);
+  // Synchronous duplicate-click prevention lock
+  const isRefreshingRef = useRef(false);
 
-  const fetchShop = useCallback(async (): Promise<ShopSettings | null> => {
+  // Active page-level and widget refresh handlers (Set-based to support multiple components without clobbering)
+  const handlersRef = useRef<Set<() => Promise<void>>>(new Set());
+
+  // Isolated refresh coordinator engine
+  const coordinatorRef = useRef<ReturnType<typeof createOwnerRefreshCoordinator> | null>(null);
+  if (!coordinatorRef.current) {
+    coordinatorRef.current = createOwnerRefreshCoordinator({
+      isRefreshingRef,
+      handlers: handlersRef.current,
+      onDispatchEvent: (eventName: string) => {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent(eventName));
+        }
+      },
+      onError: (failed: any[]) => console.error('[OwnerRefresh] All refresh operations failed:', failed),
+      onWarn: (failed: any[]) => console.warn('[OwnerRefresh] Partial refresh completed with failed operations:', failed),
+    });
+  }
+
+  // Subscribe React state to coordinator
+  useEffect(() => {
+    const coordinator = coordinatorRef.current;
+    if (!coordinator) return;
+    const unsubscribe = coordinator.subscribe((state: { isRefreshing: boolean; refreshStatus: any; refreshError: string | null }) => {
+      setIsRefreshing(state.isRefreshing);
+      setRefreshStatus(state.refreshStatus);
+      setRefreshError(state.refreshError);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Clean up coordinator timers on unmount
+  useEffect(() => {
+    return () => {
+      coordinatorRef.current?.destroy();
+    };
+  }, []);
+
+  const fetchShop = useCallback(async (throwOnError = false): Promise<ShopSettings | null> => {
     try {
       const data = await ownerApi.getShopSettings();
       setShop(data);
       return data;
-    } catch {
+    } catch (err) {
+      if (throwOnError) throw err;
       return null;
     }
   }, []);
 
-  const fetchDashboardStats = useCallback(async (): Promise<OwnerDashboardStats | null> => {
+  const fetchDashboardStats = useCallback(async (throwOnError = false): Promise<OwnerDashboardStats | null> => {
     try {
       const data = await ownerApi.getDashboardStats();
       setDashboardStats(data);
       return data;
-    } catch {
+    } catch (err) {
+      if (throwOnError) throw err;
       return null;
     }
   }, []);
 
-  const fetchSubscription = useCallback(async (): Promise<SubscriptionRecord | null> => {
+  const fetchSubscription = useCallback(async (throwOnError = false): Promise<SubscriptionRecord | null> => {
     try {
       const data = await ownerApi.getCurrentSubscription();
       setSubscription(data);
       return data;
-    } catch {
+    } catch (err) {
+      if (throwOnError) throw err;
       return null;
     }
   }, []);
 
-  const fetchSidebarCounts = useCallback(async () => {
+  const fetchSidebarCounts = useCallback(async (throwOnError = false): Promise<void> => {
     try {
       const summary = await notificationsApi.getUnreadSummary();
       const byType = summary?.byType || {};
@@ -98,8 +143,8 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       setPendingInquiriesCount(newInquiries);
       setPendingEnquiriesCount(newCustomCakes + newInquiries);
       setPendingReviewsCount(newReviews);
-    } catch {
-      // Quiet background failure
+    } catch (err) {
+      if (throwOnError) throw err;
     }
   }, []);
 
@@ -139,6 +184,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, [isAuthenticated, authLoading, fetchSidebarCounts]);
 
+
   const lastFocusRefreshRef = useRef<number>(0);
 
   // Throttled window focus / visibility listener: refreshes active page, counts, shop, and subscription without duplicate calls or loops
@@ -155,8 +201,11 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       fetchShop().catch(() => {});
       fetchSubscription().catch(() => {});
       fetchSidebarCounts().catch(() => {});
-      if (refreshHandlerRef.current) {
-        refreshHandlerRef.current().catch(() => {});
+      const handlers = Array.from(handlersRef.current);
+      if (handlers.length > 0) {
+        handlers.forEach((fn) => {
+          fn().catch(() => {});
+        });
       }
     };
 
@@ -168,47 +217,27 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
     };
   }, [isAuthenticated, authLoading, fetchShop, fetchSubscription, fetchSidebarCounts]);
+
   const updateShop = useCallback((newShop: ShopSettings) => {
     setShop(newShop);
   }, []);
 
   const registerRefreshHandler = useCallback((handler: () => Promise<void>) => {
-    refreshHandlerRef.current = handler;
-    return () => {
-      if (refreshHandlerRef.current === handler) {
-        refreshHandlerRef.current = null;
-      }
-    };
+    return coordinatorRef.current!.registerRefreshHandler(handler);
+  }, []);
+
+  const clearRefreshError = useCallback(() => {
+    coordinatorRef.current?.clearRefreshError();
   }, []);
 
   const refreshDashboard = useCallback(async () => {
-    if (isRefreshing) return; // Prevent concurrent repeated clicks
-    setIsRefreshing(true);
-    setRefreshStatus('refreshing');
-    setRefreshError(null);
-
-    try {
-      // Execute the active page handler if present AND refresh authoritative shop profile, subscription, and counts
-      const promises: Promise<any>[] = [fetchShop(), fetchSubscription(), fetchSidebarCounts(), fetchDashboardStats()];
-      if (refreshHandlerRef.current) {
-        promises.push(refreshHandlerRef.current());
-      }
-      await Promise.all(promises);
-
-      setRefreshStatus('updated');
-      setTimeout(() => {
-        setRefreshStatus('idle');
-      }, 2500);
-    } catch (err: any) {
-      setRefreshStatus('error');
-      setRefreshError(err?.message || 'Failed to refresh dashboard data');
-      setTimeout(() => {
-        setRefreshStatus('idle');
-      }, 4000);
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [isRefreshing, fetchShop, fetchSubscription, fetchSidebarCounts, fetchDashboardStats]);
+    await coordinatorRef.current!.refresh([
+      { name: 'Shop Profile', promise: fetchShop(true) },
+      { name: 'Subscription', promise: fetchSubscription(true) },
+      { name: 'Notifications & Badges', promise: fetchSidebarCounts(true) },
+      { name: 'Dashboard Stats', promise: fetchDashboardStats(true) },
+    ]);
+  }, [fetchShop, fetchSubscription, fetchSidebarCounts, fetchDashboardStats]);
 
   const setOperationalStatus = useCallback(async (enabled: boolean): Promise<void> => {
     const updated = await ownerApi.updateOperationalStatus(enabled);
@@ -228,6 +257,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
         isRefreshing,
         refreshStatus,
         refreshError,
+        clearRefreshError,
         refreshDashboard,
         refreshShop: fetchShop,
         updateShop,
@@ -255,4 +285,16 @@ export function useOwner(): OwnerContextType {
     throw new Error('useOwner must be used within an OwnerProvider');
   }
   return context;
+}
+
+/**
+ * Hook for child owner dashboard pages and components to register an asynchronous refresh handler.
+ * Automatically cleans up on unmount.
+ */
+export function useRegisterOwnerRefresh(handler: () => Promise<void>) {
+  const { registerRefreshHandler } = useOwner();
+
+  useEffect(() => {
+    return registerRefreshHandler(handler);
+  }, [registerRefreshHandler, handler]);
 }

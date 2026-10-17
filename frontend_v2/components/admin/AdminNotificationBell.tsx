@@ -28,6 +28,7 @@ import {
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { useAuth } from '@/lib/auth/AuthContext';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 
 function formatRelativeTime(dateString: string): string {
   try {
@@ -105,6 +106,15 @@ export function getWebSocketEndpoint(): string {
   return `${baseUrl}/ws-endpoint`;
 }
 
+export function resolveAdminNotificationDestination(userId: any): string | null {
+  if (userId === undefined || userId === null) return null;
+  const str = String(userId).trim();
+  if (str === '' || str === 'undefined' || str === 'null') return null;
+  const num = Number(str);
+  if (isNaN(num) || !Number.isInteger(num) || num <= 0) return null;
+  return `/queue/admin-notifications-${num}`;
+}
+
 export default function AdminNotificationBell() {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
@@ -150,14 +160,22 @@ export default function AdminNotificationBell() {
     };
   }, [fetchNotifications]);
 
+  // Register with AdminRefreshContext so header Refresh button awaits notification updates
+  useRegisterAdminRefresh(
+    useCallback(async () => {
+      await fetchNotifications();
+    }, [fetchNotifications])
+  );
+
   useEffect(() => {
-    if (!user || !token) return;
+    const destination = resolveAdminNotificationDestination(user?.id);
+    if (!destination || !token) return;
 
     const client = new Client({
       webSocketFactory: () => new SockJS(getWebSocketEndpoint()),
       connectHeaders: { Authorization: `Bearer ${token}` },
       onConnect: () => {
-        client.subscribe(`/queue/admin-notifications-${user.id}`, (message) => {
+        client.subscribe(destination, (message) => {
           try {
             const newNotif = JSON.parse(message.body);
             setUnreadCount((prev) => prev + 1);
@@ -173,7 +191,7 @@ export default function AdminNotificationBell() {
     return () => {
       client.deactivate();
     };
-  }, [user, token]);
+  }, [user?.id, token]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { adminSettingsApi, GlobalSettings } from '@/lib/api/adminSettings';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Save, Building2, CreditCard, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useToast } from '@/components/common/Toast';
+import { useUnsavedChanges } from '@/context/UnsavedChangesContext';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 
 const CURRENCY_OPTIONS = [
   { value: 'INR', label: 'INR (₹) - Indian Rupee' },
@@ -18,23 +20,60 @@ const CURRENCY_OPTIONS = [
 
 export default function AdminSettingsPage() {
   const [settings, setSettings] = useState<Partial<GlobalSettings>>({});
+  const [initialSettings, setInitialSettings] = useState<Partial<GlobalSettings>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [showWebhook, setShowWebhook] = useState(false);
   const toast = useToast();
+  const { setDirty } = useUnsavedChanges();
+
+  const isDirty = useMemo(() => {
+    if (!initialSettings || Object.keys(initialSettings).length === 0) return false;
+    return (
+      (settings.platformName || '') !== (initialSettings.platformName || '') ||
+      (settings.supportEmail || '') !== (initialSettings.supportEmail || '') ||
+      (settings.razorpayKeyId || '') !== (initialSettings.razorpayKeyId || '') ||
+      (settings.platformCurrency || 'INR') !== (initialSettings.platformCurrency || 'INR') ||
+      Boolean(settings.razorpayKeySecret && settings.razorpayKeySecret.trim() !== '') ||
+      Boolean(settings.razorpayWebhookSecret && settings.razorpayWebhookSecret.trim() !== '')
+    );
+  }, [settings, initialSettings]);
+
+  useEffect(() => {
+    setDirty('admin-global-settings', isDirty);
+    return () => setDirty('admin-global-settings', false);
+  }, [setDirty, isDirty]);
 
   const fetchSettings = useCallback(async () => {
     try {
       setLoading(true);
       const data = await adminSettingsApi.getSettings();
       setSettings(data);
+      setInitialSettings(data);
     } catch (err: any) {
       toast.error(err.message || 'Failed to load settings');
     } finally {
       setLoading(false);
     }
   }, [toast]);
+
+  const handleRefresh = useCallback(async () => {
+    if (isDirty) {
+      toast.info('Settings form has unsaved edits. Refresh skipped to protect your changes.');
+      return;
+    }
+    await fetchSettings();
+  }, [isDirty, fetchSettings, toast]);
+
+  useRegisterAdminRefresh(handleRefresh);
+
+  useEffect(() => {
+    window.addEventListener('adminGlobalRefresh', handleRefresh);
+    return () => {
+      window.removeEventListener('adminGlobalRefresh', handleRefresh);
+    };
+  }, [handleRefresh]);
 
   useEffect(() => {
     fetchSettings();
@@ -63,11 +102,13 @@ export default function AdminSettingsPage() {
       }
 
       const updated = await adminSettingsApi.updateSettings(payload);
-      setSettings({
+      const cleanUpdated = {
         ...updated,
         razorpayKeySecret: '',
         razorpayWebhookSecret: '',
-      });
+      };
+      setSettings(cleanUpdated);
+      setInitialSettings(cleanUpdated);
       toast.success('Platform settings saved successfully');
     } catch (err: any) {
       toast.error(err.message || 'Failed to save settings');

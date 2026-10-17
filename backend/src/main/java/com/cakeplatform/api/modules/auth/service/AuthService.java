@@ -316,6 +316,8 @@ public class AuthService {
         String jwtToken = jwtService.generateToken(userDetails);
 
         return AuthResponse.builder()
+                .id(savedUser.getId())
+                .shopId(savedShop != null ? savedShop.getId() : null)
                 .token(jwtToken)
                 .email(savedUser.getEmail())
                 .role(savedUser.getRole().name())
@@ -377,6 +379,8 @@ public class AuthService {
         String jwtToken = jwtService.generateToken(extraClaims, userDetails);
 
         return AuthResponse.builder()
+                .id(user.getId())
+                .shopId(ownerShop.map(Shop::getId).orElse(null))
                 .token(jwtToken)
                 .email(user.getEmail())
                 .role(user.getRole().name())

@@ -23,7 +23,7 @@ function OwnerLayoutContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout, isAuthenticated, isLoading } = useAuth();
-  const { shop, subscription, refreshDashboard, isRefreshing, refreshStatus, refreshError, pendingOrdersCount, pendingCustomCakesCount, pendingInquiriesCount, pendingReviewsCount, setOperationalStatus } = useOwner();
+  const { shop, subscription, refreshDashboard, isRefreshing, refreshStatus, refreshError, clearRefreshError, pendingOrdersCount, pendingCustomCakesCount, pendingInquiriesCount, pendingReviewsCount, setOperationalStatus } = useOwner();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -349,11 +349,29 @@ function OwnerLayoutContent({ children }: { children: ReactNode }) {
               disabled={isRefreshing}
               className="p-2 sm:px-2.5 sm:py-1.5 rounded-xl border border-owner-border bg-owner-canvas hover:bg-brand-cream text-xs font-semibold text-owner-heading transition-all disabled:opacity-60 cursor-pointer shadow-2xs flex items-center gap-1.5"
               aria-label="Refresh dashboard data"
-              title={isRefreshing ? 'Refreshing...' : refreshStatus === 'updated' ? 'Data Updated' : 'Refresh dashboard data'}
+              title={
+                isRefreshing
+                  ? 'Refreshing...'
+                  : refreshStatus === 'updated'
+                  ? 'Data Updated'
+                  : refreshStatus === 'warning'
+                  ? 'Partially Updated'
+                  : 'Refresh dashboard data'
+              }
             >
-              <RefreshCw className={`w-3.5 h-3.5 text-brand-plum ${isRefreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${
+                  refreshStatus === 'warning' ? 'text-amber-600' : 'text-brand-plum'
+                } ${isRefreshing ? 'animate-spin' : ''}`}
+              />
               <span className="hidden xl:inline">
-                {isRefreshing ? 'Refreshing...' : refreshStatus === 'updated' ? 'Updated' : 'Refresh'}
+                {isRefreshing
+                  ? 'Refreshing...'
+                  : refreshStatus === 'updated'
+                  ? 'Updated'
+                  : refreshStatus === 'warning'
+                  ? 'Partially Updated'
+                  : 'Refresh'}
               </span>
             </button>
 
@@ -597,8 +615,31 @@ function OwnerLayoutContent({ children }: { children: ReactNode }) {
 
         {refreshError && (
           <div className="px-4 sm:px-6 pt-3 shrink-0">
-            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-center justify-between">
-              <span>{refreshError}</span>
+            <div
+              className={`p-3 rounded-xl border text-xs font-medium flex items-center justify-between ${
+                refreshStatus === 'warning'
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-rose-50 border-rose-200 text-rose-800'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <AlertCircle
+                  className={`w-4 h-4 shrink-0 ${
+                    refreshStatus === 'warning' ? 'text-amber-600' : 'text-rose-600'
+                  }`}
+                />
+                <span>{refreshError}</span>
+              </div>
+              {clearRefreshError && (
+                <button
+                  type="button"
+                  onClick={clearRefreshError}
+                  className="text-slate-400 hover:text-slate-600 p-1 -mr-1 rounded-lg hover:bg-black/5 transition-colors cursor-pointer"
+                  aria-label="Dismiss message"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
         )}

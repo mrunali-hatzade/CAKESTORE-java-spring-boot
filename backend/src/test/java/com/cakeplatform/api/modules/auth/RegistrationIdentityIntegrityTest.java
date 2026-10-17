@@ -134,6 +134,8 @@ public class RegistrationIdentityIntegrityTest {
         assertNotNull(response);
         assertEquals("mock_jwt_token", response.getToken());
         assertEquals("anita@bakes.com", response.getEmail());
+        assertEquals(101L, response.getId());
+        assertEquals(201L, response.getShopId());
         assertEquals("PENDING", response.getShopStatus());
         assertEquals("NONE", response.getSubscriptionStatus());
 
@@ -369,7 +371,42 @@ public class RegistrationIdentityIntegrityTest {
         assertNotNull(response);
         assertEquals("owner@sweetdelight.com", response.getEmail());
         assertEquals("jwt_token_123", response.getToken());
+        assertEquals(50L, response.getId());
+        assertNull(response.getShopId());
         verify(authenticationManager).authenticate(any(UsernamePasswordAuthenticationToken.class));
+    }
+
+    @Test
+    @DisplayName("17. Login populates both authenticated user ID and associated shop ID")
+    void testLogin_ReturnsUserIdAndShopId() {
+        LoginRequest request = new LoginRequest();
+        request.setIdentifier("owner@sweetdelight.com");
+        request.setPassword("password123");
+
+        User mockUser = new User();
+        mockUser.setId(9L);
+        mockUser.setEmail("owner@sweetdelight.com");
+        mockUser.setRole(UserRole.SHOP_OWNER);
+        mockUser.setFullName("Sweet Delight Owner");
+
+        Shop mockShop = new Shop();
+        mockShop.setId(17L);
+        mockShop.setBusinessName("Sweet Delight Bakery");
+        mockShop.setStatus(ShopStatus.ACTIVE);
+
+        when(userRepository.findByEmailIgnoreCase("owner@sweetdelight.com")).thenReturn(Optional.of(mockUser));
+        when(shopRepository.findFirstByOwnerId(9L)).thenReturn(Optional.of(mockShop));
+        when(subscriptionRepository.findFirstByShopIdOrderByCreatedAtDesc(17L)).thenReturn(Optional.empty());
+        when(jwtService.generateToken(any(), any())).thenReturn("jwt_token_owner_9");
+
+        AuthResponse response = authService.login(request);
+
+        assertNotNull(response);
+        assertEquals(9L, response.getId());
+        assertEquals(17L, response.getShopId());
+        assertEquals("owner@sweetdelight.com", response.getEmail());
+        assertEquals("ACTIVE", response.getShopStatus());
+        assertEquals("NONE", response.getSubscriptionStatus());
     }
 
     @Test

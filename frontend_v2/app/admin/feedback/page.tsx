@@ -18,6 +18,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { communicationApi } from '@/lib/api/communication';
 import { PlatformFeedback } from '@/types/communication';
 import { useToast } from '@/components/common/Toast';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 
 export default function AdminPlatformFeedbackPage() {
   const [feedbackList, setFeedbackList] = useState<PlatformFeedback[]>([]);
@@ -69,6 +70,12 @@ export default function AdminPlatformFeedbackPage() {
       setIsLoading(false);
     }
   }, [page, selectedFilter, debouncedSearch]);
+
+  useRegisterAdminRefresh(
+    useCallback(async () => {
+      await fetchFeedback();
+    }, [fetchFeedback])
+  );
 
   useEffect(() => {
     fetchFeedback();

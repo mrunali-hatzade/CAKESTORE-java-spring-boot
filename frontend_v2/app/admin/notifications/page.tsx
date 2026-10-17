@@ -26,6 +26,7 @@ import { Badge } from '@/components/ui/Badge';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { useToast } from '@/components/common/Toast';
 import { adminNotificationsApi } from '@/lib/api/adminNotifications';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 import {
   AdminNotification,
   AdminNotificationCategory,
@@ -174,6 +175,12 @@ export default function AdminNotificationCenterPage() {
       setIsLoading(false);
     }
   }, [page, selectedCategory, debouncedSearch]);
+
+  useRegisterAdminRefresh(
+    useCallback(async () => {
+      await fetchNotifications();
+    }, [fetchNotifications])
+  );
 
   useEffect(() => {
     fetchNotifications();

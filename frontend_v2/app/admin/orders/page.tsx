@@ -34,6 +34,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/common/Toast';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 
 type OrderStatusFilter = 'ALL' | 'NEW' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'DELIVERED' | 'COMPLETED' | 'CANCELLED';
 type PaymentStatusFilter = 'ALL' | 'PAID' | 'PENDING' | 'FAILED' | 'REFUND_DUE' | 'REFUNDED' | 'COD' | 'ONLINE';
@@ -139,8 +140,24 @@ export default function AdminOrdersPage() {
     }
   }, [page, size, debouncedQuery, orderStatus, paymentStatus, startDate, endDate]);
 
+  // Register with shared AdminRefreshContext so header Refresh button awaits orders fetch
+  useRegisterAdminRefresh(
+    useCallback(async () => {
+      await fetchOrders(true);
+    }, [fetchOrders])
+  );
+
   useEffect(() => {
     fetchOrders();
+
+    const handleRefresh = () => {
+      fetchOrders(true);
+    };
+
+    window.addEventListener('adminGlobalRefresh', handleRefresh);
+    return () => {
+      window.removeEventListener('adminGlobalRefresh', handleRefresh);
+    };
   }, [fetchOrders]);
 
   // Load Order Details

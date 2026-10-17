@@ -70,6 +70,15 @@ function getNotificationIcon(type: NotificationType) {
   }
 }
 
+export function resolveOwnerNotificationDestination(userId: any): string | null {
+  if (userId === undefined || userId === null) return null;
+  const str = String(userId).trim();
+  if (str === '' || str === 'undefined' || str === 'null') return null;
+  const num = Number(str);
+  if (isNaN(num) || !Number.isInteger(num) || num <= 0) return null;
+  return `/queue/notifications-${num}`;
+}
+
 export default function NotificationBell() {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
@@ -116,13 +125,16 @@ export default function NotificationBell() {
   }, [fetchUnreadCount]);
 
   useEffect(() => {
-    if (!user || !token) return;
+    const destination = resolveOwnerNotificationDestination(user?.id);
+    if (!destination || !token) return;
+
+    const wsUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080').replace(/\/$/, '') + '/ws-endpoint';
 
     const client = new Client({
-      webSocketFactory: () => new SockJS('http://localhost:8080/ws-endpoint'),
+      webSocketFactory: () => new SockJS(wsUrl),
       connectHeaders: { Authorization: `Bearer ${token}` },
       onConnect: () => {
-        client.subscribe(`/queue/notifications-${user.id}`, (message) => {
+        client.subscribe(destination, (message) => {
           try {
             const newNotif = JSON.parse(message.body);
             setUnreadCount((prev) => prev + 1);
@@ -138,7 +150,7 @@ export default function NotificationBell() {
     return () => {
       client.deactivate();
     };
-  }, [user, token]);
+  }, [user?.id, token]);
 
   // Click outside listener to dismiss popover
   useEffect(() => {

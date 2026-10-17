@@ -28,6 +28,7 @@ import { useToast } from '@/components/common/Toast';
 import { BakeryStatusBadge, computeStorefrontAvailability } from '@/components/admin/BakeryStatusBadge';
 import { AdminSuspensionModal } from '@/components/admin/shops/AdminSuspensionModal';
 import { AdminKycRejectionModal } from '@/components/admin/shops/AdminKycRejectionModal';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 
@@ -159,6 +160,12 @@ export default function AdminShopsPage() {
       setIsLoading(false);
     }
   }, [page, debouncedSearch, activeTab, toast]);
+
+  useRegisterAdminRefresh(
+    useCallback(async () => {
+      await fetchShops(true);
+    }, [fetchShops])
+  );
 
   useEffect(() => {
     fetchShops();

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   CreditCard,
   Check,
@@ -25,6 +25,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/common/Toast';
 import { AdminPlanModal } from '@/components/admin/plans/AdminPlanModal';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 
 export default function AdminPlansPage() {
   const [plans, setPlans] = useState<AdminPlan[]>([]);
@@ -86,6 +87,12 @@ export default function AdminPlansPage() {
       setIsSavingOrder(false);
     }
   };
+
+  useRegisterAdminRefresh(
+    useCallback(async () => {
+      await loadPlans(true);
+    }, [loadPlans])
+  );
 
   useEffect(() => {
     loadPlans();

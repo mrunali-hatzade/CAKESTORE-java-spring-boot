@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import {
   MessageCircle,
@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/common/Toast';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { BakeryStatusBadge, computeStorefrontAvailability } from '@/components/admin/BakeryStatusBadge';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 
 interface ActivityLogItem {
   id?: number;
@@ -138,8 +139,10 @@ export default function AdminOverviewPage() {
   const [dateRange, setDateRange] = useState<string>('All Time');
   const [dateFilter, setDateFilter] = useState<{ start?: string; end?: string }>({ start: undefined, end: undefined });
   const toast = useToast();
+  const fetchSeqRef = useRef<number>(0);
 
   const loadData = useCallback(async (isManual = false) => {
+    const currentSeq = ++fetchSeqRef.current;
     if (isInitialLoading) {
       // Full mount loader
     } else {
@@ -163,24 +166,42 @@ export default function AdminOverviewPage() {
           return null;
         }),
       ]);
-      setStats(statsData);
-      setRecentShops(shopsData.content || []);
-      if (activityData !== null) {
-        setActivities(activityData);
-        setActivityError(false);
-      } else {
-        setActivityError(true);
+
+      if (currentSeq === fetchSeqRef.current) {
+        setStats(statsData);
+        setRecentShops(shopsData.content || []);
+        if (activityData !== null) {
+          setActivities(activityData);
+          setActivityError(false);
+        } else {
+          setActivityError(true);
+        }
+        setCommSummary(commData);
+        setSettings(settingsData);
+
+        if (isManual) {
+          toast.success('Dashboard metrics refreshed');
+        }
       }
-      setCommSummary(commData);
-      setSettings(settingsData);
     } catch (err: any) {
-      console.warn('Failed to load admin stats:', err);
-      toast.error(err.message || 'Failed to load dashboard data. Please try again.');
+      if (currentSeq === fetchSeqRef.current) {
+        console.warn('Failed to load admin stats:', err);
+        toast.error(err.message || 'Failed to load dashboard data. Please try again.');
+      }
     } finally {
-      setIsInitialLoading(false);
-      setIsFiltering(false);
+      if (currentSeq === fetchSeqRef.current) {
+        setIsInitialLoading(false);
+        setIsFiltering(false);
+      }
     }
   }, [toast, dateFilter.start, dateFilter.end, isInitialLoading]);
+
+  // Register with shared AdminRefreshContext so layout button awaits this async operation
+  useRegisterAdminRefresh(
+    useCallback(async () => {
+      await loadData(true);
+    }, [loadData])
+  );
 
   const gatewayAlert = useMemo(() => {
     if (!settings) return null;

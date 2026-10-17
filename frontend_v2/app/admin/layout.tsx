@@ -26,13 +26,15 @@ import {
 import { useAuth } from '@/lib/auth/AuthContext';
 import AdminNotificationBell from '@/components/admin/AdminNotificationBell';
 import { AdminCommandPalette } from '@/components/admin/AdminCommandPalette';
+import { AdminRefreshProvider, useAdminRefresh } from '@/context/AdminRefreshContext';
 
-export default function AdminLayout({ children }: { children: ReactNode }) {
+function AdminLayoutInner({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout, isAuthenticated, isLoading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const { isRefreshing, triggerRefresh } = useAdminRefresh();
 
   // Global Ctrl+K / Cmd+K listener
   useEffect(() => {
@@ -323,11 +325,13 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             </span>
 
             <button
-              onClick={() => window.dispatchEvent(new CustomEvent('adminGlobalRefresh'))}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors bg-white border border-slate-200 shadow-sm"
-              title="Refresh Data"
+              onClick={() => triggerRefresh()}
+              disabled={isRefreshing}
+              className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors bg-white border border-slate-200 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+              title={isRefreshing ? 'Refreshing data...' : 'Refresh Data'}
+              aria-label={isRefreshing ? 'Refreshing data' : 'Refresh data'}
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-indigo-600' : ''}`} />
             </button>
 
             {/* Admin Global Notification Bell */}
@@ -344,5 +348,13 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
       <AdminCommandPalette isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
+  );
+}
+
+export default function AdminLayout({ children }: { children: ReactNode }) {
+  return (
+    <AdminRefreshProvider>
+      <AdminLayoutInner>{children}</AdminLayoutInner>
+    </AdminRefreshProvider>
   );
 }

@@ -48,6 +48,7 @@ import { AdminSuspensionModal } from '@/components/admin/shops/AdminSuspensionMo
 import { AdminKycRejectionModal } from '@/components/admin/shops/AdminKycRejectionModal';
 import { AdminMarketplaceRestrictionModal } from '@/components/admin/shops/AdminMarketplaceRestrictionModal';
 import { BakeryStatusBadge, computeStorefrontAvailability } from '@/components/admin/BakeryStatusBadge';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 
 export default function AdminShopDetailPage() {
   const params = useParams();
@@ -90,6 +91,12 @@ export default function AdminShopDetailPage() {
       setIsLoading(false);
     }
   }, [shopId, toast]);
+
+  useRegisterAdminRefresh(
+    useCallback(async () => {
+      await loadShop();
+    }, [loadShop])
+  );
 
   useEffect(() => {
     loadShop();

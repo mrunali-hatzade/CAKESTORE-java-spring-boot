@@ -22,6 +22,8 @@ export interface LoginResponse {
   email: string;
   shopId?: number | null;
   fullName?: string;
+  shopStatus?: string;
+  subscriptionStatus?: string;
 }
 
 export interface RegisterFormData {

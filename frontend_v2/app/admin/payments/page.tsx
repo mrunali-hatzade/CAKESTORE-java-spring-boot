@@ -34,6 +34,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/common/Toast';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 
 type TransactionTypeFilter = 'ALL' | 'SUBSCRIPTION' | 'RETAIL_ORDER' | 'UNKNOWN';
 type GatewayStatusFilter = 'ALL' | 'COMPLETED' | 'PENDING' | 'FAILED';
@@ -138,8 +139,24 @@ export default function AdminPaymentsPage() {
     }
   }, [page, size, debouncedQuery, transactionType, gatewayStatus, startDate, endDate]);
 
+  // Register with shared AdminRefreshContext so header Refresh button awaits payments fetch
+  useRegisterAdminRefresh(
+    useCallback(async () => {
+      await fetchPayments(true);
+    }, [fetchPayments])
+  );
+
   useEffect(() => {
     fetchPayments();
+
+    const handleRefresh = () => {
+      fetchPayments(true);
+    };
+
+    window.addEventListener('adminGlobalRefresh', handleRefresh);
+    return () => {
+      window.removeEventListener('adminGlobalRefresh', handleRefresh);
+    };
   }, [fetchPayments]);
 
   // Open Payment Details

@@ -18,6 +18,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { communicationApi } from '@/lib/api/communication';
 import { ContactEnquiry } from '@/types/communication';
 import { useToast } from '@/components/common/Toast';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 
 export default function AdminContactEnquiriesPage() {
   const toast = useToast();
@@ -69,6 +70,12 @@ export default function AdminContactEnquiriesPage() {
       setIsLoading(false);
     }
   }, [page, selectedFilter, debouncedSearch]);
+
+  useRegisterAdminRefresh(
+    useCallback(async () => {
+      await fetchEnquiries();
+    }, [fetchEnquiries])
+  );
 
   useEffect(() => {
     fetchEnquiries();

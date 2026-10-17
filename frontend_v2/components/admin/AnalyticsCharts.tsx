@@ -17,6 +17,7 @@ import { getRevenueAnalytics } from '@/lib/api/admin';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
 
 interface RevenueDataPoint {
   month: string;
@@ -89,8 +90,20 @@ export default function AnalyticsCharts() {
     }
   }, []);
 
+  // Register with shared AdminRefreshContext so header Refresh button awaits chart data
+  useRegisterAdminRefresh(fetchAnalytics);
+
   useEffect(() => {
     fetchAnalytics();
+
+    const handleRefresh = () => {
+      fetchAnalytics();
+    };
+
+    window.addEventListener('adminGlobalRefresh', handleRefresh);
+    return () => {
+      window.removeEventListener('adminGlobalRefresh', handleRefresh);
+    };
   }, [fetchAnalytics]);
 
   const saasTotal = useMemo(() => {
