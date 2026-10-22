@@ -490,7 +490,20 @@ export const StorefrontTrackOrderTab: React.FC<StorefrontTrackOrderTabProps> = (
             {/* Delivery & Payment Summary */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-brand-border/60 text-xs">
               <div className="space-y-1 text-brand-muted">
-                <span className="font-bold text-brand-espresso block">Delivery Address</span>
+                <span className="font-bold text-brand-espresso block">
+                  {selectedOrder.fulfillmentMethod === 'SELF_PICKUP' ? 'Pickup Location (Bakery)' : 'Delivery Address'}
+                </span>
+                <p className="font-semibold text-brand-espresso">
+                  {selectedOrder.fulfillmentMethod === 'SELF_PICKUP' ? (
+                    <span className="inline-flex items-center gap-1 text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md font-bold mb-1">
+                      <Store className="w-3.5 h-3.5" /> Bakery Store Pickup
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-brand-plum bg-brand-blush/40 px-2 py-0.5 rounded-md font-bold mb-1">
+                      <Truck className="w-3.5 h-3.5" /> Doorstep Delivery
+                    </span>
+                  )}
+                </p>
                 <p>{selectedOrder.deliveryAddress || 'Direct Doorstep Delivery'}</p>
                 <p>Contact: {selectedOrder.customerPhone}</p>
               </div>
@@ -499,13 +512,17 @@ export const StorefrontTrackOrderTab: React.FC<StorefrontTrackOrderTabProps> = (
                 
                 <div className="flex justify-between sm:justify-end sm:gap-8 mb-1">
                   <span>Subtotal:</span>
-                  <span className="font-semibold text-brand-espresso">₹{selectedOrder.subtotal || 0}</span>
+                  <span className="font-semibold text-brand-espresso">
+                    ₹{selectedOrder.subtotal ?? (Number(selectedOrder.totalAmount) - Number(selectedOrder.deliveryCharge || 0) + Number(selectedOrder.discountAmount || 0))}
+                  </span>
                 </div>
                 
-                {selectedOrder.deliveryCharge === 0 ? (
+                {selectedOrder.fulfillmentMethod === 'SELF_PICKUP' || selectedOrder.deliveryCharge === 0 ? (
                   <div className="flex justify-between sm:justify-end sm:gap-8 mb-1 text-emerald-600">
                     <span>Delivery Fee:</span>
-                    <span className="font-semibold">{selectedOrder.deliveryAddress?.toLowerCase().includes('takeaway') || selectedOrder.deliveryAddress?.toLowerCase().includes('pickup') ? 'Takeaway (Free)' : 'Free Delivery'}</span>
+                    <span className="font-semibold">
+                      {selectedOrder.fulfillmentMethod === 'SELF_PICKUP' ? 'Store Pickup (FREE)' : 'Free Delivery'}
+                    </span>
                   </div>
                 ) : (
                   <div className="flex justify-between sm:justify-end sm:gap-8 mb-1">
@@ -522,7 +539,11 @@ export const StorefrontTrackOrderTab: React.FC<StorefrontTrackOrderTabProps> = (
                 )}
 
                 <div className="flex justify-between sm:justify-end sm:gap-8 pt-2 mt-2 border-t border-brand-border/40">
-                  <span className="font-bold text-brand-espresso">Total ({selectedOrder.paymentMethod || 'COD'}):</span>
+                  <span className="font-bold text-brand-espresso">
+                    {selectedOrder.paymentMethod === 'ONLINE_PAYMENT' || selectedOrder.paymentStatus === 'PAID'
+                      ? 'Total Paid:'
+                      : 'COD Amount Due:'}
+                  </span>
                   <span className="text-base font-serif font-bold text-brand-espresso">₹{selectedOrder.totalAmount}</span>
                 </div>
               </div>

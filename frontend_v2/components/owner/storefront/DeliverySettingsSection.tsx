@@ -14,6 +14,14 @@ export const DeliverySettingsSection: React.FC<DeliverySettingsSectionProps> = (
   onChange,
 }) => {
   const isFree = config.deliveryChargeType === 'FREE';
+  const deliveryEnabled = config.deliveryEnabled ?? true;
+
+  const handleDeliveryEnabledToggle = (enabled: boolean) => {
+    onChange({
+      ...config,
+      deliveryEnabled: enabled,
+    });
+  };
 
   const handleTypeChange = (type: 'FREE' | 'FIXED') => {
     onChange({
@@ -40,19 +48,52 @@ export const DeliverySettingsSection: React.FC<DeliverySettingsSectionProps> = (
 
   return (
     <Card className="p-6 space-y-4">
-      <div className="flex items-center gap-2">
-        <div className="w-8 h-8 rounded-xl bg-brand-blush text-brand-plum flex items-center justify-center">
-          <Truck className="w-4 h-4" />
+      <div className="flex items-center justify-between pb-3 border-b border-brand-border/40">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-brand-blush text-brand-plum flex items-center justify-center">
+            <Truck className="w-4 h-4" />
+          </div>
+          <div>
+            <h2 className="font-serif font-bold text-base text-owner-heading">Delivery Fee Settings</h2>
+            <p className="text-[11px] text-owner-muted">
+              Configure home delivery availability and fee calculation for checkout.
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="font-serif font-bold text-base text-owner-heading">Delivery Fee Settings</h2>
-          <p className="text-[11px] text-owner-muted">
-            Configure how delivery fees are calculated for customers at checkout.
-          </p>
+
+        {/* Home Delivery Master Switch */}
+        <div className="flex items-center gap-2.5">
+          <span className="text-xs font-bold text-owner-heading">
+            {deliveryEnabled ? 'Delivery Enabled' : 'Delivery Disabled'}
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={deliveryEnabled}
+            onClick={() => handleDeliveryEnabledToggle(!deliveryEnabled)}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-plum focus:ring-offset-2 ${
+              deliveryEnabled ? 'bg-brand-plum' : 'bg-gray-200'
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                deliveryEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
         </div>
       </div>
 
-      <div className="space-y-3 pt-1">
+      {!deliveryEnabled && (
+        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+          <p className="font-semibold">Doorstep delivery is currently turned off.</p>
+          <p className="text-[11px] text-amber-700 mt-0.5">
+            Customers will only be offered <strong>Self-Pickup</strong> at your bakery store counter.
+          </p>
+        </div>
+      )}
+
+      <div className={`space-y-3 pt-1 ${!deliveryEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
         {/* Mode Radio Toggles */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label

@@ -36,10 +36,16 @@ import { Card } from '@/components/ui/Card';
 import { ErrorState } from '@/components/ui/ErrorState';
 import CascadingLocationSelector from '@/components/owner/CascadingLocationSelector';
 import { CascadingLocationValues } from '@/types/location';
-
 import { plansApi, SubscriptionPlan } from '@/lib/api/plans';
+import dynamic from 'next/dynamic';
+
+const InteractiveLocationMap = dynamic(
+  () => import('@/components/owner/InteractiveLocationMap'),
+  { ssr: false, loading: () => <div className="h-64 rounded-2xl bg-neutral-100 flex items-center justify-center text-xs text-brand-muted">Loading interactive map...</div> }
+);
 
 export default function OnboardingPage() {
+
   const router = useRouter();
   const { login } = useAuth();
 
@@ -103,6 +109,7 @@ export default function OnboardingPage() {
   const [verificationFile, setVerificationFile] = useState<File | null>(null);
   const [latitude, setLatitude] = useState<number | undefined>(undefined);
   const [longitude, setLongitude] = useState<number | undefined>(undefined);
+  const [isLocationConfirmed, setIsLocationConfirmed] = useState(false);
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
   const [locationDetectNotice, setLocationDetectNotice] = useState<string | null>(null);
   const [locationErrors, setLocationErrors] = useState<Record<string, string>>({});
@@ -188,8 +195,8 @@ export default function OnboardingPage() {
         pincode,
         fssaiRegistration,
         verificationFile: verificationFile || undefined,
-        latitude,
-        longitude,
+        latitude: isLocationConfirmed ? latitude : undefined,
+        longitude: isLocationConfirmed ? longitude : undefined,
       });
 
       // Direct auto-login with credentials
@@ -692,29 +699,38 @@ export default function OnboardingPage() {
                   disabled={isLoading}
                 />
 
-                {/* GPS Coordinates Detector */}
-                <div className="p-3.5 bg-brand-cream/30 border border-brand-border rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                {/* Interactive Map Pin & Confirmation */}
+                <div className="pt-2 border-t border-brand-border/60 space-y-2">
                   <div>
-                    <p className="text-xs font-semibold text-brand-espresso flex items-center gap-1.5">
+                    <h3 className="text-xs font-bold text-brand-espresso flex items-center gap-1.5">
                       <MapPin className="w-3.5 h-3.5 text-brand-plum" />
-                      Storefront GPS Coordinates (Optional)
-                    </p>
+                      Bakery Kitchen Map Pin & Location Confirmation
+                    </h3>
                     <p className="text-[11px] text-brand-muted mt-0.5">
-                      {latitude && longitude
-                        ? `GPS tagged: ${latitude.toFixed(4)}° N, ${longitude.toFixed(4)}° E`
-                        : 'Auto-detect coordinates for real-time buyer proximity matching.'}
+                      Confirm your bakery&apos;s exact location on the map so nearby customers can discover your kitchen and see accurate distance.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleDetectLocation}
-                    disabled={isDetectingLocation}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-brand-border text-brand-espresso hover:bg-brand-blush/30 hover:border-brand-plum/40 transition-colors shadow-2xs shrink-0 cursor-pointer disabled:opacity-60"
-                  >
-                    <Crosshair className={`w-3.5 h-3.5 text-brand-plum ${isDetectingLocation ? 'animate-spin' : ''}`} />
-                    <span>{isDetectingLocation ? 'Detecting...' : latitude ? 'Update GPS' : 'Detect GPS'}</span>
-                  </button>
+
+                  <InteractiveLocationMap
+                    initialLatitude={latitude}
+                    initialLongitude={longitude}
+                    initialConfirmed={isLocationConfirmed}
+                    addressContext={{
+                      addressLine1,
+                      area,
+                      city,
+                      state,
+                      pincode,
+                    }}
+                    onChange={(coords) => {
+                      setLatitude(coords.latitude);
+                      setLongitude(coords.longitude);
+                      setIsLocationConfirmed(coords.isConfirmed);
+                    }}
+                    disabled={isLoading}
+                  />
                 </div>
+
 
                 <Input
                   label="FSSAI Registration No. (Optional)"

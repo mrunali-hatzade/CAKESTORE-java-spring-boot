@@ -11,6 +11,7 @@ import {
   MapPin,
   ArrowRight,
   Store,
+  Truck,
   CreditCard,
   Banknote,
   Download,
@@ -141,6 +142,21 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
   const [customDeliveryTime, setCustomDeliveryTime] = useState('');
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'ONLINE'>('COD');
+  const [fulfillmentMethod, setFulfillmentMethod] = useState<'HOME_DELIVERY' | 'SELF_PICKUP'>('HOME_DELIVERY');
+  const [priceMismatchModal, setPriceMismatchModal] = useState<{
+    isOpen: boolean;
+    authoritativeTotal: number;
+    authoritativeDeliveryFee: number;
+    expectedTotal: number;
+    expectedDeliveryFee: number;
+    fulfillmentMethod: 'HOME_DELIVERY' | 'SELF_PICKUP';
+    reason: string;
+    pendingCleanPhone?: string;
+    pendingSlotId?: number;
+    pendingAddress?: string;
+    pendingInstructions?: string;
+    pendingToken?: string | null;
+  } | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDownloadingInvoice, setIsDownloadingInvoice] = useState(false);
@@ -150,6 +166,12 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
   const [liveDeliveryConfig, setLiveDeliveryConfig] = useState<ShopDeliveryConfig | null>(
     shop.deliveryConfig || null
   );
+
+  useEffect(() => {
+    if (liveDeliveryConfig?.deliveryEnabled === false) {
+      setFulfillmentMethod('SELF_PICKUP');
+    }
+  }, [liveDeliveryConfig?.deliveryEnabled]);
 
   useEffect(() => {
     if (shop?.id) {
@@ -333,23 +355,28 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
     }
   }, [shop?.id]);
 
-  // Dynamic delivery charge calculation based on live deliveryConfig
+  // Dynamic delivery charge calculation based on live deliveryConfig and fulfillmentMethod
   const deliveryConfig = liveDeliveryConfig;
+  const isDeliveryDisabled = deliveryConfig?.deliveryEnabled === false;
+  const effectiveFulfillmentMethod: 'HOME_DELIVERY' | 'SELF_PICKUP' = isDeliveryDisabled
+    ? 'SELF_PICKUP'
+    : fulfillmentMethod;
+
   let deliveryCharge = 0;
   if (items.length > 0) {
-    if (deliveryConfig?.deliveryChargeType === 'FIXED') {
-      const fixedAmount = Number(deliveryConfig.fixedChargeAmount) || 0;
-      const minFree = deliveryConfig.minOrderForFreeDelivery;
+    if (effectiveFulfillmentMethod === 'SELF_PICKUP') {
+      deliveryCharge = 0;
+    } else if (deliveryConfig?.deliveryChargeType === 'FREE') {
+      deliveryCharge = 0;
+    } else {
+      // FIXED delivery charge or authoritative backend fallback (50.00, threshold 1000.00)
+      const fixedAmount = Number(deliveryConfig?.fixedChargeAmount ?? 50.00);
+      const minFree = deliveryConfig?.minOrderForFreeDelivery ?? 1000.00;
       if (minFree && minFree > 0 && totalPrice >= minFree) {
         deliveryCharge = 0;
       } else {
         deliveryCharge = fixedAmount;
       }
-    } else if (deliveryConfig?.deliveryChargeType === 'FREE') {
-      deliveryCharge = 0;
-    } else {
-      // Default fallback if no config set
-      deliveryCharge = 0;
     }
   }
 
@@ -379,7 +406,7 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
       return;
     }
 
-    if (!deliveryAddress.trim()) {
+    if (effectiveFulfillmentMethod === 'HOME_DELIVERY' && !deliveryAddress.trim()) {
       setError('Please enter your delivery street address.');
       return;
     }
@@ -411,13 +438,56 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
       ? (customDeliveryTime.includes('M') ? customDeliveryTime.trim() : format24To12(customDeliveryTime))
       : undefined;
 
-    const enrichedDeliveryAddress = preferredTimeStr
-      ? `${deliveryAddress.trim()} [Preferred Delivery Time: ${preferredTimeStr}]`
+    const baseAddress = effectiveFulfillmentMethod === 'SELF_PICKUP'
+      ? (deliveryAddress.trim() || `Store Pickup at ${shop.businessName}, ${[shop.address || shop.addressLine1, shop.city].filter(Boolean).join(', ')}`)
       : deliveryAddress.trim();
+
+    const enrichedDeliveryAddress = preferredTimeStr
+      ? `${baseAddress} [Preferred Delivery Time: ${preferredTimeStr}]`
+      : baseAddress;
 
     const enrichedInstructions = preferredTimeStr
       ? `Preferred Delivery Time: ${preferredTimeStr}.${specialInstructions.trim() ? ' ' + specialInstructions.trim() : ''}`
       : (specialInstructions.trim() || undefined);
+
+    // Revalidate authoritative quote with backend before order placement
+    try {
+      const quote = await storefrontApi.calculateQuote(shop.id, {
+        fulfillmentMethod: effectiveFulfillmentMethod,
+        couponCode: appliedCoupon?.code || undefined,
+        items: items.map((i) => ({
+          productId: i.productId,
+          quantity: i.quantity,
+          variantId: i.variantId,
+          addonIds: i.addonIds && i.addonIds.length > 0 ? i.addonIds : undefined,
+        })),
+      });
+
+      if (quote && (quote.finalTotal !== finalTotal || quote.deliveryFee !== deliveryCharge)) {
+        setPriceMismatchModal({
+          isOpen: true,
+          authoritativeTotal: quote.finalTotal,
+          authoritativeDeliveryFee: quote.deliveryFee,
+          expectedTotal: finalTotal,
+          expectedDeliveryFee: deliveryCharge,
+          fulfillmentMethod: effectiveFulfillmentMethod,
+          reason: 'Delivery charges or pricing has been adjusted by the bakery.',
+          pendingCleanPhone: cleanPhone,
+          pendingSlotId: finalSlotId,
+          pendingAddress: enrichedDeliveryAddress,
+          pendingInstructions: enrichedInstructions,
+          pendingToken: customerAuth.token,
+        });
+        return;
+      }
+    } catch (qErr: any) {
+      // If quote fails due to delivery disabled on home delivery
+      if (qErr?.message?.includes('disabled') || qErr?.response?.data?.message?.includes('disabled')) {
+        setError('Home delivery is currently disabled for this bakery. Please switch to Bakery Store Pickup.');
+        setFulfillmentMethod('SELF_PICKUP');
+        return;
+      }
+    }
 
     // Auth Check - Request OTP if not authenticated for this phone number
     if (!customerAuth.isAuthenticated || customerAuth.phone !== cleanPhone) {
@@ -500,12 +570,17 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
     finalSlotId: number | undefined,
     enrichedDeliveryAddress: string,
     enrichedInstructions: string | undefined,
-    tokenToUse: string | null
+    tokenToUse: string | null,
+    confirmPriceChange = false,
+    overriddenTotal?: number,
+    overriddenDeliveryFee?: number
   ) => {
     setIsSubmitting(true);
     setError(null);
 
     const backendPaymentMethod = paymentMethod === 'ONLINE' ? 'ONLINE_PAYMENT' : 'COD';
+    const feeToSend = overriddenDeliveryFee !== undefined ? overriddenDeliveryFee : deliveryCharge;
+    const totalToSend = overriddenTotal !== undefined ? overriddenTotal : finalTotal;
 
     try {
       const order = await ordersApi.createGuestOrder(shop.id, {
@@ -518,6 +593,10 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
         deliverySlotId: finalSlotId,
         specialInstructions: enrichedInstructions,
         couponCode: appliedCoupon?.code || undefined,
+        fulfillmentMethod: effectiveFulfillmentMethod,
+        expectedDeliveryFee: feeToSend,
+        expectedTotal: totalToSend,
+        confirmPriceChange: confirmPriceChange,
         items: items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -598,6 +677,41 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
         toast.success('Order placed successfully with the bakery!');
       }
     } catch (err: any) {
+      const isPriceMismatch =
+        err?.error === 'PRICE_MISMATCH' ||
+        err?.response?.status === 409 ||
+        err?.response?.data?.errorCode === 'PRICE_MISMATCH';
+
+      if (isPriceMismatch) {
+        const authTotal =
+          err?.response?.data?.authoritativeTotal ??
+          err?.authoritativeTotal ??
+          totalToSend;
+        const authFee =
+          err?.response?.data?.authoritativeDeliveryFee ??
+          err?.authoritativeDeliveryFee ??
+          feeToSend;
+
+        setPriceMismatchModal({
+          isOpen: true,
+          authoritativeTotal: authTotal,
+          authoritativeDeliveryFee: authFee,
+          expectedTotal: totalToSend,
+          expectedDeliveryFee: feeToSend,
+          fulfillmentMethod: effectiveFulfillmentMethod,
+          reason:
+            err?.response?.data?.message ||
+            err?.message ||
+            'The bakery price or delivery fee has been updated.',
+          pendingCleanPhone: cleanPhone,
+          pendingSlotId: finalSlotId,
+          pendingAddress: enrichedDeliveryAddress,
+          pendingInstructions: enrichedInstructions,
+          pendingToken: tokenToUse,
+        });
+        return;
+      }
+
       const isSlotFull = err?.error === 'SLOT_FULL' || err?.message?.includes('SLOT_FULL') || err?.message?.toLowerCase().includes('fully booked');
       if (isSlotFull) {
         setError('This delivery slot is fully booked. Please select another slot.');
@@ -613,6 +727,33 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleConfirmPriceChangeAndProceed = async () => {
+    if (!priceMismatchModal) return;
+    const {
+      authoritativeTotal,
+      authoritativeDeliveryFee,
+      pendingCleanPhone,
+      pendingSlotId,
+      pendingAddress,
+      pendingInstructions,
+      pendingToken,
+    } = priceMismatchModal;
+
+    setPriceMismatchModal(null);
+    if (!pendingCleanPhone) return;
+
+    await executeOrderPlacement(
+      pendingCleanPhone,
+      pendingSlotId,
+      pendingAddress || '',
+      pendingInstructions,
+      pendingToken || null,
+      true, // confirmPriceChange = true
+      authoritativeTotal,
+      authoritativeDeliveryFee
+    );
   };
 
   const handleDownloadInvoice = async (orderNumber: string) => {
@@ -657,23 +798,56 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
 
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
-                <span className="text-brand-muted block text-[11px]">Delivery Schedule</span>
-                <span className="font-semibold text-brand-espresso">
+                <span className="text-brand-muted block text-[11px]">Fulfillment</span>
+                <span className="font-semibold text-brand-espresso flex items-center gap-1 mt-0.5">
+                  {confirmedOrder.fulfillmentMethod === 'SELF_PICKUP' ? (
+                    <>
+                      <Store className="w-3.5 h-3.5 text-brand-plum" />
+                      <span>Bakery Store Pickup</span>
+                    </>
+                  ) : (
+                    <>
+                      <Truck className="w-3.5 h-3.5 text-brand-plum" />
+                      <span>Doorstep Delivery</span>
+                    </>
+                  )}
+                </span>
+              </div>
+              <div>
+                <span className="text-brand-muted block text-[11px]">Payment Mode</span>
+                <span className="font-semibold text-brand-espresso mt-0.5 block">
+                  {confirmedOrder.paymentMethod === 'ONLINE_PAYMENT' ? 'Paid Online' : 'Cash on Delivery (COD)'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs pt-2 border-t border-brand-border/40">
+              <div>
+                <span className="text-brand-muted block text-[11px]">Schedule Date</span>
+                <span className="font-semibold text-brand-espresso mt-0.5 block">
                   {confirmedOrder.deliveryDate}
                   {customDeliveryTime ? ` • 🕒 ${customDeliveryTime}` : ''}
                 </span>
               </div>
               <div>
-                <span className="text-brand-muted block text-[11px]">Payment Mode</span>
-                <span className="font-semibold text-brand-espresso">
-                  {confirmedOrder.paymentMethod === 'ONLINE_PAYMENT' ? 'Paid Online' : 'Pay on Delivery'}
+                <span className="text-brand-muted block text-[11px]">Delivery Charge</span>
+                <span className="font-semibold text-brand-espresso mt-0.5 block">
+                  {confirmedOrder.fulfillmentMethod === 'SELF_PICKUP'
+                    ? 'FREE (₹0 - Pickup)'
+                    : confirmedOrder.deliveryCharge === 0
+                    ? 'FREE (₹0)'
+                    : `+₹${confirmedOrder.deliveryCharge}`}
                 </span>
               </div>
             </div>
 
             <div className="pt-2 border-t border-brand-border/60 flex items-center justify-between text-xs font-bold">
-              <span className="text-brand-espresso">Total Amount</span>
-              <span className="font-serif font-bold text-base text-brand-espresso">
+              <span className="text-brand-espresso">
+                {confirmedOrder.paymentMethod === 'ONLINE_PAYMENT' || confirmedOrder.paymentStatus === 'PAID'
+                  ? 'Total Paid:'
+                  : 'Total Due (COD):'}
+              </span>
+              <span className="font-serif font-bold text-lg text-brand-plum">
                 ₹{confirmedOrder.totalAmount}
               </span>
             </div>
@@ -810,52 +984,163 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
           {/* Delivery Details */}
           <div className="bg-white rounded-3xl p-6 border border-brand-border/80 shadow-soft space-y-4">
             <h2 className="text-base font-serif font-bold text-brand-espresso pb-2 border-b border-brand-border/40">
-              2. Delivery Address &amp; Schedule
+              2. Fulfillment Method &amp; Schedule
             </h2>
 
-            {savedAddresses.length > 0 && (
-              <div className="mb-4">
-                <p className="text-sm font-medium text-brand-text mb-2">Saved Addresses</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                  {savedAddresses.map(addr => (
-                    <div 
-                      key={addr.id} 
-                      onClick={() => handleSelectSavedAddress(addr)}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                        selectedAddressId === addr.id 
-                          ? 'border-brand-primary bg-brand-primary/5 shadow-sm' 
-                          : 'border-brand-border hover:border-brand-primary/50'
-                      }`}
-                    >
-                      <div className="flex justify-between mb-1">
-                        <span className="font-semibold text-sm flex items-center text-brand-text">
-                          {addr.label}
-                          {addr.default && <span className="ml-2 text-[10px] bg-brand-cream text-brand-primary px-1.5 py-0.5 rounded uppercase font-bold">Default</span>}
-                        </span>
-                      </div>
-                      <p className="text-xs text-brand-muted line-clamp-2">{addr.deliveryAddress}</p>
+            {/* Fulfillment Method Selector */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-brand-espresso block">
+                How would you like to receive your cake?
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Home Delivery Card */}
+                <div
+                  onClick={() => {
+                    if (!isDeliveryDisabled) setFulfillmentMethod('HOME_DELIVERY');
+                  }}
+                  className={`p-3.5 rounded-2xl border transition-all ${
+                    isDeliveryDisabled
+                      ? 'opacity-60 bg-gray-50 border-gray-200 cursor-not-allowed'
+                      : fulfillmentMethod === 'HOME_DELIVERY'
+                      ? 'border-brand-plum bg-brand-blush/30 shadow-xs ring-1 ring-brand-plum/20 cursor-pointer'
+                      : 'border-brand-border/70 hover:border-brand-plum/40 bg-white cursor-pointer'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="fulfillmentMethod"
+                        checked={fulfillmentMethod === 'HOME_DELIVERY' && !isDeliveryDisabled}
+                        disabled={isDeliveryDisabled}
+                        onChange={() => setFulfillmentMethod('HOME_DELIVERY')}
+                        className="text-brand-plum focus:ring-brand-plum cursor-pointer"
+                      />
+                      <span className="font-bold text-xs text-brand-espresso flex items-center gap-1.5">
+                        <Truck className="w-4 h-4 text-brand-plum" />
+                        Doorstep Delivery
+                      </span>
                     </div>
-                  ))}
+                    {isDeliveryDisabled ? (
+                      <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full">
+                        Disabled
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-brand-plum">
+                        {deliveryCharge === 0 ? 'FREE' : `₹${deliveryCharge}`}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-brand-muted mt-1.5 pl-5">
+                    {isDeliveryDisabled
+                      ? 'This bakery currently offers store pickup only.'
+                      : deliveryConfig?.minOrderForFreeDelivery && totalPrice >= deliveryConfig.minOrderForFreeDelivery
+                      ? `Free delivery applied (order ≥ ₹${deliveryConfig.minOrderForFreeDelivery})`
+                      : 'Delivered directly to your address.'}
+                  </p>
                 </div>
-                
-                <div className="flex items-center">
-                  <div className="flex-1 h-px bg-brand-border/60"></div>
-                  <span className="px-3 text-xs text-brand-muted font-medium uppercase tracking-wider">Or enter manually</span>
-                  <div className="flex-1 h-px bg-brand-border/60"></div>
+
+                {/* Self-Pickup Card */}
+                <div
+                  onClick={() => setFulfillmentMethod('SELF_PICKUP')}
+                  className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                    effectiveFulfillmentMethod === 'SELF_PICKUP'
+                      ? 'border-brand-plum bg-brand-blush/30 shadow-xs ring-1 ring-brand-plum/20'
+                      : 'border-brand-border/70 hover:border-brand-plum/40 bg-white'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="fulfillmentMethod"
+                        checked={effectiveFulfillmentMethod === 'SELF_PICKUP'}
+                        onChange={() => setFulfillmentMethod('SELF_PICKUP')}
+                        className="text-brand-plum focus:ring-brand-plum cursor-pointer"
+                      />
+                      <span className="font-bold text-xs text-brand-espresso flex items-center gap-1.5">
+                        <Store className="w-4 h-4 text-brand-plum" />
+                        Bakery Store Pickup
+                      </span>
+                    </div>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                      FREE (₹0)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-brand-muted mt-1.5 pl-5">
+                    Collect directly from bakery counter at {shop.businessName}.
+                  </p>
                 </div>
               </div>
-            )}
+            </div>
 
-            <Input
-              label="Delivery Street Address"
-              required
-              placeholder="e.g. Flat 302, Green Valley Apartments, MG Road"
-              value={deliveryAddress}
-              onChange={(e) => {
-                setDeliveryAddress(e.target.value);
-                setSelectedAddressId(null);
-              }}
-            />
+            {/* Address input or Bakery Pickup info card */}
+            {effectiveFulfillmentMethod === 'SELF_PICKUP' ? (
+              <div className="p-4 rounded-2xl bg-[#FAF7F2] border border-brand-border/80 space-y-2">
+                <div className="flex items-center gap-2 text-brand-espresso font-bold text-xs">
+                  <MapPin className="w-4 h-4 text-brand-plum" />
+                  <span>Pickup Location</span>
+                </div>
+                <p className="text-xs text-brand-espresso font-semibold">{shop.businessName}</p>
+                <p className="text-xs text-brand-muted">
+                  {[shop.address || shop.addressLine1, shop.area, shop.city, shop.pincode].filter(Boolean).join(', ')}
+                </p>
+                {shop.phone && (
+                  <p className="text-[11px] text-brand-muted">
+                    Bakery Phone: <span className="font-medium text-brand-espresso">{shop.phone}</span>
+                  </p>
+                )}
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-medium">
+                  ✓ Delivery charge is ₹0 for self-pickup. Your cake will be ready at the counter on your selected date.
+                </div>
+              </div>
+            ) : (
+              <>
+                {savedAddresses.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-sm font-medium text-brand-text mb-2">Saved Addresses</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                      {savedAddresses.map(addr => (
+                        <div 
+                          key={addr.id} 
+                          onClick={() => handleSelectSavedAddress(addr)}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                            selectedAddressId === addr.id 
+                              ? 'border-brand-primary bg-brand-primary/5 shadow-sm' 
+                              : 'border-brand-border hover:border-brand-primary/50'
+                          }`}
+                        >
+                          <div className="flex justify-between mb-1">
+                            <span className="font-semibold text-sm flex items-center text-brand-text">
+                              {addr.label}
+                              {addr.default && <span className="ml-2 text-[10px] bg-brand-cream text-brand-primary px-1.5 py-0.5 rounded uppercase font-bold">Default</span>}
+                            </span>
+                          </div>
+                          <p className="text-xs text-brand-muted line-clamp-2">{addr.deliveryAddress}</p>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    <div className="flex items-center">
+                      <div className="flex-1 h-px bg-brand-border/60"></div>
+                      <span className="px-3 text-xs text-brand-muted font-medium uppercase tracking-wider">Or enter manually</span>
+                      <div className="flex-1 h-px bg-brand-border/60"></div>
+                    </div>
+                  </div>
+                )}
+
+                <Input
+                  label="Delivery Street Address"
+                  required
+                  placeholder="e.g. Flat 302, Green Valley Apartments, MG Road"
+                  value={deliveryAddress}
+                  onChange={(e) => {
+                    setDeliveryAddress(e.target.value);
+                    setSelectedAddressId(null);
+                  }}
+                />
+              </>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Input
@@ -1257,6 +1542,23 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
                 <span className="font-medium text-brand-espresso">₹{totalPrice}</span>
               </div>
 
+              <div className="flex items-center justify-between text-brand-muted">
+                <span>Fulfillment:</span>
+                <span className="font-semibold text-brand-espresso flex items-center gap-1">
+                  {effectiveFulfillmentMethod === 'SELF_PICKUP' ? (
+                    <>
+                      <Store className="w-3.5 h-3.5 text-brand-plum" />
+                      <span>Bakery Store Pickup</span>
+                    </>
+                  ) : (
+                    <>
+                      <Truck className="w-3.5 h-3.5 text-brand-plum" />
+                      <span>Doorstep Delivery</span>
+                    </>
+                  )}
+                </span>
+              </div>
+
               {appliedCoupon && (
                 <div className="flex items-center justify-between text-emerald-700 font-semibold">
                   <span>Coupon ({appliedCoupon.code}):</span>
@@ -1267,7 +1569,9 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
               <div className="flex items-center justify-between text-brand-muted">
                 <span>Delivery Charge:</span>
                 <span className="font-medium text-brand-espresso">
-                  {deliveryCharge === 0 ? (
+                  {effectiveFulfillmentMethod === 'SELF_PICKUP' ? (
+                    <span className="text-emerald-700 font-semibold">FREE (₹0 - Pickup)</span>
+                  ) : deliveryCharge === 0 ? (
                     <span className="text-emerald-700 font-semibold">FREE</span>
                   ) : (
                     `₹${deliveryCharge}`
@@ -1506,6 +1810,66 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
           </p>
         </form>
       </Modal>
+
+      {/* Price Mismatch Confirmation Modal */}
+      {priceMismatchModal && (
+        <Modal
+          isOpen={priceMismatchModal.isOpen}
+          onClose={() => setPriceMismatchModal(null)}
+          title="Bakery Pricing Update"
+          maxWidth="sm"
+        >
+          <div className="space-y-4">
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+              <p className="font-semibold">The bakery&apos;s pricing or delivery charges have changed since your session started.</p>
+              <p className="text-[11px] text-amber-700 mt-1">
+                Please review the updated authoritative prices from the bakery before confirming your order.
+              </p>
+            </div>
+
+            <div className="bg-[#FAF7F2] rounded-xl border border-brand-border/70 p-4 text-xs space-y-2">
+              <div className="flex justify-between text-brand-muted">
+                <span>Fulfillment Mode:</span>
+                <span className="font-bold text-brand-espresso">
+                  {priceMismatchModal.fulfillmentMethod === 'SELF_PICKUP' ? 'Store Pickup' : 'Home Delivery'}
+                </span>
+              </div>
+              <div className="flex justify-between text-brand-muted">
+                <span>Estimated Delivery Fee:</span>
+                <span className="line-through text-gray-400">₹{priceMismatchModal.expectedDeliveryFee}</span>
+              </div>
+              <div className="flex justify-between font-semibold text-brand-espresso">
+                <span>Authoritative Delivery Fee:</span>
+                <span className="text-brand-plum font-bold">
+                  {priceMismatchModal.authoritativeDeliveryFee === 0 ? 'FREE (₹0)' : `₹${priceMismatchModal.authoritativeDeliveryFee}`}
+                </span>
+              </div>
+              <div className="border-t border-brand-border/60 pt-2 flex justify-between font-bold text-sm">
+                <span className="text-brand-espresso">Updated Total Payable:</span>
+                <span className="text-brand-plum font-serif text-lg">₹{priceMismatchModal.authoritativeTotal}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPriceMismatchModal(null)}
+                className="text-xs"
+              >
+                Review Cart
+              </Button>
+              <Button
+                size="sm"
+                className="bg-[#5C1D2E] hover:bg-[#4a1525] text-white text-xs font-bold"
+                onClick={handleConfirmPriceChangeAndProceed}
+              >
+                Accept &amp; Place Order (₹{priceMismatchModal.authoritativeTotal})
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

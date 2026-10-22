@@ -62,6 +62,12 @@ export default function AdminShopsPage() {
   const [isBulkMutating, setIsBulkMutating] = useState(false);
   const [bulkConfirm, setBulkConfirm] = useState<{ action: string; label: string } | null>(null);
 
+  const selectedShopNames = useMemo(() => {
+    return selectedShopIds
+      .map((id) => shops.find((s) => s.shopId === id)?.businessName)
+      .filter((name): name is string => Boolean(name));
+  }, [selectedShopIds, shops]);
+
   // Suspend modal state (handles both single row and bulk suspension)
   const [suspendModalState, setSuspendModalState] = useState<{
     isOpen: boolean;
@@ -779,6 +785,7 @@ export default function AdminShopsPage() {
         onClose={() => setSuspendModalState({ isOpen: false, isBulk: false })}
         onConfirm={handleConfirmSuspension}
         isMutating={suspendModalState.isBulk ? isBulkMutating : mutatingId !== null}
+        selectedBakeryNames={suspendModalState.isBulk ? selectedShopNames : undefined}
         title={
           suspendModalState.isBulk
             ? `Bulk Suspend ${selectedShopIds.length} Bakery Storefronts`

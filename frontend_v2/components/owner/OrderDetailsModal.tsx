@@ -151,13 +151,13 @@ export function OrderDetailsModal({
               </div>
               <div>
                 <span className="text-[10px] text-owner-muted font-bold uppercase tracking-wider block">
-                  Delivery Window
+                  {order.fulfillmentMethod === 'SELF_PICKUP' ? 'Pickup Window' : 'Delivery Window'}
                 </span>
                 <p className="text-xs font-bold text-brand-plum mt-0.5">
                   {formatDeliveryDate(order.deliveryDate)}
                 </p>
                 <p className="text-[10px] text-owner-muted">
-                  {formatSlotDetails(order.deliverySlotDetails) || (order.deliveryAddress ? 'Doorstep Delivery' : 'Bakery Pickup')}
+                  {formatSlotDetails(order.deliverySlotDetails) || (order.fulfillmentMethod === 'SELF_PICKUP' ? 'Bakery Counter Pickup' : 'Doorstep Delivery')}
                 </p>
               </div>
             </div>
@@ -248,9 +248,11 @@ export function OrderDetailsModal({
                     </span>
                   </div>
                   <div className="flex justify-between text-owner-muted">
-                    <span>Delivery Fee</span>
+                    <span>Delivery Fee ({order.fulfillmentMethod === 'SELF_PICKUP' ? 'Pickup' : 'Home Delivery'})</span>
                     <span className="font-medium text-owner-heading">
-                      {order.deliveryCharge && Number(order.deliveryCharge) > 0
+                      {order.fulfillmentMethod === 'SELF_PICKUP'
+                        ? 'Self-Pickup (FREE)'
+                        : order.deliveryCharge && Number(order.deliveryCharge) > 0
                         ? `+ ₹${Number(order.deliveryCharge).toLocaleString('en-IN')}`
                         : 'Free Delivery'}
                     </span>

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { Save, Store, FileText, Clock, FileCheck, Eye, AlertCircle, ShieldCheck, ShieldAlert, Upload, RefreshCw, ExternalLink, Leaf } from 'lucide-react';
+import { Save, Store, FileText, Clock, FileCheck, Eye, AlertCircle, ShieldCheck, ShieldAlert, Upload, RefreshCw, ExternalLink, Leaf, MapPin, Navigation } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
@@ -10,6 +10,12 @@ import { mediaApi } from '@/lib/api/media';
 import { ShopSettings } from '@/types/owner';
 import CascadingLocationSelector from '@/components/owner/CascadingLocationSelector';
 import { useUnsavedChanges } from '@/context/UnsavedChangesContext';
+import dynamic from 'next/dynamic';
+
+const InteractiveLocationMap = dynamic(
+  () => import('@/components/owner/InteractiveLocationMap'),
+  { ssr: false, loading: () => <div className="h-64 rounded-2xl bg-neutral-100 flex items-center justify-center text-xs text-brand-muted">Loading interactive map...</div> }
+);
 
 interface ProfileTabProps {
   initialProfile: ShopSettings | null;
@@ -37,6 +43,14 @@ export default function ProfileTab({
   const [city, setCity] = useState(initialProfile?.city || '');
   const [area, setArea] = useState(initialProfile?.area || '');
   const [pincode, setPincode] = useState(initialProfile?.pincode || '');
+  const [latitude, setLatitude] = useState<string>(
+    initialProfile?.latitude !== undefined && initialProfile?.latitude !== null ? String(initialProfile.latitude) : ''
+  );
+  const [longitude, setLongitude] = useState<string>(
+    initialProfile?.longitude !== undefined && initialProfile?.longitude !== null ? String(initialProfile.longitude) : ''
+  );
+  const [isDetectingGps, setIsDetectingGps] = useState(false);
+  const [gpsNotice, setGpsNotice] = useState<string | null>(null);
   const [fssaiRegistration, setFssaiRegistration] = useState(initialProfile?.fssaiRegistration || '');
 
   const [locationErrors, setLocationErrors] = useState<Record<string, string>>({});
@@ -57,7 +71,7 @@ export default function ProfileTab({
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
   const currentSnapshot = JSON.stringify({
     businessName, description, phone, email, addressLine1, addressLine2,
-    state, district, city, area, pincode, fssaiRegistration
+    state, district, city, area, pincode, fssaiRegistration, latitude, longitude
   });
 
   useEffect(() => {
@@ -86,6 +100,8 @@ export default function ProfileTab({
       setCity(initialProfile.city || '');
       setArea(initialProfile.area || '');
       setPincode(initialProfile.pincode || '');
+      setLatitude(initialProfile.latitude !== undefined && initialProfile.latitude !== null ? String(initialProfile.latitude) : '');
+      setLongitude(initialProfile.longitude !== undefined && initialProfile.longitude !== null ? String(initialProfile.longitude) : '');
       setFssaiRegistration(initialProfile.fssaiRegistration || '');
     }
   }, [initialProfile]);
@@ -118,12 +134,43 @@ export default function ProfileTab({
     }
   };
 
+  const handleDetectGps = () => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      setGpsNotice('Geolocation is not supported by your browser.');
+      return;
+    }
+    setIsDetectingGps(true);
+    setGpsNotice(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setIsDetectingGps(false);
+        const lat = pos.coords.latitude.toFixed(6);
+        const lng = pos.coords.longitude.toFixed(6);
+        setLatitude(lat);
+        setLongitude(lng);
+        setGpsNotice(`GPS pin acquired: ${lat}, ${lng}`);
+      },
+      (err) => {
+        setIsDetectingGps(false);
+        let msg = 'Failed to retrieve location.';
+        if (err.code === 1) msg = 'Location access was denied. Please allow permission or enter coordinates manually.';
+        else if (err.code === 2) msg = 'Position unavailable. Please enter coordinates manually.';
+        else if (err.code === 3) msg = 'Location request timed out.';
+        setGpsNotice(msg);
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+  };
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isAdminWithoutShop) return;
     setIsSaving(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+
+    const parsedLat = latitude.trim() !== '' ? parseFloat(latitude.trim()) : undefined;
+    const parsedLng = longitude.trim() !== '' ? parseFloat(longitude.trim()) : undefined;
 
     try {
       const updated = await ownerApi.updateShopSettings({
@@ -138,6 +185,8 @@ export default function ProfileTab({
         district: district || undefined,
         area: area || undefined,
         pincode,
+        latitude: parsedLat,
+        longitude: parsedLng,
         fssaiRegistration,
       });
 
@@ -448,6 +497,40 @@ export default function ProfileTab({
           fieldErrors={locationErrors}
           disabled={isSaving || isAdminWithoutShop}
         />
+
+        {/* Interactive Map Pin & Confirmation */}
+        <div className="pt-4 border-t border-owner-border/70 space-y-3">
+          <div className="flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-brand-plum shrink-0" />
+            <div>
+              <h3 className="text-xs font-bold text-owner-heading">
+                Interactive Bakery Kitchen Map Pin
+              </h3>
+              <p className="text-[11px] text-owner-muted">
+                Search your address, drag the pin to your exact kitchen doorway, or click on the map to confirm your bakery&apos;s exact location.
+              </p>
+            </div>
+          </div>
+
+          <InteractiveLocationMap
+            initialLatitude={latitude && !isNaN(parseFloat(latitude)) ? parseFloat(latitude) : undefined}
+            initialLongitude={longitude && !isNaN(parseFloat(longitude)) ? parseFloat(longitude) : undefined}
+            initialConfirmed={Boolean(latitude && longitude && !isNaN(parseFloat(latitude)) && !isNaN(parseFloat(longitude)))}
+            addressContext={{
+              addressLine1,
+              area,
+              city,
+              state,
+              pincode,
+            }}
+            onChange={(coords) => {
+              setLatitude(coords.latitude !== undefined ? String(coords.latitude) : '');
+              setLongitude(coords.longitude !== undefined ? String(coords.longitude) : '');
+            }}
+            disabled={isAdminWithoutShop || isSaving}
+          />
+        </div>
+
       </Card>
 
       <Card className="p-6 space-y-4">

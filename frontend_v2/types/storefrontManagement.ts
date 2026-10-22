@@ -42,6 +42,33 @@ export interface ShopDeliveryConfig {
   fixedChargeAmount: number;
   minOrderForFreeDelivery?: number | null;
   deliveryNotes?: string | null;
+  deliveryEnabled?: boolean;
+}
+
+export interface StorefrontQuoteItem {
+  productId: number;
+  quantity: number;
+  variantId?: number;
+  addonIds?: number[];
+}
+
+export interface StorefrontQuoteRequest {
+  fulfillmentMethod: 'HOME_DELIVERY' | 'SELF_PICKUP';
+  couponCode?: string;
+  items: StorefrontQuoteItem[];
+}
+
+export interface StorefrontQuoteResponse {
+  subtotal: number;
+  deliveryFee: number;
+  couponDiscount: number;
+  finalTotal: number;
+  fulfillmentMethod: 'HOME_DELIVERY' | 'SELF_PICKUP';
+  deliveryChargeType: string;
+  deliveryNotes?: string;
+  deliveryEnabled: boolean;
+  freeDeliveryThreshold?: number;
+  appliedCoupon?: string;
 }
 
 export interface ShopStorefrontSettings {

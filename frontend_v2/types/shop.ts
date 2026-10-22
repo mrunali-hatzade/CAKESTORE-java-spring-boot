@@ -25,6 +25,7 @@ export interface ShopDeliveryConfig {
   fixedChargeAmount: number;
   minOrderForFreeDelivery?: number | null;
   deliveryNotes?: string | null;
+  deliveryEnabled?: boolean;
 }
 
 export interface ShopStorefrontSettings {
@@ -149,5 +150,33 @@ export interface PopularCity {
   cityName: string;
   stateName?: string;
   activeBakeryCount: number;
+}
+
+export interface ShopPaginationMetadata {
+  totalElements: number;
+  totalPages: number;
+  page: number;
+  size: number;
+  first: boolean;
+  last: boolean;
+  empty: boolean;
+}
+
+export interface PaginatedShopList extends Array<Shop> {
+  pagination?: ShopPaginationMetadata;
+}
+
+export interface SpringPageResponse<T> {
+  content: T[];
+  pageable?: unknown;
+  totalElements?: number;
+  totalPages?: number;
+  size?: number;
+  number?: number;
+  numberOfElements?: number;
+  first?: boolean;
+  last?: boolean;
+  empty?: boolean;
+  sort?: unknown;
 }
 

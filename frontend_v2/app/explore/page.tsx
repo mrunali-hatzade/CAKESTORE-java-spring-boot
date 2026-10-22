@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { X, SlidersHorizontal } from 'lucide-react';
+import { X, SlidersHorizontal, MapPin } from 'lucide-react';
 import { storefrontApi } from '@/lib/api/storefront';
 import { Shop } from '@/types/shop';
 import { Navbar } from '@/components/common/Navbar';
@@ -170,6 +170,26 @@ function ExploreContent() {
     setSortBy('default');
   }, []);
 
+  const POPULAR_CITIES = ['Pune', 'Mumbai', 'Bengaluru'] as const;
+
+  const handleSelectCityChip = (city: string) => {
+    const isCurrentlyActive =
+      locationFilters.city?.toLowerCase() === city.toLowerCase() ||
+      (Boolean(locationQuery) && locationQuery.trim().toLowerCase() === city.toLowerCase());
+
+    if (isCurrentlyActive) {
+      // Toggle off / deselect
+      setLocationQuery('');
+      setLocationFilters((prev) => ({ ...prev, city: undefined }));
+    } else {
+      setGeoParams({});
+      setLocationQuery(city);
+      setLocationFilters({
+        city,
+      });
+    }
+  };
+
   const getTitle = () => {
     const isNearby = geoParams.latitude != null || locationQuery.toLowerCase().includes('near') || locationQuery.toLowerCase().includes('within');
     const locPrefix = isNearby
@@ -196,12 +216,40 @@ function ExploreContent() {
       </div>
 
       {/* Dual Filter Search Bar */}
-      <div className="max-w-2xl mx-auto mb-5">
+      <div className="max-w-2xl mx-auto mb-3">
         <SearchBar
           initialSearch={searchQuery}
           initialLocation={locationQuery}
           onSearch={handleSearch}
         />
+      </div>
+
+      {/* Popular City Shortcuts */}
+      <div className="max-w-2xl mx-auto mb-5 flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap text-xs">
+        <span className="text-brand-muted font-medium flex items-center gap-1 pr-1">
+          <MapPin className="w-3.5 h-3.5 text-brand-plum" />
+          <span>Popular:</span>
+        </span>
+        {POPULAR_CITIES.map((city) => {
+          const isActive =
+            locationFilters.city?.toLowerCase() === city.toLowerCase() ||
+            (Boolean(locationQuery) && locationQuery.trim().toLowerCase() === city.toLowerCase());
+          return (
+            <button
+              key={city}
+              type="button"
+              onClick={() => handleSelectCityChip(city)}
+              aria-pressed={isActive}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-all border cursor-pointer ${
+                isActive
+                  ? 'bg-brand-plum text-white border-brand-plum shadow-xs'
+                  : 'bg-white text-brand-espresso border-neutral-200 hover:border-brand-plum/40 hover:bg-brand-cream-light'
+              }`}
+            >
+              {city}
+            </button>
+          );
+        })}
       </div>
 
       {/* Advanced Location Filter */}
@@ -240,12 +288,35 @@ function ExploreContent() {
                 onClick={() => {
                   setLocationQuery('');
                   setLocationFilters({});
+                  setGeoParams({});
                 }}
                 className="text-brand-muted hover:text-brand-espresso"
               >
                 <X className="w-3 h-3" />
               </button>
             </span>
+          )}
+          {geoParams.latitude != null && (
+            <div className="inline-flex items-center gap-1 bg-white border border-brand-border rounded-full px-2.5 py-0.5 text-xs text-brand-espresso shadow-2xs">
+              <span className="text-[11px] text-brand-muted font-medium pr-1">Radius:</span>
+              {[5, 10, 20, 50].map((r) => {
+                const isSelected = (geoParams.radiusKm || 10) === r;
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setGeoParams((prev) => ({ ...prev, radiusKm: r }))}
+                    className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-brand-plum text-white shadow-xs'
+                        : 'text-brand-muted hover:text-brand-espresso hover:bg-brand-cream/80'
+                    }`}
+                  >
+                    {r} km
+                  </button>
+                );
+              })}
+            </div>
           )}
           {activeCategory !== 'ALL' && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-blush border border-brand-blush-border text-xs text-brand-plum font-medium shadow-2xs">

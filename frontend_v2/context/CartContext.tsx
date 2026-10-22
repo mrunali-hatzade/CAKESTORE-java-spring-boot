@@ -58,16 +58,18 @@ interface CartContextType {
   setIsCartOpen: (open: boolean) => void;
   appliedCoupon: AppliedCouponInfo | null;
   setAppliedCoupon: (coupon: AppliedCouponInfo | null) => void;
+  isHydrated: boolean;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [items, setItems] = useState<CartItem[]>([]);
+  const [isHydrated, setIsHydrated] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [appliedCoupon, setAppliedCoupon] = useState<AppliedCouponInfo | null>(null);
 
-  // Load from localStorage
+  // Load from localStorage on mount
   useEffect(() => {
     try {
       const stored = localStorage.getItem('cakestore_v2_cart');
@@ -82,17 +84,20 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     } catch (e) {
       console.error('Failed to load cart from storage', e);
+    } finally {
+      setIsHydrated(true);
     }
   }, []);
 
-  // Save to localStorage
+  // Save to localStorage only after initial hydration completes
   useEffect(() => {
+    if (!isHydrated) return;
     try {
       localStorage.setItem('cakestore_v2_cart', JSON.stringify(items));
     } catch (e) {
       console.error('Failed to save cart to storage', e);
     }
-  }, [items]);
+  }, [items, isHydrated]);
 
   const currentShopId = items.length > 0 ? items[0].shopId : null;
   const currentShopName = items.length > 0 ? items[0].shopName : null;
@@ -157,6 +162,7 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsCartOpen,
         appliedCoupon,
         setAppliedCoupon,
+        isHydrated,
       }}
     >
       {children}

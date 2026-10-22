@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { MapPin, Store, Star, ArrowRight, Clock, ShieldCheck } from 'lucide-react';
+import { MapPin, Store, Star, ArrowRight, Clock, ShieldCheck, Navigation } from 'lucide-react';
 import { Shop } from '@/types/shop';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -20,6 +20,19 @@ export const BakeryCard: React.FC<BakeryCardProps> = ({ shop }) => {
   const [coverSrc, setCoverSrc] = useState(() =>
     getSafeImageUrl(shop.coverImageUrl || shop.imageUrl, FALLBACK_BAKERY_COVER)
   );
+
+  const directionsUrl = React.useMemo(() => {
+    if (shop.latitude && shop.longitude && !isNaN(shop.latitude) && !isNaN(shop.longitude)) {
+      return `https://www.google.com/maps/dir/?api=1&destination=${shop.latitude},${shop.longitude}`;
+    }
+    const fullAddr = [shop.addressLine1 || shop.address, shop.area, shop.city, shop.state, shop.pincode]
+      .filter(Boolean)
+      .join(', ');
+    if (fullAddr.trim()) {
+      return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(fullAddr)}`;
+    }
+    return null;
+  }, [shop.latitude, shop.longitude, shop.addressLine1, shop.address, shop.area, shop.city, shop.state, shop.pincode]);
 
   return (
     <Card hoverEffect className="h-full flex flex-col overflow-hidden border border-brand-border/80 bg-white group p-0 rounded-3xl transition-all duration-300 hover:shadow-elevated hover:-translate-y-1">
@@ -92,8 +105,12 @@ export const BakeryCard: React.FC<BakeryCardProps> = ({ shop }) => {
             </span>
           </div>
           {shop.distanceKm != null && !isNaN(shop.distanceKm) && (
-            <span className="shrink-0 font-semibold text-brand-plum bg-brand-blush/80 px-2 py-0.5 rounded-full text-[11px] border border-brand-plum/20">
-              {shop.distanceKm < 1 ? `${Math.round(shop.distanceKm * 1000)} m away` : `${shop.distanceKm.toFixed(1)} km away`}
+            <span
+              title="Calculated straight-line (aerial) distance. Driving distance may vary."
+              className="shrink-0 font-semibold text-brand-plum bg-brand-blush/80 px-2 py-0.5 rounded-full text-[11px] border border-brand-plum/20 cursor-help flex items-center gap-1"
+            >
+              <span>{shop.distanceKm < 1 ? `${Math.round(shop.distanceKm * 1000)} m away` : `${shop.distanceKm.toFixed(1)} km away`}</span>
+              <span className="text-[9px] opacity-75 font-normal">(direct)</span>
             </span>
           )}
         </div>
@@ -117,8 +134,8 @@ export const BakeryCard: React.FC<BakeryCardProps> = ({ shop }) => {
         </div>
 
         {/* Direct CTA */}
-        <div className="mt-4 pt-2">
-          <Link href={`/shop/${shop.id}`} className="block">
+        <div className="mt-4 pt-2 flex items-center gap-2">
+          <Link href={`/shop/${shop.id}`} className="flex-1">
             <Button variant="outline" size="sm" className="w-full justify-between group rounded-xl hover:bg-brand-plum hover:text-white hover:border-brand-plum transition-all">
               <span className="inline-flex items-center font-bold">
                 <Store className="w-3.5 h-3.5 mr-1.5 text-brand-plum group-hover:text-white transition-colors" />
@@ -127,6 +144,18 @@ export const BakeryCard: React.FC<BakeryCardProps> = ({ shop }) => {
               <ArrowRight className="w-3.5 h-3.5 text-brand-plum group-hover:text-white transition-transform group-hover:translate-x-1" />
             </Button>
           </Link>
+          {directionsUrl && (
+            <a
+              href={directionsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Get directions on Google Maps"
+              aria-label={`Get directions to ${shop.businessName} on Google Maps`}
+              className="inline-flex items-center justify-center p-2 rounded-xl border border-brand-border/80 hover:border-brand-plum/40 text-brand-muted hover:text-brand-plum hover:bg-brand-blush/30 transition-all text-xs font-semibold shrink-0"
+            >
+              <Navigation className="w-4 h-4" />
+            </a>
+          )}
         </div>
       </div>
     </Card>

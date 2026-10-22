@@ -1,7 +1,7 @@
 'use client';
 /* eslint-disable @next/next/no-img-element */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -25,6 +25,7 @@ import {
   Star,
   UserCircle,
   RefreshCcw,
+  ChevronRight,
 } from 'lucide-react';
 import { Shop } from '@/types/shop';
 import { StorefrontTab } from './StorefrontTabNav';
@@ -80,6 +81,27 @@ export const StorefrontNavbar: React.FC<StorefrontNavbarProps> = ({
   const [internalQuery, setInternalQuery] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const navScrollRef = useRef<HTMLElement>(null);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkNavScroll = useCallback(() => {
+    const el = navScrollRef.current;
+    if (!el) return;
+    const hasMore = el.scrollWidth - el.clientWidth - el.scrollLeft > 4;
+    setCanScrollRight(hasMore);
+  }, []);
+
+  useEffect(() => {
+    const el = navScrollRef.current;
+    if (!el) return;
+    checkNavScroll();
+    el.addEventListener('scroll', checkNavScroll, { passive: true });
+    window.addEventListener('resize', checkNavScroll);
+    return () => {
+      el.removeEventListener('scroll', checkNavScroll);
+      window.removeEventListener('resize', checkNavScroll);
+    };
+  }, [checkNavScroll]);
 
   const currentQuery = onSearchChange !== undefined ? searchQuery : internalQuery;
   const handleQueryChange = (val: string) => {
@@ -389,8 +411,9 @@ export const StorefrontNavbar: React.FC<StorefrontNavbarProps> = ({
         {/* Tier 2: Mini-Website Menu Nav Tabs (Directly merged below main navbar) */}
         {onNavigateTab && (
           <div className="border-t border-brand-border/60 bg-white/70 backdrop-blur-xs">
-            <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12">
+            <div className="relative w-full max-w-[1720px] mx-auto px-4 sm:px-8 lg:px-12">
               <nav
+                ref={navScrollRef}
                 className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-2 no-scrollbar scroll-smooth"
                 aria-label="Bakery Mini-Website Tabs"
               >
@@ -425,6 +448,16 @@ export const StorefrontNavbar: React.FC<StorefrontNavbarProps> = ({
                   );
                 })}
               </nav>
+
+              {/* Mobile/Tablet Horizontal Scroll Indicator */}
+              {canScrollRight && (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute right-4 sm:right-8 lg:right-12 top-0 bottom-0 w-10 sm:w-12 bg-gradient-to-l from-white via-white/80 to-transparent flex items-center justify-end pr-1 text-[#5C1D2E]/70 transition-opacity duration-300"
+                >
+                  <ChevronRight className="w-4 h-4 animate-pulse" />
+                </div>
+              )}
             </div>
           </div>
         )}

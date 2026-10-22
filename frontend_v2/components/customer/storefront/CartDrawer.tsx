@@ -112,18 +112,22 @@ export const CartDrawer: React.FC = () => {
     setCouponSuccess(null);
   };
 
+  const isDeliveryDisabled = deliveryConfig?.deliveryEnabled === false;
   let deliveryCharge = 0;
-  if (items.length > 0 && deliveryConfig) {
-    if (deliveryConfig.deliveryChargeType === 'FIXED') {
-      const fixedAmount = Number(deliveryConfig.fixedChargeAmount) || 0;
-      const minFree = deliveryConfig.minOrderForFreeDelivery;
+  if (items.length > 0) {
+    if (isDeliveryDisabled) {
+      deliveryCharge = 0;
+    } else if (deliveryConfig?.deliveryChargeType === 'FREE') {
+      deliveryCharge = 0;
+    } else {
+      // FIXED delivery charge or authoritative backend fallback (50.00, threshold 1000.00)
+      const fixedAmount = Number(deliveryConfig?.fixedChargeAmount ?? 50.00);
+      const minFree = deliveryConfig?.minOrderForFreeDelivery ?? 1000.00;
       if (minFree && minFree > 0 && totalPrice >= minFree) {
         deliveryCharge = 0;
       } else {
         deliveryCharge = fixedAmount;
       }
-    } else if (deliveryConfig.deliveryChargeType === 'FREE') {
-      deliveryCharge = 0;
     }
   }
 
@@ -402,9 +406,11 @@ export const CartDrawer: React.FC = () => {
                 )}
 
                 <div className="flex items-center justify-between text-brand-muted">
-                  <span>Delivery Estimate:</span>
+                  <span>{isDeliveryDisabled ? 'Fulfillment (Pickup Only):' : 'Delivery Estimate:'}</span>
                   <span className="font-medium text-brand-espresso">
-                    {deliveryCharge === 0 ? (
+                    {isDeliveryDisabled ? (
+                      <span className="text-emerald-700 font-semibold">Store Pickup (FREE)</span>
+                    ) : deliveryCharge === 0 ? (
                       <span className="text-emerald-700 font-semibold">FREE</span>
                     ) : (
                       `₹${deliveryCharge}`

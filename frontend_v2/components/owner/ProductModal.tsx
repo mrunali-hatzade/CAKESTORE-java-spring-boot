@@ -253,6 +253,10 @@ export function ProductModal({
   const handleUploadAltImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be under 5MB');
+      return;
+    }
     if (altImages.length >= 3) {
       toast.info('Maximum 3 alternative images allowed.');
       return;
@@ -769,8 +773,11 @@ export function ProductModal({
                   <ImageIcon className="w-3.5 h-3.5 text-brand-plum" />
                   <span>Alternative Photos ({altImages.length}/3)</span>
                 </div>
-                <span className="text-[10px] text-owner-muted">Angles & slices</span>
+                <span className="text-[10px] text-owner-muted font-medium">Angles &amp; slices</span>
               </div>
+              <p className="text-[11px] text-owner-muted">
+                Upload up to 3 photos (maximum 5 MB each).
+              </p>
 
               {altImages.length > 0 && (
                 <div className="grid grid-cols-3 gap-2">

@@ -50,6 +50,7 @@ export interface Order {
   customerEmail?: string;
   customerPhone?: string;
   deliveryAddress?: string;
+  fulfillmentMethod?: 'HOME_DELIVERY' | 'SELF_PICKUP';
   deliveryDate?: string;
   deliverySlotId?: number;
   deliverySlotDetails?: string;
@@ -75,11 +76,15 @@ export interface GuestOrderRequest {
   customerEmail: string;
   customerPhone: string;
   paymentMethod: 'COD' | 'ONLINE_PAYMENT';
-  deliveryAddress: string;
-  deliveryDate: string;
+  deliveryAddress?: string;
+  deliveryDate?: string;
   deliverySlotId?: number;
   specialInstructions?: string;
   couponCode?: string;
+  fulfillmentMethod?: 'HOME_DELIVERY' | 'SELF_PICKUP';
+  expectedDeliveryFee?: number;
+  expectedTotal?: number;
+  confirmPriceChange?: boolean;
   items: {
     productId: number;
     quantity: number;

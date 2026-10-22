@@ -303,6 +303,8 @@ export interface ShopSettings {
   district?: string;
   state: string;
   pincode: string;
+  latitude?: number;
+  longitude?: number;
   fssaiRegistration?: string;
   isPureVeg: boolean;
   openingTime?: string;

@@ -24,18 +24,20 @@ import { paymentsService } from '@/lib/services/payments';
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { items, totalPrice, clearCart, appliedCoupon, currentShopId } = useCart();
+  const { items, totalPrice, clearCart, appliedCoupon, currentShopId, isHydrated } = useCart();
   const toast = useToast();
 
   const [shop, setShop] = useState<Shop | null>(null);
 
   useEffect(() => {
+    if (!isHydrated) return;
+
     if (currentShopId) {
       router.replace(`/shop/${currentShopId}?tab=checkout`);
     } else {
       router.replace('/explore');
     }
-  }, [currentShopId, router]);
+  }, [isHydrated, currentShopId, router]);
   const [slots, setSlots] = useState<DeliverySlot[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -68,6 +70,17 @@ export default function CheckoutPage() {
         .catch(() => setSlots([]));
     }
   }, [shop?.id, deliveryDate]);
+
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-brand-cream-light font-sans">
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-brand-plum border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-xs sm:text-sm text-brand-muted font-medium">Checking your basket...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!shop && items.length > 0) return <div className="min-h-screen flex items-center justify-center">Loading checkout...</div>;
   if (items.length === 0) {

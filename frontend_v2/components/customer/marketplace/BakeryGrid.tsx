@@ -53,6 +53,11 @@ export const BakeryGrid: React.FC<BakeryGridProps> = ({
   onSortChange,
 }) => {
   const sortedShops = [...shops].sort((a, b) => {
+    if (sortBy === 'distance') {
+      const distA = a.distanceKm != null ? a.distanceKm : Infinity;
+      const distB = b.distanceKm != null ? b.distanceKm : Infinity;
+      return distA - distB;
+    }
     if (sortBy === 'name') return (a.businessName || '').localeCompare(b.businessName || '');
     if (sortBy === 'city') return (a.city || '').localeCompare(b.city || '');
     return 0; // rating, newest, and default are pre-sorted by the backend
@@ -90,6 +95,7 @@ export const BakeryGrid: React.FC<BakeryGridProps> = ({
                 className="bg-transparent focus:outline-none text-xs text-brand-espresso cursor-pointer"
               >
                 <option value="default">Default Order</option>
+                <option value="distance">Nearest First</option>
                 <option value="rating">Top Rated</option>
                 <option value="newest">Newest Bakeries</option>
                 <option value="name">Name (A-Z)</option>

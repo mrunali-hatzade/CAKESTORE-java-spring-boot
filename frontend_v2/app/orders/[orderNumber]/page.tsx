@@ -384,6 +384,7 @@ export default function OrderTrackingPage() {
           )}
 
           {/* Delivery & Recipient Details */}
+          {/* Delivery & Recipient Details */}
           <div className="my-6 bg-brand-cream-light/60 rounded-2xl p-4 sm:p-5 space-y-2.5 text-xs border border-brand-border/70">
             <div className="flex justify-between">
               <span className="text-brand-muted">Recipient Name:</span>
@@ -400,21 +401,57 @@ export default function OrderTrackingPage() {
               </div>
             )}
             <div className="flex justify-between">
-              <span className="text-brand-muted">Delivery Address:</span>
+              <span className="text-brand-muted">Fulfillment Method:</span>
+              <span className="font-semibold text-brand-espresso">
+                {order.fulfillmentMethod === 'SELF_PICKUP'
+                  ? '🏪 Bakery Store Pickup'
+                  : '🚚 Doorstep Delivery'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-brand-muted">
+                {order.fulfillmentMethod === 'SELF_PICKUP' ? 'Pickup Location:' : 'Delivery Address:'}
+              </span>
               <span className="font-semibold text-brand-espresso text-right max-w-xs">{order.deliveryAddress}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-brand-muted">Delivery Date:</span>
+              <span className="text-brand-muted">Schedule Date:</span>
               <span className="font-semibold text-brand-espresso">{order.deliveryDate}</span>
             </div>
-            {order.couponCode && (
-              <div className="flex justify-between text-emerald-700 font-semibold">
-                <span>Coupon Applied ({order.couponCode}):</span>
-                <span>-₹{order.discountAmount || 0}</span>
+
+            <div className="pt-2 border-t border-brand-border/40 space-y-1.5">
+              <div className="flex justify-between text-brand-muted">
+                <span>Items Subtotal:</span>
+                <span className="font-semibold text-brand-espresso">
+                  ₹{order.subtotal ?? (Number(order.totalAmount) - Number(order.deliveryCharge || 0) + Number(order.discountAmount || 0))}
+                </span>
               </div>
-            )}
+
+              <div className="flex justify-between text-brand-muted">
+                <span>Delivery Fee:</span>
+                <span className="font-semibold text-brand-espresso">
+                  {order.fulfillmentMethod === 'SELF_PICKUP'
+                    ? 'FREE (₹0 - Pickup)'
+                    : Number(order.deliveryCharge) === 0
+                    ? 'FREE (₹0)'
+                    : `+₹${order.deliveryCharge}`}
+                </span>
+              </div>
+
+              {order.couponCode && (
+                <div className="flex justify-between text-emerald-700 font-semibold">
+                  <span>Coupon Applied ({order.couponCode}):</span>
+                  <span>-₹{order.discountAmount || 0}</span>
+                </div>
+              )}
+            </div>
+
             <div className="flex justify-between pt-2.5 border-t border-brand-border/60 font-bold text-sm">
-              <span className="text-brand-espresso">Total Amount:</span>
+              <span className="text-brand-espresso">
+                {order.paymentMethod === 'ONLINE_PAYMENT' || order.paymentStatus === 'PAID'
+                  ? 'Total Paid:'
+                  : 'Total Due on Delivery (COD):'}
+              </span>
               <span className="text-brand-plum font-serif text-lg">₹{order.totalAmount}</span>
             </div>
           </div>
