@@ -236,4 +236,16 @@ public class StorefrontCacheSubscriptionTest {
         assertNull(cacheManager.getCache("shopDetails").get(shop1.getId()));
         assertNull(cacheManager.getCache("shopProducts").get(shop1.getId()));
     }
+
+    @Test
+    @DisplayName("Subscription Validation: isShopSubscriptionValid returns false safely on null or invalid shopId")
+    void testIsShopSubscriptionValid_SafeHandling() {
+        assertDoesNotThrow(() -> {
+            boolean nullResult = storefrontService.isShopSubscriptionValid(null);
+            assertFalse(nullResult);
+
+            boolean nonExistentResult = storefrontService.isShopSubscriptionValid(999999L);
+            assertFalse(nonExistentResult);
+        });
+    }
 }

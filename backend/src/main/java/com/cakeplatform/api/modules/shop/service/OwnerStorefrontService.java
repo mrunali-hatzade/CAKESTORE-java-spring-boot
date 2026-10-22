@@ -182,6 +182,7 @@ public class OwnerStorefrontService {
                 .orElseGet(() -> {
                     ShopDeliveryConfig defaultCfg = ShopDeliveryConfig.builder()
                             .shop(shop)
+                            .deliveryEnabled(true)
                             .deliveryChargeType("FIXED")
                             .fixedChargeAmount(java.math.BigDecimal.valueOf(50.00))
                             .minOrderForFreeDelivery(java.math.BigDecimal.valueOf(1000.00))
@@ -196,6 +197,11 @@ public class OwnerStorefrontService {
         ShopDeliveryConfig config = shopDeliveryConfigRepository.findByShopId(shop.getId())
                 .orElseGet(() -> ShopDeliveryConfig.builder().shop(shop).build());
 
+        if (request.getDeliveryEnabled() != null) {
+            config.setDeliveryEnabled(request.getDeliveryEnabled());
+        } else if (config.getDeliveryEnabled() == null) {
+            config.setDeliveryEnabled(true);
+        }
         config.setDeliveryChargeType(request.getDeliveryChargeType().trim().toUpperCase());
         config.setFixedChargeAmount(request.getFixedChargeAmount());
         config.setMinOrderForFreeDelivery(request.getMinOrderForFreeDelivery());

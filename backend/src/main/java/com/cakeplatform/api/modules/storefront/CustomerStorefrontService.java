@@ -12,8 +12,12 @@ import com.cakeplatform.api.modules.storefront.dto.GuestOrderRequest;
 import com.cakeplatform.api.modules.storefront.dto.StorefrontShopResponse;
 import com.cakeplatform.api.modules.storefront.dto.StorefrontOrderItem;
 import com.cakeplatform.api.modules.storefront.dto.StorefrontDeliverySlotResponse;
+import com.cakeplatform.api.modules.storefront.dto.StorefrontQuoteRequest;
+import com.cakeplatform.api.modules.storefront.dto.StorefrontQuoteResponse;
 import com.cakeplatform.api.modules.storefront.dto.ValidateCouponRequest;
 import com.cakeplatform.api.modules.storefront.dto.ValidateCouponResponse;
+import com.cakeplatform.api.modules.shop.ShopDeliveryConfig;
+import com.cakeplatform.api.exception.PriceMismatchException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +41,8 @@ import org.springframework.data.domain.PageRequest;
 
 @Service
 public class CustomerStorefrontService {
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(CustomerStorefrontService.class);
 
     private final ShopRepository shopRepository;
     private final ProductRepository productRepository;
@@ -176,33 +182,38 @@ public class CustomerStorefrontService {
      * Returns false if no subscription, status is EXPIRED/SUSPENDED/CANCELLED, or expiry is before or equal to now.
      */
     public boolean isShopSubscriptionValid(Long shopId) {
-        if (subscriptionRepository == null) {
+        if (shopId == null || subscriptionRepository == null) {
             return false;
         }
-        var latest = subscriptionRepository.findFirstByShopIdOrderByCreatedAtDesc(shopId).orElse(null);
-        if (latest == null) {
-            return false;
-        }
-        if (latest.getStatus() == null) {
-            return false;
-        }
-        switch (latest.getStatus()) {
-            case EXPIRED:
-            case SUSPENDED:
-            case CANCELLED:
+        try {
+            var latest = subscriptionRepository.findFirstByShopIdOrderByCreatedAtDesc(shopId).orElse(null);
+            if (latest == null) {
                 return false;
-            default:
-                break;
-        }
-        java.time.LocalDateTime now = java.time.LocalDateTime.now(clock);
-        // Expired if expiryDate is null or not after now (i.e., <= now)
-        if (latest.getExpiryDate() != null && !latest.getExpiryDate().isAfter(now)) {
+            }
+            if (latest.getStatus() == null) {
+                return false;
+            }
+            switch (latest.getStatus()) {
+                case EXPIRED:
+                case SUSPENDED:
+                case CANCELLED:
+                    return false;
+                default:
+                    break;
+            }
+            java.time.LocalDateTime now = (clock != null) ? java.time.LocalDateTime.now(clock) : java.time.LocalDateTime.now();
+            // Expired if expiryDate is null or not after now (i.e., <= now)
+            if (latest.getExpiryDate() != null && !latest.getExpiryDate().isAfter(now)) {
+                return false;
+            }
+            return true;
+        } catch (Throwable t) {
+            log.warn("Failed evaluating subscription cache condition for shopId {}: {}", shopId, t.getMessage());
             return false;
         }
-        return true;
     }
 
-    @org.springframework.cache.annotation.Cacheable(value = "shopDetails", key = "#shopId", condition = "#root.target.isShopSubscriptionValid(#shopId)")
+    @org.springframework.cache.annotation.Cacheable(value = "shopDetails", key = "#shopId", condition = "#shopId != null && #root.target.isShopSubscriptionValid(#shopId)")
     public StorefrontShopResponse getShopDetails(Long shopId) {
         Shop shop = getActiveShop(shopId);
         return mapToStorefrontShopResponse(shop);
@@ -495,6 +506,23 @@ public class CustomerStorefrontService {
         return categoryRepository.findNonEmptyByShopId(shopId);
     }
 
+    public ShopDeliveryConfig getAuthoritativeDeliveryConfig(Shop shop) {
+        ShopDeliveryConfig config = null;
+        if (shopDeliveryConfigRepository != null && shop != null && shop.getId() != null) {
+            config = shopDeliveryConfigRepository.findByShopId(shop.getId()).orElse(null);
+        }
+        if (config == null) {
+            config = ShopDeliveryConfig.builder()
+                    .shop(shop)
+                    .deliveryEnabled(true)
+                    .deliveryChargeType("FIXED")
+                    .fixedChargeAmount(BigDecimal.valueOf(50.00))
+                    .minOrderForFreeDelivery(BigDecimal.valueOf(1000.00))
+                    .build();
+        }
+        return config;
+    }
+
     private StorefrontShopResponse mapToStorefrontShopResponse(Shop shop) {
         StorefrontShopResponse response = new StorefrontShopResponse();
         response.setId(shop.getId());
@@ -547,9 +575,7 @@ public class CustomerStorefrontService {
         if (shopBusinessHoursRepository != null) {
             response.setBusinessHours(shopBusinessHoursRepository.findByShopId(shop.getId()));
         }
-        if (shopDeliveryConfigRepository != null) {
-            response.setDeliveryConfig(shopDeliveryConfigRepository.findByShopId(shop.getId()).orElse(null));
-        }
+        response.setDeliveryConfig(getAuthoritativeDeliveryConfig(shop));
         com.cakeplatform.api.modules.shop.ShopStorefrontSettings ss = null;
         if (shopStorefrontSettingsRepository != null) {
             ss = shopStorefrontSettingsRepository.findByShopId(shop.getId()).orElse(null);
@@ -631,7 +657,7 @@ public class CustomerStorefrontService {
     }
 
     @Transactional(readOnly = true)
-    @org.springframework.cache.annotation.Cacheable(value = "shopProducts", key = "#shopId", condition = "#root.target.isShopSubscriptionValid(#shopId)")
+    @org.springframework.cache.annotation.Cacheable(value = "shopProducts", key = "#shopId", condition = "#shopId != null && #root.target.isShopSubscriptionValid(#shopId)")
     public List<Product> getShopProducts(Long shopId) {
         // Enforce active shop check
         getActiveShop(shopId);
@@ -662,6 +688,146 @@ public class CustomerStorefrontService {
         }
         
         return products;
+    }
+
+    @Transactional(readOnly = true)
+    public StorefrontQuoteResponse calculateQuote(Long shopId, StorefrontQuoteRequest request) {
+        Shop shop = getActiveShop(shopId);
+
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            throw new IllegalArgumentException("Order must contain at least one item");
+        }
+
+        String rawFulfillment = request.getFulfillmentMethod();
+        boolean isSelfPickup = rawFulfillment != null && (
+                "SELF_PICKUP".equalsIgnoreCase(rawFulfillment)
+                || "STORE_PICKUP".equalsIgnoreCase(rawFulfillment)
+                || "PICKUP".equalsIgnoreCase(rawFulfillment)
+        );
+        String fulfillmentMethod = isSelfPickup ? "SELF_PICKUP" : "HOME_DELIVERY";
+
+        BigDecimal subtotal = BigDecimal.ZERO;
+        for (StorefrontOrderItem itemRequest : request.getItems()) {
+            Product product = productRepository.findByIdAndShopId(itemRequest.getProductId(), shopId)
+                    .orElseThrow(() -> new RuntimeException("Product not found or does not belong to shop"));
+
+            if (!product.getAvailability() || !"ACTIVE".equals(product.getStatus())) {
+                throw new RuntimeException("Product " + product.getName() + " is currently unavailable");
+            }
+
+            BigDecimal basePrice = product.getPrice();
+            if (itemRequest.getVariantId() != null) {
+                com.cakeplatform.api.modules.product.ProductVariant selectedVariant = product.getVariants().stream()
+                        .filter(v -> v.getId().equals(itemRequest.getVariantId()) && v.getIsAvailable())
+                        .findFirst()
+                        .orElseThrow(() -> new RuntimeException("Variant unavailable"));
+                basePrice = selectedVariant.getPrice();
+            }
+
+            BigDecimal addonsTotal = BigDecimal.ZERO;
+            if (itemRequest.getAddonIds() != null && !itemRequest.getAddonIds().isEmpty()) {
+                for (Long addonId : itemRequest.getAddonIds()) {
+                    com.cakeplatform.api.modules.product.ProductAddon addon = product.getAddons().stream()
+                            .filter(a -> a.getId().equals(addonId) && a.getIsAvailable())
+                            .findFirst()
+                            .orElseThrow(() -> new RuntimeException("Addon unavailable"));
+                    addonsTotal = addonsTotal.add(addon.getPrice());
+                }
+            }
+
+            BigDecimal dietaryUpcharge = BigDecimal.ZERO;
+            if (Boolean.TRUE.equals(product.getAllowEggChoice())
+                    && "EGGLESS".equalsIgnoreCase(itemRequest.getDietaryPreference())
+                    && product.getEgglessPriceDiff() != null) {
+                dietaryUpcharge = product.getEgglessPriceDiff();
+            } else if ("GLUTEN_FREE".equalsIgnoreCase(itemRequest.getDietaryPreference())) {
+                dietaryUpcharge = BigDecimal.valueOf(10.00);
+            }
+
+            BigDecimal unitPrice = basePrice.add(addonsTotal).add(dietaryUpcharge);
+            int qty = itemRequest.getQuantity() != null && itemRequest.getQuantity() > 0 ? itemRequest.getQuantity() : 1;
+            BigDecimal itemTotal = unitPrice.multiply(BigDecimal.valueOf(qty));
+            subtotal = subtotal.add(itemTotal);
+        }
+
+        ShopDeliveryConfig deliveryConfig = getAuthoritativeDeliveryConfig(shop);
+        boolean deliveryEnabled = !Boolean.FALSE.equals(deliveryConfig.getDeliveryEnabled());
+
+        boolean canDeliver = true;
+        String rejectionReason = null;
+        BigDecimal calculatedDeliveryCharge = BigDecimal.ZERO;
+        boolean isFreeDelivery = false;
+
+        if (isSelfPickup) {
+            calculatedDeliveryCharge = BigDecimal.ZERO;
+            isFreeDelivery = true;
+            canDeliver = true;
+        } else {
+            if (!deliveryEnabled) {
+                canDeliver = false;
+                rejectionReason = "Home delivery is not available for this bakery. Please choose self-pickup.";
+                calculatedDeliveryCharge = BigDecimal.ZERO;
+                isFreeDelivery = false;
+            } else {
+                if ("FREE".equalsIgnoreCase(deliveryConfig.getDeliveryChargeType())) {
+                    calculatedDeliveryCharge = BigDecimal.ZERO;
+                    isFreeDelivery = true;
+                } else if ("FIXED".equalsIgnoreCase(deliveryConfig.getDeliveryChargeType())) {
+                    BigDecimal fixed = deliveryConfig.getFixedChargeAmount() != null ? deliveryConfig.getFixedChargeAmount() : BigDecimal.ZERO;
+                    if (deliveryConfig.getMinOrderForFreeDelivery() != null
+                            && subtotal.compareTo(deliveryConfig.getMinOrderForFreeDelivery()) >= 0) {
+                        calculatedDeliveryCharge = BigDecimal.ZERO;
+                        isFreeDelivery = true;
+                    } else {
+                        calculatedDeliveryCharge = fixed;
+                        isFreeDelivery = (fixed.compareTo(BigDecimal.ZERO) == 0);
+                    }
+                }
+            }
+        }
+
+        BigDecimal discount = BigDecimal.ZERO;
+        if (request.getCouponCode() != null && !request.getCouponCode().isBlank()) {
+            String cleanCode = request.getCouponCode().trim().toUpperCase();
+            java.util.Optional<com.cakeplatform.api.modules.shop.Coupon> couponOpt = couponRepository.findByShopIdAndCodeIgnoreCase(shopId, cleanCode);
+            if (couponOpt.isPresent()) {
+                com.cakeplatform.api.modules.shop.Coupon coupon = couponOpt.get();
+                java.time.LocalDateTime now = java.time.LocalDateTime.now();
+                boolean active = Boolean.TRUE.equals(coupon.getIsActive())
+                        && (coupon.getStartDate() == null || !coupon.getStartDate().isAfter(now))
+                        && (coupon.getExpiryDate() == null || !coupon.getExpiryDate().isBefore(now))
+                        && (coupon.getMinOrderValue() == null || subtotal.compareTo(coupon.getMinOrderValue()) >= 0);
+
+                if (active) {
+                    if (coupon.getDiscountType() == com.cakeplatform.api.modules.shop.Coupon.DiscountType.FLAT) {
+                        discount = coupon.getDiscountValue();
+                    } else if (coupon.getDiscountType() == com.cakeplatform.api.modules.shop.Coupon.DiscountType.PERCENTAGE) {
+                        discount = subtotal.multiply(coupon.getDiscountValue()).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+                        if (coupon.getMaxDiscountCap() != null && discount.compareTo(coupon.getMaxDiscountCap()) > 0) {
+                            discount = coupon.getMaxDiscountCap();
+                        }
+                    }
+                    if (discount.compareTo(subtotal) > 0) discount = subtotal;
+                    if (discount.compareTo(BigDecimal.ZERO) < 0) discount = BigDecimal.ZERO;
+                }
+            }
+        }
+
+        BigDecimal finalTotal = subtotal.subtract(discount).add(calculatedDeliveryCharge);
+        if (finalTotal.compareTo(BigDecimal.ZERO) < 0) finalTotal = BigDecimal.ZERO;
+
+        return StorefrontQuoteResponse.builder()
+                .subtotal(subtotal)
+                .deliveryFee(calculatedDeliveryCharge)
+                .discountAmount(discount)
+                .finalTotal(finalTotal)
+                .fulfillmentMethod(fulfillmentMethod)
+                .deliveryEnabled(deliveryEnabled)
+                .freeDeliveryThreshold(deliveryConfig.getMinOrderForFreeDelivery())
+                .isFreeDelivery(isFreeDelivery)
+                .canDeliver(canDeliver)
+                .rejectionReason(rejectionReason)
+                .build();
     }
 
     @Transactional
@@ -716,6 +882,22 @@ public class CustomerStorefrontService {
             }
         }
 
+        // Determine fulfillment method and authoritative delivery configuration
+        String rawFulfillment = request.getFulfillmentMethod();
+        boolean isSelfPickup = rawFulfillment != null && (
+                "SELF_PICKUP".equalsIgnoreCase(rawFulfillment)
+                || "STORE_PICKUP".equalsIgnoreCase(rawFulfillment)
+                || "PICKUP".equalsIgnoreCase(rawFulfillment)
+        );
+        String fulfillmentMethod = isSelfPickup ? "SELF_PICKUP" : "HOME_DELIVERY";
+
+        ShopDeliveryConfig deliveryConfig = getAuthoritativeDeliveryConfig(shop);
+        boolean deliveryEnabled = !Boolean.FALSE.equals(deliveryConfig.getDeliveryEnabled());
+
+        if (!isSelfPickup && !deliveryEnabled) {
+            throw new IllegalArgumentException("Home delivery is currently disabled by this bakery. Please choose self-pickup.");
+        }
+
         boolean isOnlinePayment = "ONLINE_PAYMENT".equalsIgnoreCase(request.getPaymentMethod())
                 || "RAZORPAY".equalsIgnoreCase(request.getPaymentMethod());
 
@@ -733,7 +915,21 @@ public class CustomerStorefrontService {
             }
         }
 
-        order.setDeliveryAddress(request.getDeliveryAddress());
+        if (isSelfPickup) {
+            if (request.getDeliveryAddress() == null || request.getDeliveryAddress().trim().isEmpty()) {
+                String shopAddr = shop.getAddress() != null && !shop.getAddress().isBlank() ? shop.getAddress() : shop.getCity();
+                order.setDeliveryAddress("Bakery Store Pickup: " + shop.getBusinessName() + (shopAddr != null ? " (" + shopAddr + ")" : ""));
+            } else {
+                order.setDeliveryAddress(request.getDeliveryAddress().trim());
+            }
+        } else {
+            if (request.getDeliveryAddress() == null || request.getDeliveryAddress().trim().isEmpty()) {
+                throw new IllegalArgumentException("Delivery street address is required for home delivery");
+            }
+            order.setDeliveryAddress(request.getDeliveryAddress().trim());
+        }
+
+        order.setFulfillmentMethod(fulfillmentMethod);
         order.setSpecialInstructions(request.getSpecialInstructions());
         order.setPaymentMethod(request.getPaymentMethod());
         order.setOrderNumber("ORD-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
@@ -825,12 +1021,11 @@ public class CustomerStorefrontService {
 
         order.setSubtotal(subtotal);
 
-        // Authoritative Delivery Charge Calculation from shop_delivery_configs
-        BigDecimal calculatedDeliveryCharge = BigDecimal.valueOf(50.00); // Default fallback
-        com.cakeplatform.api.modules.shop.ShopDeliveryConfig deliveryConfig = (shopDeliveryConfigRepository != null)
-                ? shopDeliveryConfigRepository.findByShopId(shopId).orElse(null)
-                : null;
-        if (deliveryConfig != null) {
+        // Authoritative Delivery Charge Calculation based on fulfillment method and shop_delivery_configs
+        BigDecimal calculatedDeliveryCharge = BigDecimal.ZERO;
+        if (isSelfPickup) {
+            calculatedDeliveryCharge = BigDecimal.ZERO;
+        } else {
             if ("FREE".equalsIgnoreCase(deliveryConfig.getDeliveryChargeType())) {
                 calculatedDeliveryCharge = BigDecimal.ZERO;
             } else if ("FIXED".equalsIgnoreCase(deliveryConfig.getDeliveryChargeType())) {
@@ -903,6 +1098,38 @@ public class CustomerStorefrontService {
         if (calculatedTotal.compareTo(BigDecimal.ZERO) < 0) {
             calculatedTotal = BigDecimal.ZERO;
         }
+
+        // Revalidate client quote before placement: require customer confirmation on price change or mismatch
+        if (request.getExpectedTotal() != null) {
+            if (request.getExpectedTotal().compareTo(calculatedTotal) != 0) {
+                if (!Boolean.TRUE.equals(request.getConfirmPriceChange())) {
+                    throw new com.cakeplatform.api.exception.PriceMismatchException(
+                            "Price update required: The order total is ₹" + calculatedTotal.stripTrailingZeros().toPlainString()
+                            + " (Delivery fee: ₹" + calculatedDeliveryCharge.stripTrailingZeros().toPlainString()
+                            + "), but checkout expected ₹" + request.getExpectedTotal().stripTrailingZeros().toPlainString()
+                            + ". Please review and confirm your order total.",
+                            request.getExpectedTotal(),
+                            calculatedTotal,
+                            calculatedDeliveryCharge
+                    );
+                }
+            }
+        } else if (request.getExpectedDeliveryFee() != null) {
+            if (request.getExpectedDeliveryFee().compareTo(calculatedDeliveryCharge) != 0) {
+                if (!Boolean.TRUE.equals(request.getConfirmPriceChange())) {
+                    throw new com.cakeplatform.api.exception.PriceMismatchException(
+                            "Price update required: The delivery fee is ₹" + calculatedDeliveryCharge.stripTrailingZeros().toPlainString()
+                            + " (Total: ₹" + calculatedTotal.stripTrailingZeros().toPlainString()
+                            + "), but checkout expected fee ₹" + request.getExpectedDeliveryFee().stripTrailingZeros().toPlainString()
+                            + ". Please review and confirm your order total.",
+                            calculatedTotal,
+                            calculatedTotal,
+                            calculatedDeliveryCharge
+                    );
+                }
+            }
+        }
+
         order.setTotalAmount(calculatedTotal);
 
         Order savedOrder = orderRepository.save(order);

@@ -61,6 +61,13 @@ public class AuthService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.cakeplatform.api.modules.shop.ShopStorefrontSettingsRepository shopStorefrontSettingsRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.location.service.GeocodingService geocodingService;
+
+    public void setGeocodingService(com.cakeplatform.api.modules.location.service.GeocodingService geocodingService) {
+        this.geocodingService = geocodingService;
+    }
     
     @Value("${FRONTEND_BASE_URL:http://localhost:3001}")
     private String frontendBaseUrl;
@@ -218,8 +225,25 @@ public class AuthService {
         shop.setDistrict(request.getDistrict());
         shop.setState(request.getState());
         shop.setPincode(request.getPincode());
-        shop.setLatitude(request.getLatitude());
-        shop.setLongitude(request.getLongitude());
+        
+        Double lat = request.getLatitude();
+        Double lng = request.getLongitude();
+        if (lat != null || lng != null) {
+            if (lat == null || lng == null || (geocodingService != null && !geocodingService.isValidCoordinates(lat, lng))
+                    || lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0) {
+                throw new com.cakeplatform.api.modules.location.exception.InvalidLocationException(
+                        "Invalid geographic coordinates. Latitude must be between -90 and 90, and longitude between -180 and 180."
+                );
+            }
+            shop.setLatitude(lat);
+            shop.setLongitude(lng);
+        } else {
+            // When coordinates are not explicitly confirmed by the owner, leave as null.
+            // Preserves address while ensuring location setup is marked incomplete.
+            shop.setLatitude(null);
+            shop.setLongitude(null);
+        }
+
         
         // Also combine into existing full address field for backward compatibility
         String fullAddress = request.getAddressLine1();

@@ -20,6 +20,13 @@ public class ShopService {
     private final com.cakeplatform.api.modules.storefront.StorefrontCacheService storefrontCacheService;
     private final com.cakeplatform.api.modules.location.service.LocationValidationService locationValidationService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.location.service.GeocodingService geocodingService;
+
+    public void setGeocodingService(com.cakeplatform.api.modules.location.service.GeocodingService geocodingService) {
+        this.geocodingService = geocodingService;
+    }
+
     @org.springframework.beans.factory.annotation.Autowired
     public ShopService(
             ShopRepository shopRepository,
@@ -36,6 +43,10 @@ public class ShopService {
             ShopRepository shopRepository,
             com.cakeplatform.api.modules.security.ShopAccessValidator shopAccessValidator) {
         this(shopRepository, shopAccessValidator, null, null);
+    }
+
+    public ShopService(ShopRepository shopRepository) {
+        this(shopRepository, null, null, null);
     }
 
     @Transactional(readOnly = true)
@@ -212,8 +223,20 @@ public class ShopService {
         if (request.getAddressLine2() != null) shop.setAddressLine2(request.getAddressLine2());
         if (request.getArea() != null) shop.setArea(request.getArea());
         if (request.getDistrict() != null) shop.setDistrict(request.getDistrict());
-        if (request.getLatitude() != null) shop.setLatitude(request.getLatitude());
-        if (request.getLongitude() != null) shop.setLongitude(request.getLongitude());
+        
+        Double reqLat = request.getLatitude();
+        Double reqLng = request.getLongitude();
+        if (reqLat != null || reqLng != null) {
+            if (reqLat == null || reqLng == null || (geocodingService != null && !geocodingService.isValidCoordinates(reqLat, reqLng))
+                    || reqLat < -90.0 || reqLat > 90.0 || reqLng < -180.0 || reqLng > 180.0) {
+                throw new com.cakeplatform.api.modules.location.exception.InvalidLocationException(
+                        "Invalid geographic coordinates. Latitude must be between -90 and 90, and longitude between -180 and 180."
+                );
+            }
+            shop.setLatitude(reqLat);
+            shop.setLongitude(reqLng);
+        }
+
 
         if (request.getBusinessCategory() != null) shop.setBusinessCategory(request.getBusinessCategory());
         if (request.getLogoUrl() != null) shop.setLogoUrl(request.getLogoUrl());
@@ -232,7 +255,11 @@ public class ShopService {
     }
 
     private Shop getShopByOwnerId(Long ownerId) {
-        return shopAccessValidator.getShopByOwnerId(ownerId);
+        if (shopAccessValidator != null) {
+            return shopAccessValidator.getShopByOwnerId(ownerId);
+        }
+        return shopRepository.findFirstByOwnerId(ownerId)
+                .orElseThrow(() -> new IllegalArgumentException("Shop not found for owner ID: " + ownerId));
     }
 
     private ShopResponse mapToResponse(Shop shop) {

@@ -105,6 +105,7 @@ public class StorefrontCapacityTest {
     public void testPaymentPendingConsumesCapacity() {
         GuestOrderRequest req1 = new GuestOrderRequest();
         req1.setCustomerName("Alice");
+        req1.setDeliveryAddress("Flat 101, Test Road, Pune");
         req1.setDeliveryDate(LocalDate.now().plusDays(1));
         req1.setDeliverySlotId(slot.getId());
         req1.setPaymentMethod("ONLINE_PAYMENT");
@@ -119,6 +120,7 @@ public class StorefrontCapacityTest {
 
         GuestOrderRequest req2 = new GuestOrderRequest();
         req2.setCustomerName("Bob");
+        req2.setDeliveryAddress("Flat 102, Test Road, Pune");
         req2.setDeliveryDate(LocalDate.now().plusDays(1));
         req2.setDeliverySlotId(slot.getId());
         req2.setPaymentMethod("ONLINE_PAYMENT");
@@ -151,6 +153,7 @@ public class StorefrontCapacityTest {
                     GuestOrderRequest req = new GuestOrderRequest();
                     req.setCustomerName("User " + index);
                     req.setCustomerPhone("1234567890");
+                    req.setDeliveryAddress("Flat " + index + ", Test Road, Pune");
                     req.setDeliveryDate(LocalDate.now().plusDays(1));
                     req.setDeliverySlotId(slot.getId());
                     req.setPaymentMethod("ONLINE_PAYMENT");
@@ -181,6 +184,7 @@ public class StorefrontCapacityTest {
         GuestOrderRequest req1 = new GuestOrderRequest();
         req1.setCustomerName("Alice");
         req1.setCustomerPhone("1234567890");
+        req1.setDeliveryAddress("Flat 101, Test Road, Pune");
         req1.setDeliveryDate(LocalDate.now().plusDays(1));
         req1.setDeliverySlotId(slot.getId());
         req1.setPaymentMethod("ONLINE_PAYMENT");
@@ -199,6 +203,7 @@ public class StorefrontCapacityTest {
         GuestOrderRequest req2 = new GuestOrderRequest();
         req2.setCustomerName("Bob");
         req2.setCustomerPhone("1234567890");
+        req2.setDeliveryAddress("Flat 102, Test Road, Pune");
         req2.setDeliveryDate(LocalDate.now().plusDays(1));
         req2.setDeliverySlotId(slot.getId());
         req2.setPaymentMethod("ONLINE_PAYMENT");

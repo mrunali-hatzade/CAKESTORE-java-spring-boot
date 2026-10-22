@@ -60,6 +60,9 @@ public class Order {
     @Column(name = "order_status", nullable = false)
     private String orderStatus; // NEW, PENDING_PAYMENT, PAID, PAYMENT_FAILED, etc.
 
+    @Column(name = "fulfillment_method", nullable = false)
+    private String fulfillmentMethod = "HOME_DELIVERY"; // HOME_DELIVERY or SELF_PICKUP
+
     @Column(name = "razorpay_order_id")
     private String razorpayOrderId;
 

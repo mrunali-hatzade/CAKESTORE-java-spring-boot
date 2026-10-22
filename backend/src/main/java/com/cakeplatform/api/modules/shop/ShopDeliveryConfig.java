@@ -29,6 +29,10 @@ public class ShopDeliveryConfig {
     @JoinColumn(name = "shop_id", nullable = false, unique = true)
     private Shop shop;
 
+    @Column(name = "delivery_enabled", nullable = false)
+    @Builder.Default
+    private Boolean deliveryEnabled = true;
+
     @Column(name = "delivery_charge_type", nullable = false, length = 50)
     @Builder.Default
     private String deliveryChargeType = "FIXED"; // 'FREE' or 'FIXED'

@@ -9,6 +9,8 @@ import java.math.BigDecimal;
 
 @Data
 public class ShopDeliveryConfigRequest {
+    private Boolean deliveryEnabled; // Defaults to true if null
+    
     @NotBlank
     private String deliveryChargeType; // 'FREE' or 'FIXED'
 

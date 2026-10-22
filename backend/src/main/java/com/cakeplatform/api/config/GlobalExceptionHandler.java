@@ -82,6 +82,17 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.CONFLICT);
     }
 
+    @ExceptionHandler(com.cakeplatform.api.exception.PriceMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handlePriceMismatchException(com.cakeplatform.api.exception.PriceMismatchException ex) {
+        Map<String, Object> error = new HashMap<>();
+        error.put("error", ex.getErrorCode());
+        error.put("message", ex.getMessage());
+        error.put("expectedTotal", ex.getExpectedTotal());
+        error.put("authoritativeTotal", ex.getAuthoritativeTotal());
+        error.put("authoritativeDeliveryFee", ex.getAuthoritativeDeliveryFee());
+        return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+    }
+
     @ExceptionHandler(com.cakeplatform.api.exception.ResourceNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleResourceNotFoundException(com.cakeplatform.api.exception.ResourceNotFoundException ex) {
         Map<String, String> error = new HashMap<>();

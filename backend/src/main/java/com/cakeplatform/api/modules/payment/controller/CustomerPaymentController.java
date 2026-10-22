@@ -9,7 +9,9 @@ import com.cakeplatform.api.modules.payment.PaymentRepository;
 import com.cakeplatform.api.modules.payment.RazorpayService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -28,6 +30,27 @@ public class CustomerPaymentController {
     private final NotificationService notificationService;
     private final com.cakeplatform.api.modules.notification.AdminNotificationService adminNotificationService;
     private final com.cakeplatform.api.modules.shop.CouponRepository couponRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.notification.EmailService emailService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.notification.SmsService smsService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.audit.ActivityLoggerService activityLogger;
+
+    public void setEmailService(com.cakeplatform.api.modules.notification.EmailService emailService) {
+        this.emailService = emailService;
+    }
+
+    public void setSmsService(com.cakeplatform.api.modules.notification.SmsService smsService) {
+        this.smsService = smsService;
+    }
+
+    public void setActivityLogger(com.cakeplatform.api.modules.audit.ActivityLoggerService activityLogger) {
+        this.activityLogger = activityLogger;
+    }
 
     @org.springframework.beans.factory.annotation.Autowired
     public CustomerPaymentController(
@@ -123,16 +146,19 @@ public class CustomerPaymentController {
 
     /**
      * C1: Verify payment signature for customer order and update state idempotently.
+     * Wrapped in a transaction boundary with pessimistic row locking to prevent race conditions.
      */
+    @Transactional
     @PostMapping("/{orderNumber}/verify-payment")
     public ResponseEntity<Map<String, Object>> verifyCustomerPayment(
             @PathVariable String orderNumber,
             @RequestBody Map<String, String> payload) {
-        Order order = orderRepository.findByOrderNumber(orderNumber)
+        Order order = orderRepository.findByOrderNumberWithLock(orderNumber)
+                .or(() -> orderRepository.findByOrderNumber(orderNumber))
                 .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderNumber));
 
-        if ("CANCELLED".equalsIgnoreCase(order.getOrderStatus())) {
-            throw new IllegalStateException("Cannot verify payment for a cancelled order");
+        if ("REFUNDED".equalsIgnoreCase(order.getPaymentStatus())) {
+            throw new IllegalStateException("Cannot verify payment for a refunded order");
         }
 
         String razorpayOrderId = payload.get("razorpayOrderId");
@@ -155,14 +181,16 @@ public class CustomerPaymentController {
             throw new IllegalArgumentException("Payment verification failed. Razorpay order ID does not match local order.");
         }
 
-        // Idempotency: if already PAID, return success without duplicate actions
+        boolean wasCancelled = "CANCELLED".equalsIgnoreCase(order.getOrderStatus());
+
+        // Idempotency: if already PAID, return success or reconciliation status without duplicate actions
         if ("PAID".equalsIgnoreCase(order.getPaymentStatus())) {
             Payment existingPayment = paymentRepository.findByProviderPaymentId(razorpayPaymentId)
                     .or(() -> paymentRepository.findByProviderOrderId(razorpayOrderId))
                     .orElse(null);
             return ResponseEntity.ok(Map.of(
-                    "status", "SUCCESS",
-                    "message", "Order already verified and paid",
+                    "status", wasCancelled ? "RECONCILIATION_REQUIRED" : "SUCCESS",
+                    "message", wasCancelled ? "Payment verified on cancelled order; bakery review required" : "Order already verified and paid",
                     "orderNumber", order.getOrderNumber(),
                     "paymentId", existingPayment != null ? existingPayment.getId() : 0L
             ));
@@ -190,49 +218,52 @@ public class CustomerPaymentController {
         order.setPaymentMethod("RAZORPAY");
         order.setTransactionId(razorpayPaymentId);
         order.setPaidAt(LocalDateTime.now());
-        if ("NEW".equalsIgnoreCase(order.getOrderStatus()) 
-                || "PENDING".equalsIgnoreCase(order.getOrderStatus()) 
-                || "PAYMENT_PENDING".equalsIgnoreCase(order.getOrderStatus())) {
-            order.setOrderStatus("CONFIRMED");
+        if (!wasCancelled) {
+            if ("NEW".equalsIgnoreCase(order.getOrderStatus()) 
+                    || "PENDING".equalsIgnoreCase(order.getOrderStatus()) 
+                    || "PAYMENT_PENDING".equalsIgnoreCase(order.getOrderStatus())) {
+                order.setOrderStatus("CONFIRMED");
+            }
+        } else {
+            // Retain CANCELLED status! Never automatically change to CONFIRMED.
+            log.warn("Payment verified for previously CANCELLED order {}. Retaining CANCELLED status to prevent slot overbooking. Flagged for reconciliation.", order.getOrderNumber());
         }
         orderRepository.save(order);
 
-        // Record / Update Payment
-        Payment payment = paymentRepository.findByProviderOrderId(razorpayOrderId)
-                .or(() -> paymentRepository.findByProviderPaymentId(razorpayPaymentId))
-                .orElseGet(Payment::new);
-        payment.setShop(order.getShop());
-        payment.setAmount(order.getTotalAmount());
-        payment.setCurrency("INR");
-        payment.setProvider("RAZORPAY");
-        payment.setProviderOrderId(razorpayOrderId);
-        payment.setProviderPaymentId(razorpayPaymentId);
-        payment.setStatus("COMPLETED");
-        payment.setPaidAt(LocalDateTime.now());
-        payment.setFailureReason("ORDER:" + order.getOrderNumber());
-        paymentRepository.save(payment);
+        // Record / Update Payment idempotently with unique index race protection
+        Payment payment = savePaymentRecordIdempotent(order, razorpayPaymentId, razorpayOrderId);
 
-        // Dispatch Notification to Bakery Owner
-        if (order.getShop() != null && order.getShop().getOwner() != null && notificationService != null) {
-            notificationService.createNotification(
-                    order.getShop().getOwner(),
-                    NotificationType.NEW_ORDER,
-                    "Payment Received (Razorpay)",
-                    String.format("Payment of ₹%s for Order %s has been confirmed.", order.getTotalAmount(), order.getOrderNumber()),
-                    order.getId().toString(),
-                    true
-            );
+        if (!wasCancelled) {
+            // Dispatch Notification to Bakery Owner
+            if (order.getShop() != null && order.getShop().getOwner() != null && notificationService != null) {
+                notificationService.createNotification(
+                        order.getShop().getOwner(),
+                        NotificationType.NEW_ORDER,
+                        "Payment Received (Razorpay)",
+                        String.format("Payment of ₹%s for Order %s has been confirmed.", order.getTotalAmount(), order.getOrderNumber()),
+                        order.getId().toString(),
+                        true
+                );
+            }
+            if (activityLogger != null && order.getShop() != null) {
+                activityLogger.logActivity(null, order.getShop().getId(), "PAYMENT_VERIFIED_CLIENT", "ORDER", order.getId(), "Tx: " + razorpayPaymentId);
+            }
+            return ResponseEntity.ok(Map.of(
+                    "status", "SUCCESS",
+                    "message", "Payment verified and order confirmed",
+                    "orderNumber", order.getOrderNumber(),
+                    "paymentId", payment.getId() != null ? payment.getId() : 0L
+            ));
+        } else {
+            // Cancelled order payment: Notify owner, admin, customer, and log activity
+            handlePaymentOnCancelledOrder(order, razorpayPaymentId);
+            return ResponseEntity.ok(Map.of(
+                    "status", "RECONCILIATION_REQUIRED",
+                    "message", "Payment verified for cancelled order. Delivery slot was not preserved; bakery review required.",
+                    "orderNumber", order.getOrderNumber(),
+                    "paymentId", payment.getId() != null ? payment.getId() : 0L
+            ));
         }
-
-        // Admin notification for individual bakery order payment is suppressed per platform policy;
-        // platform administrators monitor aggregated bakery performance via the Analytics Dashboard.
-
-        return ResponseEntity.ok(Map.of(
-                "status", "SUCCESS",
-                "message", "Payment verified and order confirmed",
-                "orderNumber", order.getOrderNumber(),
-                "paymentId", payment.getId() != null ? payment.getId() : 0L
-        ));
     }
 
     /**
@@ -240,11 +271,12 @@ public class CustomerPaymentController {
      * Prevents abandoned or customer-cancelled checkouts from showing up as pending orders.
      */
     @PostMapping("/{orderNumber}/cancel-payment")
-    @org.springframework.transaction.annotation.Transactional
+    @Transactional
     public ResponseEntity<Map<String, Object>> cancelCustomerPayment(
             @PathVariable String orderNumber,
             @RequestBody(required = false) Map<String, String> payload) {
-        Order order = orderRepository.findByOrderNumber(orderNumber)
+        Order order = orderRepository.findByOrderNumberWithLock(orderNumber)
+                .or(() -> orderRepository.findByOrderNumber(orderNumber))
                 .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderNumber));
 
         if ("PAID".equalsIgnoreCase(order.getPaymentStatus())) {
@@ -296,4 +328,103 @@ public class CustomerPaymentController {
                 "orderNumber", order.getOrderNumber()
         ));
     }
+
+    private Payment savePaymentRecordIdempotent(Order order, String transactionId, String razorpayOrderId) {
+        Payment payment = paymentRepository.findByProviderPaymentId(transactionId)
+                .or(() -> paymentRepository.findByProviderOrderId(razorpayOrderId))
+                .orElseGet(Payment::new);
+        payment.setShop(order.getShop());
+        payment.setAmount(order.getTotalAmount());
+        payment.setCurrency("INR");
+        payment.setProvider("RAZORPAY");
+        payment.setProviderOrderId(razorpayOrderId);
+        payment.setProviderPaymentId(transactionId);
+        payment.setStatus("COMPLETED");
+        payment.setPaidAt(LocalDateTime.now());
+        payment.setFailureReason("ORDER:" + order.getOrderNumber());
+        try {
+            Payment saved = paymentRepository.save(payment);
+            return saved != null ? saved : payment;
+        } catch (DataIntegrityViolationException ex) {
+            log.info("Concurrent payment insert detected for txId {}. Retrieving existing record.", transactionId);
+            return paymentRepository.findByProviderPaymentId(transactionId)
+                    .orElse(payment);
+        }
+    }
+
+    private void handlePaymentOnCancelledOrder(Order order, String transactionId) {
+        // 1. Owner action-required alert
+        if (order.getShop() != null && order.getShop().getOwner() != null && notificationService != null) {
+            notificationService.createNotification(
+                    order.getShop().getOwner(),
+                    NotificationType.PAYMENT_SUCCESS,
+                    "Action Required: Payment Received on Cancelled Order",
+                    String.format("Payment of ₹%s received for cancelled Order %s (Tx: %s). Delivery slot was not preserved. Please review order in your dashboard to fulfill or refund.",
+                            order.getTotalAmount(), order.getOrderNumber(), transactionId),
+                    order.getId().toString(),
+                    true
+            );
+        }
+
+        // 2. Admin action-required alert
+        if (adminNotificationService != null) {
+            try {
+                adminNotificationService.dispatchAdminNotification(
+                        com.cakeplatform.api.modules.notification.AdminNotificationType.PAYMENT_RECEIVED,
+                        "Payment on Cancelled Order",
+                        String.format("Payment of ₹%s received for CANCELLED order %s (Shop: %s, Tx: %s). Requires reconciliation or refund.",
+                                order.getTotalAmount(), order.getOrderNumber(),
+                                order.getShop() != null ? order.getShop().getBusinessName() : "N/A",
+                                transactionId),
+                        com.cakeplatform.api.modules.notification.AdminNotificationPriority.HIGH,
+                        com.cakeplatform.api.modules.notification.AdminNotificationCategory.PAYMENTS,
+                        "RECON_ORD_" + order.getOrderNumber(),
+                        "ORDER",
+                        "/admin/orders"
+                );
+            } catch (Exception ignored) {}
+        }
+
+        // 3. Customer notification (email and SMS): Inform that payment was received for cancelled order and is in review. DO NOT claim refund.
+        notifyCustomerPaymentOnCancelledOrder(order, transactionId);
+
+        // 4. Activity log
+        if (activityLogger != null) {
+            activityLogger.logActivity(null, order.getShop() != null ? order.getShop().getId() : null,
+                    "PAYMENT_VERIFIED_CANCELLED_ORDER", "ORDER", order.getId(),
+                    "Tx: " + transactionId + " - Payment recorded on cancelled order; flagged for reconciliation");
+        }
+    }
+
+    private void notifyCustomerPaymentOnCancelledOrder(Order order, String transactionId) {
+        try {
+            String shopName = (order.getShop() != null && order.getShop().getBusinessName() != null)
+                    ? order.getShop().getBusinessName()
+                    : "CakeStore Bakery";
+            String customerName = order.getCustomerName() != null ? order.getCustomerName() : "Customer";
+            String subject = String.format("Payment Received for Cancelled Order #%s - Review in Progress", order.getOrderNumber());
+            String body = String.format(
+                    "Hello %s,\n\n" +
+                    "We have received your payment of ₹%s (Transaction ID: %s) for order #%s at %s.\n\n" +
+                    "Please note: Your checkout session had previously been cancelled, so this order is currently under review by the bakery. " +
+                    "The bakery will review whether fulfillment is possible or if a refund will be processed.\n\n" +
+                    "For assistance or inquiries, please contact %s directly.\n\n" +
+                    "Thank you for your patience!",
+                    customerName, order.getTotalAmount(), transactionId, order.getOrderNumber(), shopName, shopName
+            );
+
+            if (emailService != null && order.getCustomerEmail() != null && !order.getCustomerEmail().isBlank()) {
+                emailService.sendEmail(order.getCustomerEmail(), subject, body);
+            }
+
+            if (smsService != null && order.getCustomerPhone() != null && !order.getCustomerPhone().isBlank()) {
+                String smsBody = String.format("Payment of ₹%s received for cancelled order #%s at %s. The bakery is reviewing fulfillment or refund options.",
+                        order.getTotalAmount(), order.getOrderNumber(), shopName);
+                smsService.sendSms(order.getCustomerPhone(), smsBody);
+            }
+        } catch (Exception e) {
+            log.warn("Non-blocking notification error for cancelled order {}: {}", order.getOrderNumber(), e.getMessage());
+        }
+    }
 }
+

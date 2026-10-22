@@ -19,6 +19,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     org.springframework.data.domain.Page<Order> findByShopIdOrderByCreatedAtDesc(Long shopId, Pageable pageable);
     Optional<Order> findByIdAndShopId(Long id, Long shopId);
     Optional<Order> findByOrderNumber(String orderNumber);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM Order o WHERE o.orderNumber = :orderNumber")
+    Optional<Order> findByOrderNumberWithLock(@Param("orderNumber") String orderNumber);
     Optional<Order> findByTransactionId(String transactionId);
     Optional<Order> findByRazorpayOrderId(String razorpayOrderId);
     long countByShopId(Long shopId);

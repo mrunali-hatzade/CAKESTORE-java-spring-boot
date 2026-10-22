@@ -47,6 +47,20 @@ public class WebhookController {
     private final WebhookEventRepository webhookEventRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.notification.EmailService emailService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.notification.SmsService smsService;
+
+    public void setEmailService(com.cakeplatform.api.modules.notification.EmailService emailService) {
+        this.emailService = emailService;
+    }
+
+    public void setSmsService(com.cakeplatform.api.modules.notification.SmsService smsService) {
+        this.smsService = smsService;
+    }
+
     /**
      * C2: Secure Razorpay Webhook Handler.
      * Computes HMAC-SHA256 signature against the exact unmodified raw request body.
@@ -141,7 +155,10 @@ public class WebhookController {
                 }
 
                 if (orderNumber != null) {
-                    Order order = orderRepository.findByOrderNumber(orderNumber).orElse(null);
+                    final String finalOrderNumber = orderNumber;
+                    Order order = orderRepository.findByOrderNumberWithLock(finalOrderNumber)
+                            .or(() -> orderRepository.findByOrderNumber(finalOrderNumber))
+                            .orElse(null);
                     if (order != null) {
                         // Idempotency check: if order is already PAID, do nothing
                         if ("PAID".equalsIgnoreCase(order.getPaymentStatus())) {
@@ -149,49 +166,53 @@ public class WebhookController {
                             return ResponseEntity.ok("Webhook processed (idempotent, order already paid)");
                         }
 
+                        // Safeguard: Do not reactivate or process an order that has already been explicitly REFUNDED
+                        if ("REFUNDED".equalsIgnoreCase(order.getPaymentStatus())) {
+                            log.warn("Webhook ignored: Order {} is already marked REFUNDED.", orderNumber);
+                            return ResponseEntity.ok("Webhook processed (ignored, order refunded)");
+                        }
+
+                        boolean wasCancelled = "CANCELLED".equalsIgnoreCase(order.getOrderStatus());
+
                         order.setPaymentStatus("PAID");
                         order.setTransactionId(transactionId);
                         order.setPaidAt(LocalDateTime.now());
-                        if ("NEW".equalsIgnoreCase(order.getOrderStatus()) 
-                                || "PENDING".equalsIgnoreCase(order.getOrderStatus()) 
-                                || "PAYMENT_PENDING".equalsIgnoreCase(order.getOrderStatus())) {
-                            order.setOrderStatus("CONFIRMED");
+
+                        if (!wasCancelled) {
+                            if ("NEW".equalsIgnoreCase(order.getOrderStatus()) 
+                                    || "PENDING".equalsIgnoreCase(order.getOrderStatus()) 
+                                    || "PAYMENT_PENDING".equalsIgnoreCase(order.getOrderStatus())) {
+                                order.setOrderStatus("CONFIRMED");
+                            }
+                        } else {
+                            // Retain CANCELLED status! Never automatically change to CONFIRMED.
+                            log.warn("Payment captured for previously CANCELLED order {}. Retaining CANCELLED status to prevent slot overbooking. Flagged for owner/admin reconciliation.", order.getOrderNumber());
                         }
                         orderRepository.save(order);
 
-                        // Save Payment record idempotently
-                        if (paymentRepository.findByProviderPaymentId(transactionId).isEmpty()) {
-                            Payment payment = new Payment();
-                            payment.setShop(order.getShop());
-                            payment.setAmount(order.getTotalAmount());
-                            payment.setCurrency("INR");
-                            payment.setProvider("RAZORPAY");
-                            payment.setProviderOrderId(razorpayOrderId);
-                            payment.setProviderPaymentId(transactionId);
-                            payment.setStatus("COMPLETED");
-                            payment.setPaidAt(LocalDateTime.now());
-                            payment.setFailureReason("ORDER:" + order.getOrderNumber());
-                            paymentRepository.save(payment);
+                        // Save Payment record idempotently with unique constraint race protection
+                        savePaymentRecordIdempotent(order, transactionId, razorpayOrderId);
+
+                        if (!wasCancelled) {
+                            // Normal active order confirmed: Notify bakery owner
+                            if (order.getShop() != null && order.getShop().getOwner() != null && notificationService != null) {
+                                notificationService.createNotification(
+                                        order.getShop().getOwner(),
+                                        NotificationType.NEW_ORDER,
+                                        "Payment Confirmed (Webhook)",
+                                        String.format("Payment for Order %s (₹%s) was confirmed via Razorpay webhook.",
+                                                order.getOrderNumber(), order.getTotalAmount()),
+                                        order.getId().toString(),
+                                        true
+                                );
+                            }
+                            activityLogger.logActivity(null, order.getShop().getId(), "PAYMENT_CAPTURED_WEBHOOK", "ORDER", order.getId(), "Tx: " + transactionId);
+                            return ResponseEntity.ok("Webhook processed (order confirmed)");
+                        } else {
+                            // Cancelled order payment: Notify owner, admin, customer, and log activity
+                            handlePaymentOnCancelledOrder(order, transactionId);
+                            return ResponseEntity.ok("Webhook processed (payment recorded on cancelled order, flagged for reconciliation)");
                         }
-
-                        // Send Notification to Owner
-                        if (order.getShop() != null && order.getShop().getOwner() != null && notificationService != null) {
-                            notificationService.createNotification(
-                                    order.getShop().getOwner(),
-                                    NotificationType.NEW_ORDER,
-                                    "Payment Confirmed (Webhook)",
-                                    String.format("Payment for Order %s (₹%s) was confirmed via Razorpay webhook.",
-                                            order.getOrderNumber(), order.getTotalAmount()),
-                                    order.getId().toString(),
-                                    true
-                            );
-                        }
-
-                        // Admin notification for individual bakery order payment is suppressed per platform policy;
-                        // platform administrators monitor aggregated bakery performance via the Analytics Dashboard.
-
-                        activityLogger.logActivity(null, order.getShop().getId(), "PAYMENT_CAPTURED_WEBHOOK", "ORDER", order.getId(), "Tx: " + transactionId);
-                        return ResponseEntity.ok("Webhook processed (order confirmed)");
                     }
                 }
 
@@ -332,6 +353,104 @@ public class WebhookController {
                 org.springframework.transaction.interceptor.TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             } catch (org.springframework.transaction.NoTransactionException ignored) {}
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Webhook processing error");
+        }
+    }
+
+    private Payment savePaymentRecordIdempotent(Order order, String transactionId, String razorpayOrderId) {
+        Payment payment = paymentRepository.findByProviderPaymentId(transactionId)
+                .or(() -> paymentRepository.findByProviderOrderId(razorpayOrderId))
+                .orElseGet(Payment::new);
+        payment.setShop(order.getShop());
+        payment.setAmount(order.getTotalAmount());
+        payment.setCurrency("INR");
+        payment.setProvider("RAZORPAY");
+        payment.setProviderOrderId(razorpayOrderId);
+        payment.setProviderPaymentId(transactionId);
+        payment.setStatus("COMPLETED");
+        payment.setPaidAt(LocalDateTime.now());
+        payment.setFailureReason("ORDER:" + order.getOrderNumber());
+        try {
+            Payment saved = paymentRepository.save(payment);
+            return saved != null ? saved : payment;
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            log.info("Concurrent payment insert detected for txId {}. Retrieving existing record.", transactionId);
+            return paymentRepository.findByProviderPaymentId(transactionId)
+                    .orElse(payment);
+        }
+    }
+
+    private void handlePaymentOnCancelledOrder(Order order, String transactionId) {
+        // 1. Owner action-required alert
+        if (order.getShop() != null && order.getShop().getOwner() != null && notificationService != null) {
+            notificationService.createNotification(
+                    order.getShop().getOwner(),
+                    NotificationType.PAYMENT_SUCCESS,
+                    "Action Required: Payment Received on Cancelled Order",
+                    String.format("Payment of ₹%s received for cancelled Order %s (Tx: %s). Delivery slot was not preserved. Please review order in your dashboard to fulfill or refund.",
+                            order.getTotalAmount(), order.getOrderNumber(), transactionId),
+                    order.getId().toString(),
+                    true
+            );
+        }
+
+        // 2. Admin action-required alert
+        if (adminNotificationService != null) {
+            try {
+                adminNotificationService.dispatchAdminNotification(
+                        com.cakeplatform.api.modules.notification.AdminNotificationType.PAYMENT_RECEIVED,
+                        "Payment on Cancelled Order",
+                        String.format("Payment of ₹%s received for CANCELLED order %s (Shop: %s, Tx: %s). Requires reconciliation or refund.",
+                                order.getTotalAmount(), order.getOrderNumber(),
+                                order.getShop() != null ? order.getShop().getBusinessName() : "N/A",
+                                transactionId),
+                        com.cakeplatform.api.modules.notification.AdminNotificationPriority.HIGH,
+                        com.cakeplatform.api.modules.notification.AdminNotificationCategory.PAYMENTS,
+                        "RECON_ORD_" + order.getOrderNumber(),
+                        "ORDER",
+                        "/admin/orders"
+                );
+            } catch (Exception ignored) {}
+        }
+
+        // 3. Customer notification (email and SMS): Inform that payment was received for cancelled order and is in review. DO NOT claim refund.
+        notifyCustomerPaymentOnCancelledOrder(order, transactionId);
+
+        // 4. Activity log
+        if (activityLogger != null) {
+            activityLogger.logActivity(null, order.getShop() != null ? order.getShop().getId() : null,
+                    "PAYMENT_CAPTURED_CANCELLED_ORDER", "ORDER", order.getId(),
+                    "Tx: " + transactionId + " - Payment recorded on cancelled order; flagged for reconciliation");
+        }
+    }
+
+    private void notifyCustomerPaymentOnCancelledOrder(Order order, String transactionId) {
+        try {
+            String shopName = (order.getShop() != null && order.getShop().getBusinessName() != null)
+                    ? order.getShop().getBusinessName()
+                    : "CakeStore Bakery";
+            String customerName = order.getCustomerName() != null ? order.getCustomerName() : "Customer";
+            String subject = String.format("Payment Received for Cancelled Order #%s - Review in Progress", order.getOrderNumber());
+            String body = String.format(
+                    "Hello %s,\n\n" +
+                    "We have received your payment of ₹%s (Transaction ID: %s) for order #%s at %s.\n\n" +
+                    "Please note: Your checkout session had previously been cancelled, so this order is currently under review by the bakery. " +
+                    "The bakery will review whether fulfillment is possible or if a refund will be processed.\n\n" +
+                    "For assistance or inquiries, please contact %s directly.\n\n" +
+                    "Thank you for your patience!",
+                    customerName, order.getTotalAmount(), transactionId, order.getOrderNumber(), shopName, shopName
+            );
+
+            if (emailService != null && order.getCustomerEmail() != null && !order.getCustomerEmail().isBlank()) {
+                emailService.sendEmail(order.getCustomerEmail(), subject, body);
+            }
+
+            if (smsService != null && order.getCustomerPhone() != null && !order.getCustomerPhone().isBlank()) {
+                String smsBody = String.format("Payment of ₹%s received for cancelled order #%s at %s. The bakery is reviewing fulfillment or refund options.",
+                        order.getTotalAmount(), order.getOrderNumber(), shopName);
+                smsService.sendSms(order.getCustomerPhone(), smsBody);
+            }
+        } catch (Exception e) {
+            log.warn("Non-blocking notification error for cancelled order {}: {}", order.getOrderNumber(), e.getMessage());
         }
     }
 }

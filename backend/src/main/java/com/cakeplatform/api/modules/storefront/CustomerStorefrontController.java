@@ -69,6 +69,29 @@ public class CustomerStorefrontController {
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false, defaultValue = "20") Integer size
     ) {
+        if (latitude != null || longitude != null) {
+            if (latitude == null || longitude == null) {
+                throw new IllegalArgumentException("Both latitude and longitude are required for nearby search");
+            }
+            if (Double.isNaN(latitude) || latitude < -90.0 || latitude > 90.0) {
+                throw new IllegalArgumentException("Latitude must be between -90 and 90 degrees");
+            }
+            if (Double.isNaN(longitude) || longitude < -180.0 || longitude > 180.0) {
+                throw new IllegalArgumentException("Longitude must be between -180 and 180 degrees");
+            }
+        }
+
+        if (radiusKm != null && (Double.isNaN(radiusKm) || radiusKm <= 0 || radiusKm > 100.0)) {
+            throw new IllegalArgumentException("Radius must be a positive number up to 100 km");
+        }
+
+        if (page != null && page < 0) {
+            throw new IllegalArgumentException("Page index must not be negative");
+        }
+        if (size != null && size <= 0) {
+            throw new IllegalArgumentException("Page size must be greater than zero");
+        }
+
         com.cakeplatform.api.modules.shop.BusinessType parsedType = null;
         if (org.springframework.util.StringUtils.hasText(businessType)) {
             try {
@@ -147,6 +170,13 @@ public class CustomerStorefrontController {
             @PathVariable Long shopId,
             @Valid @RequestBody GuestOrderRequest request) {
         return ResponseEntity.ok(storefrontService.placeGuestOrder(shopId, request));
+    }
+
+    @PostMapping("/{shopId}/quote")
+    public ResponseEntity<com.cakeplatform.api.modules.storefront.dto.StorefrontQuoteResponse> calculateOrderQuote(
+            @PathVariable Long shopId,
+            @Valid @RequestBody com.cakeplatform.api.modules.storefront.dto.StorefrontQuoteRequest request) {
+        return ResponseEntity.ok(storefrontService.calculateQuote(shopId, request));
     }
 
     @PostMapping("/{shopId}/coupons/validate")

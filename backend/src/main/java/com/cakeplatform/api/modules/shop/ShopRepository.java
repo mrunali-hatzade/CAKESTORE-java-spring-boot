@@ -63,7 +63,9 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
 
     @Query(value = "SELECT s.city AS city_name, s.state AS state_name, COUNT(s.id) AS active_bakery_count " +
                    "FROM shops s " +
-                   "WHERE s.status = 'ACTIVE' AND s.city IS NOT NULL AND TRIM(s.city) != '' " +
+                   "WHERE s.status = 'ACTIVE' AND s.is_deleted = false " +
+                   "  AND COALESCE(s.is_owner_enabled, true) = true AND COALESCE(s.is_marketplace_restricted, false) = false " +
+                   "  AND s.city IS NOT NULL AND TRIM(s.city) != '' " +
                    "GROUP BY s.city, s.state " +
                    "ORDER BY COUNT(s.id) DESC, s.city ASC",
            nativeQuery = true)
@@ -99,6 +101,8 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "FROM shops s " +
                    "LEFT JOIN feedback f ON f.shop_id = s.id AND f.is_approved = true " +
                    "WHERE s.status = 'ACTIVE' AND s.is_deleted = false " +
+                   "  AND COALESCE(s.is_owner_enabled, true) = true " +
+                   "  AND COALESCE(s.is_marketplace_restricted, false) = false " +
                    "  AND s.latitude IS NOT NULL " +
                    "  AND s.longitude IS NOT NULL " +
                    "  AND s.latitude BETWEEN :minLat AND :maxLat " +
@@ -140,7 +144,10 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "COUNT(f.id) AS total_reviews, " +
                    "(6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(:lat)) * cos(radians(s.latitude)) * cos(radians(s.longitude) - radians(:lng)) + sin(radians(:lat)) * sin(radians(s.latitude)))))) AS distance_km " +
                    "FROM shops s LEFT JOIN feedback f ON f.shop_id = s.id AND f.is_approved = true " +
-                   "WHERE s.status = 'ACTIVE' AND s.latitude IS NOT NULL AND s.longitude IS NOT NULL " +
+                   "WHERE s.status = 'ACTIVE' AND s.is_deleted = false " +
+                   "  AND COALESCE(s.is_owner_enabled, true) = true " +
+                   "  AND COALESCE(s.is_marketplace_restricted, false) = false " +
+                   "  AND s.latitude IS NOT NULL AND s.longitude IS NOT NULL " +
                    "  AND s.latitude BETWEEN :minLat AND :maxLat AND s.longitude BETWEEN :minLng AND :maxLng " +
                    "  AND (CAST(:city AS text) IS NULL OR LOWER(TRIM(s.city)) = LOWER(TRIM(CAST(:city AS text)))) " +
                    "  AND (CAST(:state AS text) IS NULL OR LOWER(TRIM(s.state)) = LOWER(TRIM(CAST(:state AS text)))) " +
@@ -171,7 +178,10 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "COUNT(f.id) AS total_reviews, " +
                    "(6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(:lat)) * cos(radians(s.latitude)) * cos(radians(s.longitude) - radians(:lng)) + sin(radians(:lat)) * sin(radians(s.latitude)))))) AS distance_km " +
                    "FROM shops s LEFT JOIN feedback f ON f.shop_id = s.id AND f.is_approved = true " +
-                   "WHERE s.status = 'ACTIVE' AND s.latitude IS NOT NULL AND s.longitude IS NOT NULL " +
+                   "WHERE s.status = 'ACTIVE' AND s.is_deleted = false " +
+                   "  AND COALESCE(s.is_owner_enabled, true) = true " +
+                   "  AND COALESCE(s.is_marketplace_restricted, false) = false " +
+                   "  AND s.latitude IS NOT NULL AND s.longitude IS NOT NULL " +
                    "  AND s.latitude BETWEEN :minLat AND :maxLat AND s.longitude BETWEEN :minLng AND :maxLng " +
                    "  AND (CAST(:city AS text) IS NULL OR LOWER(TRIM(s.city)) = LOWER(TRIM(CAST(:city AS text)))) " +
                    "  AND (CAST(:state AS text) IS NULL OR LOWER(TRIM(s.state)) = LOWER(TRIM(CAST(:state AS text)))) " +
@@ -197,6 +207,8 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "  SELECT s.id " +
                    "  FROM shops s " +
                    "  WHERE s.status = 'ACTIVE' AND s.is_deleted = false " +
+                   "    AND COALESCE(s.is_owner_enabled, true) = true " +
+                   "    AND COALESCE(s.is_marketplace_restricted, false) = false " +
                    "    AND s.latitude IS NOT NULL " +
                    "    AND s.longitude IS NOT NULL " +
                    "    AND s.latitude BETWEEN :minLat AND :maxLat " +
@@ -262,6 +274,8 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "FROM shops s " +
                    "LEFT JOIN feedback f ON f.shop_id = s.id AND f.is_approved = true " +
                    "WHERE s.status = 'ACTIVE' AND s.is_deleted = false " +
+                   "  AND COALESCE(s.is_owner_enabled, true) = true " +
+                   "  AND COALESCE(s.is_marketplace_restricted, false) = false " +
                    "  AND (CAST(:city AS text) IS NULL OR LOWER(TRIM(s.city)) = LOWER(TRIM(CAST(:city AS text)))) " +
                    "  AND (CAST(:state AS text) IS NULL OR LOWER(TRIM(s.state)) = LOWER(TRIM(CAST(:state AS text)))) " +
                    "  AND (CAST(:district AS text) IS NULL OR LOWER(TRIM(s.district)) = LOWER(TRIM(CAST(:district AS text)))) " +
@@ -303,6 +317,8 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "COUNT(f.id) AS total_reviews, CAST(NULL AS double precision) AS distance_km " +
                    "FROM shops s LEFT JOIN feedback f ON f.shop_id = s.id AND f.is_approved = true " +
                    "WHERE s.status = 'ACTIVE' AND s.is_deleted = false " +
+                   "  AND COALESCE(s.is_owner_enabled, true) = true " +
+                   "  AND COALESCE(s.is_marketplace_restricted, false) = false " +
                    "  AND (CAST(:city AS text) IS NULL OR LOWER(TRIM(s.city)) = LOWER(TRIM(CAST(:city AS text)))) " +
                    "  AND (CAST(:state AS text) IS NULL OR LOWER(TRIM(s.state)) = LOWER(TRIM(CAST(:state AS text)))) " +
                    "  AND (CAST(:district AS text) IS NULL OR LOWER(TRIM(s.district)) = LOWER(TRIM(CAST(:district AS text)))) " +
@@ -325,6 +341,8 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
     @Query(value = "SELECT COUNT(s.id) " +
                    "FROM shops s " +
                    "WHERE s.status = 'ACTIVE' AND s.is_deleted = false " +
+                   "  AND COALESCE(s.is_owner_enabled, true) = true " +
+                   "  AND COALESCE(s.is_marketplace_restricted, false) = false " +
                    "  AND (CAST(:city AS text) IS NULL OR LOWER(TRIM(s.city)) = LOWER(TRIM(CAST(:city AS text)))) " +
                    "  AND (CAST(:state AS text) IS NULL OR LOWER(TRIM(s.state)) = LOWER(TRIM(CAST(:state AS text)))) " +
                    "  AND (CAST(:district AS text) IS NULL OR LOWER(TRIM(s.district)) = LOWER(TRIM(CAST(:district AS text)))) " +

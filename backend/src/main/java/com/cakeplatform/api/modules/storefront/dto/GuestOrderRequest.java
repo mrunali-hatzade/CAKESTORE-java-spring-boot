@@ -25,7 +25,8 @@ public class GuestOrderRequest {
     @Pattern(regexp = "^(COD|ONLINE_PAYMENT)$", message = "Payment method must be COD or ONLINE_PAYMENT")
     private String paymentMethod;
     
-    @NotBlank(message = "Delivery address is required")
+    private String fulfillmentMethod; // HOME_DELIVERY or SELF_PICKUP (defaults to HOME_DELIVERY)
+
     private String deliveryAddress;
 
     private String specialInstructions;
@@ -40,4 +41,10 @@ public class GuestOrderRequest {
     private Long deliverySlotId;
 
     private String couponCode;
+
+    private java.math.BigDecimal expectedDeliveryFee;
+
+    private java.math.BigDecimal expectedTotal;
+
+    private Boolean confirmPriceChange;
 }

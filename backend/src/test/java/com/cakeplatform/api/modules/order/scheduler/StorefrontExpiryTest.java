@@ -122,7 +122,7 @@ public class StorefrontExpiryTest {
     }
 
     @Test
-    public void testStalePaymentPendingIsCancelled() {
+    public void testStalePaymentPendingIsRetainedWithoutAutomaticCancellation() {
         Order staleOrder = createTestOrder("PAYMENT_PENDING", 20);
         Order freshOrder = createTestOrder("PAYMENT_PENDING", 5);
 
@@ -131,7 +131,9 @@ public class StorefrontExpiryTest {
         Order updatedStale = orderRepository.findById(staleOrder.getId()).orElseThrow();
         Order updatedFresh = orderRepository.findById(freshOrder.getId()).orElseThrow();
 
-        assertEquals("CANCELLED", updatedStale.getOrderStatus());
+        // Stale orders must NOT be automatically cancelled on scheduler execution
+        assertEquals("PAYMENT_PENDING", updatedStale.getOrderStatus());
+        assertEquals("PENDING", updatedStale.getPaymentStatus());
         assertEquals("PAYMENT_PENDING", updatedFresh.getOrderStatus());
     }
 
@@ -150,29 +152,29 @@ public class StorefrontExpiryTest {
     }
 
     @Test
-    public void testCapacityReleasedAfterAutomaticCancellation() {
+    public void testCapacityPreservedAcrossSchedulerExecutionAndReleasedOnlyOnManualCancellation() {
         GuestOrderRequest req1 = new GuestOrderRequest();
         req1.setCustomerName("Alice");
         req1.setCustomerPhone("1234567890");
+        req1.setDeliveryAddress("Flat 101, Test Road, Pune");
         req1.setDeliveryDate(LocalDate.now().plusDays(2));
         req1.setDeliverySlotId(slot.getId());
         req1.setPaymentMethod("ONLINE_PAYMENT");
         StorefrontOrderItem item = new StorefrontOrderItem();
         item.setProductId(product.getId());
         item.setQuantity(1);
-        item.setQuantity(1);
-        item.setQuantity(1);
         req1.setItems(List.of(item));
 
         Order order1 = customerStorefrontService.placeGuestOrder(shop.getId(), req1);
         
-        // Force it to be stale using direct SQL to bypass JPA @CreationTimestamp updatable=false
+        // Force it to be stale using direct SQL to simulate age > 15 minutes
         jdbcTemplate.update("UPDATE orders SET created_at = ? WHERE id = ?", java.sql.Timestamp.valueOf(LocalDateTime.now().minusMinutes(20)), order1.getId());
 
-        // Second order fails due to capacity
+        // Second order fails due to slot capacity being fully booked
         GuestOrderRequest req2 = new GuestOrderRequest();
         req2.setCustomerName("Bob");
         req2.setCustomerPhone("1234567890");
+        req2.setDeliveryAddress("Flat 102, Test Road, Pune");
         req2.setDeliveryDate(LocalDate.now().plusDays(2));
         req2.setDeliverySlotId(slot.getId());
         req2.setPaymentMethod("ONLINE_PAYMENT");
@@ -180,10 +182,20 @@ public class StorefrontExpiryTest {
 
         assertThrows(RuntimeException.class, () -> customerStorefrontService.placeGuestOrder(shop.getId(), req2));
 
-        // Expire first order
+        // Run scheduler (previously cancelled stale orders and leaked slot capacity)
         scheduler.processExpiredOrders();
 
-        // Second order should now succeed
+        // Order 1 must still be PAYMENT_PENDING and capacity must still be preserved
+        Order order1AfterScheduler = orderRepository.findById(order1.getId()).orElseThrow();
+        assertEquals("PAYMENT_PENDING", order1AfterScheduler.getOrderStatus());
+
+        // Second order MUST STILL FAIL because slot capacity was NOT released solely due to elapsed time
+        assertThrows(RuntimeException.class, () -> customerStorefrontService.placeGuestOrder(shop.getId(), req2));
+
+        // When the bakery owner manually cancels the order, delivery slot capacity is legitimately released
+        orderService.updateOrderStatus(shop.getOwner().getId(), order1.getId(), "CANCELLED");
+
+        // Now the second order should succeed
         Order order2 = customerStorefrontService.placeGuestOrder(shop.getId(), req2);
         assertNotNull(order2);
         assertEquals("PAYMENT_PENDING", order2.getOrderStatus());

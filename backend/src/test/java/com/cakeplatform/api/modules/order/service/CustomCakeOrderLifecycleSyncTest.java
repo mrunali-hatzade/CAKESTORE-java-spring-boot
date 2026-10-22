@@ -130,7 +130,7 @@ public class CustomCakeOrderLifecycleSyncTest {
     }
 
     @Test
-    void shouldSyncCancelledOrderOnPaymentPendingExpiry() {
+    void shouldRetainPaymentPendingOrderWithoutPrematureCancellationOnExpiry() {
         // Given
         ConvertToOrderRequest convertReq = new ConvertToOrderRequest();
         convertReq.setAgreedPrice(BigDecimal.valueOf(2000));
@@ -150,13 +150,13 @@ public class CustomCakeOrderLifecycleSyncTest {
         // When
         orderService.cancelStalePaymentPendingOrders(LocalDateTime.now().plusMinutes(15));
 
-        // Then
-        Order cancelledOrder = orderRepository.findById(orderId).orElseThrow();
-        assertThat(cancelledOrder.getOrderStatus()).isEqualTo("CANCELLED");
+        // Then: Order must remain in PAYMENT_PENDING to protect customer payment and delivery slot
+        Order retainedOrder = orderRepository.findById(orderId).orElseThrow();
+        assertThat(retainedOrder.getOrderStatus()).isEqualTo("PAYMENT_PENDING");
 
         CustomCakeRequest syncedCakeReq = customCakeRequestRepository.findById(testCakeRequest.getId()).orElseThrow();
-        assertThat(syncedCakeReq.getStatus()).isEqualTo("REVIEWED");
-        assertThat(syncedCakeReq.getConvertedOrderId()).isNull();
+        assertThat(syncedCakeReq.getStatus()).isEqualTo("ACCEPTED");
+        assertThat(syncedCakeReq.getConvertedOrderId()).isEqualTo(orderId);
     }
 
     @Test

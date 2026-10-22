@@ -85,6 +85,7 @@ public class RateLimitingFilter implements Filter {
         return uri.contains("/verify-payment")
                 || uri.contains("/create-payment-order")
                 || uri.contains("/coupons/validate")
+                || uri.contains("/quote")
                 || uri.endsWith("/enquiry")
                 || uri.startsWith("/api/contact/enquiries")
                 || uri.startsWith("/api/owner/feedback")

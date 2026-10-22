@@ -274,16 +274,28 @@ public class OrderService {
         }
     }
 
-    @Transactional
-    public void cancelStalePaymentPendingOrders(java.time.LocalDateTime expiryTime) {
-        List<Order> staleOrders = orderRepository.findStalePaymentPendingOrders(expiryTime);
-        for (Order order : staleOrders) {
-            int updated = orderRepository.cancelIfPaymentPending(order.getId());
-            if (updated > 0) {
-                log.info("System automatic cancellation: Abandoned PAYMENT_PENDING order {} (Shop {}) has been CANCELLED to release delivery capacity.", order.getOrderNumber(), order.getShop().getId());
-                syncCancelledCustomCake(order);
-                // We do NOT send email to customer for automatic checkout cancellation to avoid spam.
+    @Transactional(readOnly = true)
+    public void monitorPendingPaymentOrders(java.time.LocalDateTime threshold) {
+        List<Order> pendingOrders = orderRepository.findStalePaymentPendingOrders(threshold);
+        if (!pendingOrders.isEmpty()) {
+            log.info("Order payment monitoring: Found {} PAYMENT_PENDING order(s) placed before {}. Retaining in pending reconciliation state to protect delivery slot capacity and avoid premature cancellation.",
+                    pendingOrders.size(), threshold);
+            for (Order order : pendingOrders) {
+                log.debug("Pending reconciliation order: id={}, orderNumber={}, shopId={}, createdAt={}, total={}",
+                        order.getId(), order.getOrderNumber(), order.getShop() != null ? order.getShop().getId() : null,
+                        order.getCreatedAt(), order.getTotalAmount());
             }
         }
+    }
+
+    /**
+     * @deprecated Automatic cancellation of PAYMENT_PENDING orders was removed to protect
+     * customers against delayed payment confirmation / webhooks.
+     * This method now delegates to monitorPendingPaymentOrders without cancelling orders.
+     */
+    @Deprecated
+    @Transactional(readOnly = true)
+    public void cancelStalePaymentPendingOrders(java.time.LocalDateTime expiryTime) {
+        monitorPendingPaymentOrders(expiryTime);
     }
 }

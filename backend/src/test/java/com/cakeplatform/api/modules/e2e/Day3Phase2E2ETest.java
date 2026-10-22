@@ -14,6 +14,8 @@ import com.cakeplatform.api.modules.storefront.dto.StorefrontOrderItem;
 import com.cakeplatform.api.modules.subscription.Subscription;
 import com.cakeplatform.api.modules.subscription.SubscriptionRepository;
 import com.cakeplatform.api.modules.subscription.SubscriptionStatus;
+import com.cakeplatform.api.modules.shop.ShopDeliveryConfig;
+import com.cakeplatform.api.modules.shop.ShopDeliveryConfigRepository;
 import com.cakeplatform.api.modules.user.User;
 import com.cakeplatform.api.modules.user.UserRepository;
 import com.cakeplatform.api.modules.user.UserRole;
@@ -45,6 +47,7 @@ public class Day3Phase2E2ETest {
     @Mock private OrderRepository orderRepository;
     @Mock private SubscriptionRepository subscriptionRepository;
     @Mock private UserRepository userRepository;
+    @Mock private ShopDeliveryConfigRepository shopDeliveryConfigRepository;
     
     @InjectMocks
     private CustomerStorefrontService customerStorefrontService;
@@ -104,6 +107,16 @@ public class Day3Phase2E2ETest {
         when(productRepository.findByShopId(1L)).thenReturn(List.of(productA));
         when(productRepository.findByIdAndShopId(10L, 1L)).thenReturn(Optional.of(productA));
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        when(shopDeliveryConfigRepository.findByShopId(1L)).thenReturn(Optional.of(
+                ShopDeliveryConfig.builder()
+                        .shop(shopA)
+                        .deliveryEnabled(true)
+                        .deliveryChargeType("FIXED")
+                        .fixedChargeAmount(new BigDecimal("50.00"))
+                        .minOrderForFreeDelivery(new BigDecimal("2000.00"))
+                        .build()
+        ));
     }
 
     @Test
@@ -124,6 +137,7 @@ public class Day3Phase2E2ETest {
     void testCustomerOrderJourney_FinancialValues() {
         GuestOrderRequest request = new GuestOrderRequest();
         request.setCustomerName("Alice");
+        request.setDeliveryAddress("Flat 101, MG Road, Pune");
         request.setDeliveryDate(LocalDate.now().plusDays(1));
         request.setPaymentMethod("COD");
         
@@ -147,6 +161,7 @@ public class Day3Phase2E2ETest {
     void testCustomerOrderJourney_WrongShop() {
         GuestOrderRequest request = new GuestOrderRequest();
         request.setCustomerName("Bob");
+        request.setDeliveryAddress("Flat 202, FC Road, Pune");
         request.setDeliveryDate(LocalDate.now().plusDays(1));
         
         StorefrontOrderItem item = new StorefrontOrderItem();

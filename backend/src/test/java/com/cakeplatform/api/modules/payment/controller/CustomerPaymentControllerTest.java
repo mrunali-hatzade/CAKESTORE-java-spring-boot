@@ -2,6 +2,7 @@ package com.cakeplatform.api.modules.payment.controller;
 
 import com.cakeplatform.api.modules.notification.AdminNotificationService;
 import com.cakeplatform.api.modules.notification.NotificationService;
+import com.cakeplatform.api.modules.notification.NotificationType;
 import com.cakeplatform.api.modules.order.Order;
 import com.cakeplatform.api.modules.order.OrderRepository;
 import com.cakeplatform.api.modules.payment.Payment;
@@ -319,4 +320,110 @@ public class CustomerPaymentControllerTest {
                 .andExpect(jsonPath("$.status", is("CANCELLED")))
                 .andExpect(jsonPath("$.message", containsString("already cancelled")));
     }
+
+    @Test
+    void verifyCustomerPayment_OnCancelledOrder_RetainsCancelledStatusAndFlagsReconciliation() throws Exception {
+        testOrder.setOrderStatus("CANCELLED");
+        testOrder.setPaymentStatus("PENDING");
+        testOrder.setTransactionId("order_rzp_real_9999");
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+        when(razorpayService.verifyPaymentSignature("order_rzp_real_9999", "pay_real_7777", "valid_signature_abc"))
+                .thenReturn(true);
+
+        Payment pendingPayment = new Payment();
+        pendingPayment.setId(888L);
+        pendingPayment.setShop(testShop);
+        pendingPayment.setAmount(new BigDecimal("1250.00"));
+        pendingPayment.setProviderOrderId("order_rzp_real_9999");
+        pendingPayment.setStatus("PENDING");
+        when(paymentRepository.findByProviderOrderId("order_rzp_real_9999")).thenReturn(Optional.of(pendingPayment));
+        when(paymentRepository.saveAndFlush(any(Payment.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Map<String, String> payload = Map.of(
+                "razorpayOrderId", "order_rzp_real_9999",
+                "razorpayPaymentId", "pay_real_7777",
+                "razorpaySignature", "valid_signature_abc"
+        );
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/verify-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("RECONCILIATION_REQUIRED")))
+                .andExpect(jsonPath("$.orderNumber", is("ORD-TEST-1234")));
+
+        // MUST retain CANCELLED order status - NEVER automatically CONFIRMED
+        assertEquals("CANCELLED", testOrder.getOrderStatus());
+        assertEquals("PAID", testOrder.getPaymentStatus());
+
+        // Bakery owner notified of action required
+        verify(notificationService, times(1)).createNotification(
+                eq(testOwner),
+                eq(NotificationType.PAYMENT_SUCCESS),
+                contains("Action Required"),
+                any(),
+                any(),
+                eq(true)
+        );
+
+        // Platform admin alerted for reconciliation
+        verify(adminNotificationService, times(1)).dispatchAdminNotification(
+                eq(com.cakeplatform.api.modules.notification.AdminNotificationType.PAYMENT_RECEIVED),
+                contains("Payment on Cancelled Order"),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        );
+    }
+
+    @Test
+    void verifyCustomerPayment_RejectsRefundedOrder() throws Exception {
+        testOrder.setPaymentStatus("REFUNDED");
+        testOrder.setOrderStatus("CANCELLED");
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+
+        Map<String, String> payload = Map.of(
+                "razorpayOrderId", "order_rzp_real_9999",
+                "razorpayPaymentId", "pay_real_7777",
+                "razorpaySignature", "valid_signature_abc"
+        );
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/verify-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void verifyCustomerPayment_CancelledOrder_IdempotentWhenAlreadyPaid() throws Exception {
+        testOrder.setPaymentStatus("PAID");
+        testOrder.setOrderStatus("CANCELLED");
+        testOrder.setTransactionId("pay_real_7777");
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+
+        Payment completedPayment = new Payment();
+        completedPayment.setId(888L);
+        completedPayment.setStatus("COMPLETED");
+        when(paymentRepository.findByProviderPaymentId("pay_real_7777")).thenReturn(Optional.of(completedPayment));
+
+        Map<String, String> payload = Map.of(
+                "razorpayOrderId", "order_rzp_real_9999",
+                "razorpayPaymentId", "pay_real_7777",
+                "razorpaySignature", "any_sig"
+        );
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/verify-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("RECONCILIATION_REQUIRED")))
+                .andExpect(jsonPath("$.message", containsString("Payment verified on cancelled order")));
+
+        // No duplicate owner notifications
+        verify(notificationService, never()).createNotification(any(), any(), any(), any(), any(), anyBoolean());
+    }
 }
+

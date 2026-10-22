@@ -15,15 +15,20 @@ public class OrderExpiryScheduler {
 
     private final OrderService orderService;
 
-    // Run every minute
+    /**
+     * Periodic scheduled check for pending orders.
+     * Unsafe automatic cancellation removed:
+     * Orders in PAYMENT_PENDING status are safely retained in pending reconciliation state
+     * to protect customers against delayed gateway confirmations/webhooks and preserve
+     * reserved delivery slot capacity.
+     */
     @Scheduled(fixedDelay = 60000)
     public void processExpiredOrders() {
         try {
-            // PAYMENT_PENDING timeout = 15 minutes
-            LocalDateTime expiryThreshold = LocalDateTime.now().minusMinutes(15);
-            orderService.cancelStalePaymentPendingOrders(expiryThreshold);
+            LocalDateTime threshold = LocalDateTime.now().minusMinutes(15);
+            orderService.monitorPendingPaymentOrders(threshold);
         } catch (Exception e) {
-            log.error("Error during scheduled PAYMENT_PENDING order expiry processing", e);
+            log.error("Error during scheduled pending order monitoring", e);
         }
     }
 }

@@ -1,9 +1,9 @@
 package com.cakeplatform.api.modules.location.controller;
 
 import com.cakeplatform.api.modules.location.dto.*;
+import com.cakeplatform.api.modules.location.service.GeocodingService;
 import com.cakeplatform.api.modules.location.service.LocationService;
 import com.cakeplatform.api.modules.location.service.LocationValidationService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,11 +13,27 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @RestController
-@RequiredArgsConstructor
 public class LocationReferenceController {
 
     private final LocationService locationService;
     private final LocationValidationService validationService;
+    private final GeocodingService geocodingService;
+
+    // Backward-compatible constructor for existing tests
+    public LocationReferenceController(LocationService locationService, LocationValidationService validationService) {
+        this(locationService, validationService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LocationReferenceController(
+            LocationService locationService,
+            LocationValidationService validationService,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) GeocodingService geocodingService
+    ) {
+        this.locationService = locationService;
+        this.validationService = validationService;
+        this.geocodingService = geocodingService;
+    }
 
     @GetMapping({"/api/locations/readiness", "/api/customer/storefront/locations/readiness"})
     public ResponseEntity<LocationReadinessDTO> getReadiness() {
@@ -80,4 +96,28 @@ public class LocationReferenceController {
         validationService.validateLocation(request);
         return ResponseEntity.ok(Map.of("status", 200, "valid", true, "message", "Location hierarchy is valid."));
     }
+
+    @GetMapping({"/api/locations/geocode", "/api/customer/storefront/locations/geocode"})
+    public ResponseEntity<GeocodeResultDTO> geocodeLocation(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String addressLine1,
+            @RequestParam(required = false) String addressLine2,
+            @RequestParam(required = false) String area,
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) String district,
+            @RequestParam(required = false) String state,
+            @RequestParam(required = false) String pincode
+    ) {
+        if (geocodingService == null) {
+            return ResponseEntity.ok(GeocodeResultDTO.builder()
+                    .found(false)
+                    .accuracyType("NOT_FOUND")
+                    .provider("NONE")
+                    .build());
+        }
+        return ResponseEntity.ok(geocodingService.geocodeDetailed(
+                addressLine1, addressLine2, area, city, district, state, pincode, q
+        ));
+    }
 }
+
