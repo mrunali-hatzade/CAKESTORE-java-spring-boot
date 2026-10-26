@@ -21,6 +21,7 @@ public class GuestOtpService {
 
     private final OtpVerificationRepository otpRepository;
     private final SmsService smsService;
+    private final com.cakeplatform.api.modules.notification.EmailService emailService;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final com.cakeplatform.api.modules.user.UserRepository userRepository;
@@ -29,14 +30,41 @@ public class GuestOtpService {
     private static final int OTP_EXPIRY_MINUTES = 10;
     private static final int RESEND_COOLDOWN_SECONDS = 60;
     private static final int MAX_ATTEMPTS = 3;
+    private static final java.util.regex.Pattern EMAIL_PATTERN =
+            java.util.regex.Pattern.compile("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
     private final SecureRandom secureRandom = new SecureRandom();
 
     private String normalizePhone(String phone) {
         return com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(phone);
     }
 
+    private boolean isValidEmail(String email) {
+        return email != null && EMAIL_PATTERN.matcher(email.trim()).matches();
+    }
+
+    private String maskPhone(String phone) {
+        if (phone == null || phone.length() < 4) return "****";
+        return "+91 " + phone.substring(0, 2) + "*****" + phone.substring(phone.length() - 3);
+    }
+
+    private String maskEmail(String email) {
+        if (email == null || !email.contains("@")) return null;
+        String[] parts = email.split("@", 2);
+        String name = parts[0];
+        String domain = parts[1];
+        if (name.length() <= 2) {
+            return name.charAt(0) + "***@" + domain;
+        }
+        return name.charAt(0) + "***" + name.charAt(name.length() - 1) + "@" + domain;
+    }
+
     @Transactional
     public void requestOtp(String phoneNumber) {
+        requestOtp(phoneNumber, null);
+    }
+
+    @Transactional
+    public com.cakeplatform.api.modules.auth.dto.OtpDeliveryResponse requestOtp(String phoneNumber, String candidateEmail) {
         String normalizedPhone = normalizePhone(phoneNumber);
         if (normalizedPhone == null) throw new RuntimeException("Invalid phone number");
         
@@ -54,6 +82,19 @@ public class GuestOtpService {
             otpRepository.save(otp);
         }
 
+        // Determine trusted customer email if account already exists
+        String resolvedEmail = null;
+        com.cakeplatform.api.modules.user.User existingUser = userRepository.findByMobileIncludingDeleted(normalizedPhone).orElse(null);
+        if (existingUser != null && existingUser.getEmail() != null && !existingUser.getEmail().isBlank()) {
+            // Reuse trusted email associated with the authenticated customer account
+            resolvedEmail = existingUser.getEmail().trim().toLowerCase();
+        } else if (candidateEmail != null && !candidateEmail.isBlank()) {
+            String trimmed = candidateEmail.trim().toLowerCase();
+            if (isValidEmail(trimmed)) {
+                resolvedEmail = trimmed;
+            }
+        }
+
         String rawOtp = generateOtp();
         String otpHash = passwordEncoder.encode(rawOtp);
 
@@ -63,11 +104,65 @@ public class GuestOtpService {
         verification.setExpiresAt(LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES));
         otpRepository.save(verification);
 
-        // The OTP is invalidated after successful verification – no need to state the validity period.
-        String message = String.format("Your CakeStore order tracking code is: %s.", rawOtp);
-        // Twilio requires E.164 format
+        boolean smsConfigured = smsService != null && smsService.isConfigured();
+        boolean emailConfigured = emailService != null && emailService.isConfigured();
+        boolean hasEmail = (resolvedEmail != null && !resolvedEmail.isBlank());
+
+        String channel;
+        String deliveryTarget;
+        String userMessage;
+
+        if (smsConfigured && emailConfigured && hasEmail) {
+            channel = "SMS_AND_EMAIL";
+            deliveryTarget = "mobile and email";
+            userMessage = "We've sent a 6-digit verification code to your mobile and email.";
+        } else if (smsConfigured) {
+            channel = "SMS";
+            deliveryTarget = "mobile (" + maskPhone(normalizedPhone) + ")";
+            userMessage = "We've sent a 6-digit verification code to your mobile.";
+        } else if (hasEmail) {
+            channel = "EMAIL";
+            deliveryTarget = "email (" + maskEmail(resolvedEmail) + ")";
+            userMessage = "We've sent a 6-digit verification code to your email.";
+        } else {
+            channel = "MOCK_SMS";
+            deliveryTarget = "mock mobile (" + maskPhone(normalizedPhone) + ")";
+            userMessage = "SMS service is operating in mock development mode. Please enter an email address to receive your verification code.";
+        }
+
+        // Dispatch SMS
         String smsPhone = "+91" + normalizedPhone;
-        smsService.sendSms(smsPhone, message);
+        String smsMessage = String.format("Your CakeStore order tracking code is: %s.", rawOtp);
+        if (smsService != null) {
+            smsService.sendSms(smsPhone, smsMessage);
+        }
+
+        // Dispatch Email if email was resolved
+        if (hasEmail && emailService != null) {
+            String emailSubject = "[CakeStore] Your Verification Code";
+            String emailBody = String.format(
+                    "Hello,\n\n" +
+                    "Your CakeStore verification code is: %s\n\n" +
+                    "This code is valid for %d minutes and can only be used once.\n" +
+                    "If you did not request this verification code, please ignore this email.\n\n" +
+                    "Best regards,\nCakeStore Team",
+                    rawOtp,
+                    OTP_EXPIRY_MINUTES
+            );
+            emailService.sendEmail(resolvedEmail, emailSubject, emailBody);
+        }
+
+        log.info("Dispatched verification OTP for phone {} via channel {}", maskPhone(normalizedPhone), channel);
+
+        return com.cakeplatform.api.modules.auth.dto.OtpDeliveryResponse.builder()
+                .channel(channel)
+                .deliveryTarget(deliveryTarget)
+                .smsConfigured(smsConfigured)
+                .emailConfigured(emailConfigured)
+                .phoneMasked(maskPhone(normalizedPhone))
+                .emailMasked(maskEmail(resolvedEmail))
+                .message(userMessage)
+                .build();
     }
 
     @Transactional

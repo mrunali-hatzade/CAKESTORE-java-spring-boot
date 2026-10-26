@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { storefrontApi } from '@/lib/api/storefront';
 import { Shop } from '@/types/shop';
@@ -15,10 +15,13 @@ import { TopRatedSection } from '@/components/customer/marketplace/TopRatedSecti
 import { CategoryOption } from '@/components/customer/marketplace/CategoryPills';
 import { AdvancedLocationFilter, LocationFilterValues } from '@/components/customer/marketplace/AdvancedLocationFilter';
 
+const HOMEPAGE_BAKERY_LIMIT = 12;
+
 export default function HomePage() {
   const router = useRouter();
 
   const [shops, setShops] = useState<Shop[]>([]);
+  const [totalElements, setTotalElements] = useState<number | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,7 +37,10 @@ export default function HomePage() {
   const [isTopRatedLoading, setIsTopRatedLoading] = useState(true);
   const [topRatedError, setTopRatedError] = useState<string | null>(null);
 
+  const searchRequestIdRef = useRef(0);
+
   const loadShops = useCallback(async () => {
+    const requestId = ++searchRequestIdRef.current;
     setIsLoading(true);
     setError(null);
     try {
@@ -51,12 +57,25 @@ export default function HomePage() {
         radiusKm: geoParams.radiusKm,
         businessType: activeBusinessType,
         sortBy: sortBy === 'default' ? undefined : sortBy,
+        page: 0,
+        size: HOMEPAGE_BAKERY_LIMIT,
       });
+
+      if (requestId !== searchRequestIdRef.current) {
+        return; // Stale asynchronous response discarded
+      }
+
       setShops(data || []);
+      setTotalElements(data.pagination?.totalElements ?? (data ? data.length : 0));
     } catch (err: any) {
-      setError(err.message || 'Failed to discover bakeries.');
+      if (requestId === searchRequestIdRef.current) {
+        setError(err.message || 'Failed to discover bakeries.');
+        setTotalElements(undefined);
+      }
     } finally {
-      setIsLoading(false);
+      if (requestId === searchRequestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }, [searchQuery, locationQuery, locationFilters, geoParams, activeBusinessType, sortBy]);
 
@@ -166,6 +185,51 @@ export default function HomePage() {
     return `Featured Artisanal Bakeries ${locPrefix}`;
   };
 
+  const getExploreUrl = useCallback(() => {
+    const params = new URLSearchParams();
+    if (searchQuery.trim()) params.set('search', searchQuery.trim());
+    if (locationQuery.trim() && !locationQuery.toLowerCase().startsWith('all')) {
+      params.set('location', locationQuery.trim());
+    }
+    if (locationFilters.state?.trim() && !locationFilters.state.toLowerCase().startsWith('all')) {
+      params.set('state', locationFilters.state.trim());
+    }
+    if (locationFilters.district?.trim() && !locationFilters.district.toLowerCase().startsWith('all')) {
+      params.set('district', locationFilters.district.trim());
+    }
+    if (locationFilters.city?.trim() && !locationFilters.city.toLowerCase().startsWith('all')) {
+      params.set('city', locationFilters.city.trim());
+    }
+    if (locationFilters.area?.trim() && !locationFilters.area.toLowerCase().startsWith('all')) {
+      params.set('area', locationFilters.area.trim());
+    }
+    if (locationFilters.pincode?.trim() && !locationFilters.pincode.toLowerCase().startsWith('all')) {
+      params.set('pincode', locationFilters.pincode.trim());
+    }
+    if (geoParams.latitude != null && !isNaN(geoParams.latitude) && geoParams.longitude != null && !isNaN(geoParams.longitude)) {
+      params.set('lat', String(geoParams.latitude));
+      params.set('lng', String(geoParams.longitude));
+      if (geoParams.radiusKm != null && !isNaN(geoParams.radiusKm)) {
+        params.set('radius', String(geoParams.radiusKm));
+      }
+    }
+    if (activeBusinessType && activeBusinessType !== 'ALL' && activeBusinessType.trim()) {
+      params.set('businessType', activeBusinessType.trim());
+    }
+    if (sortBy && sortBy !== 'default' && sortBy.trim()) {
+      params.set('sortBy', sortBy.trim());
+    }
+    const query = params.toString();
+    return query ? `/explore?${query}` : '/explore';
+  }, [searchQuery, locationQuery, locationFilters, geoParams, activeBusinessType, sortBy]);
+
+  const getViewAllLabel = () => {
+    if (typeof totalElements === 'number' && totalElements > shops.length) {
+      return `View All ${totalElements} Bakeries`;
+    }
+    return 'View All Bakeries';
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-brand-cream-light">
       <Navbar />
@@ -187,7 +251,7 @@ export default function HomePage() {
         <div className="px-4 sm:px-6 lg:px-8">
           <AdvancedLocationFilter
             onFilterChange={handleLocationFilterChange}
-            shopCount={shops.length}
+            shopCount={totalElements ?? shops.length}
           />
         </div>
 
@@ -208,6 +272,9 @@ export default function HomePage() {
           title={getGridTitle()}
           sortBy={sortBy}
           onSortChange={setSortBy}
+          totalElements={totalElements}
+          viewAllHref={getExploreUrl()}
+          viewAllLabel={getViewAllLabel()}
           subtitle={
             locationQuery.toLowerCase().includes('near')
               ? 'Showing verified kitchens delivering freshly baked celebration cakes closest to your location'

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { ordersApi } from '@/lib/api/orders';
+import { ordersApi, OtpDeliveryResponse } from '@/lib/api/orders';
 
 // ─────────────────────────────────────────────────
 // Customer Authentication Context
@@ -29,8 +29,8 @@ interface CustomerAuthState {
 }
 
 interface CustomerAuthContextType extends CustomerAuthState {
-  /** Request an OTP for the given phone number */
-  requestOtp: (phone: string) => Promise<void>;
+  /** Request an OTP for the given phone number with optional email fallback */
+  requestOtp: (phone: string, email?: string) => Promise<OtpDeliveryResponse>;
   /** Verify an OTP and establish an authenticated session */
   verifyOtp: (phone: string, otp: string) => Promise<string>;
   /** Clear the customer session */
@@ -81,9 +81,9 @@ export function CustomerAuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const requestOtp = useCallback(async (phone: string) => {
+  const requestOtp = useCallback(async (phone: string, email?: string): Promise<OtpDeliveryResponse> => {
     const cleanPhone = normalizePhone(phone);
-    await ordersApi.requestTrackingOtp(cleanPhone);
+    return await ordersApi.requestTrackingOtp(cleanPhone, email);
   }, []);
 
   const verifyOtp = useCallback(async (phone: string, otp: string): Promise<string> => {

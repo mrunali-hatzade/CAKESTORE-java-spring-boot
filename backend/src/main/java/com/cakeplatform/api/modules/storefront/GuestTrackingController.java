@@ -22,12 +22,13 @@ public class GuestTrackingController {
     private final com.cakeplatform.api.modules.user.UserRepository userRepository;
 
     @PostMapping("/request-otp")
-    public ResponseEntity<Void> requestOtp(@RequestBody PhoneRequest request) {
+    public ResponseEntity<com.cakeplatform.api.modules.auth.dto.OtpDeliveryResponse> requestOtp(@RequestBody PhoneRequest request) {
         if (request.getPhone() == null || request.getPhone().isBlank()) {
             return ResponseEntity.badRequest().build();
         }
-        otpService.requestOtp(request.getPhone());
-        return ResponseEntity.ok().build();
+        com.cakeplatform.api.modules.auth.dto.OtpDeliveryResponse response =
+                otpService.requestOtp(request.getPhone(), request.getEmail());
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/verify-otp")
@@ -82,6 +83,7 @@ public class GuestTrackingController {
     @Data
     public static class PhoneRequest {
         private String phone;
+        private String email;
     }
 
     @Data

@@ -41,6 +41,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     BigDecimal getRevenueBetween(@org.springframework.data.repository.query.Param("start") java.time.LocalDateTime start, @org.springframework.data.repository.query.Param("end") java.time.LocalDateTime end);
 
     @Query("SELECT p FROM Payment p WHERE p.shop.id = :shopId AND (p.subscription IS NOT NULL OR p.plan IS NOT NULL) ORDER BY p.createdAt DESC")
+    Page<Payment> findSubscriptionPaymentsByShopId(@org.springframework.data.repository.query.Param("shopId") Long shopId, Pageable pageable);
+
+    @Query("SELECT p FROM Payment p WHERE p.shop.id = :shopId AND (p.subscription IS NOT NULL OR p.plan IS NOT NULL) ORDER BY p.createdAt DESC")
     List<Payment> findSubscriptionPaymentsByShopId(@org.springframework.data.repository.query.Param("shopId") Long shopId);
 
     @Query(value = "SELECT to_char(p.created_at, 'YYYY-MM') AS period, COALESCE(SUM(p.amount), 0) AS total " +

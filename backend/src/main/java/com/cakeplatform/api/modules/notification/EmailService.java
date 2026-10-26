@@ -130,11 +130,18 @@ public class EmailService {
         }
     }
 
+    public boolean isConfigured() {
+        return resendApiKey != null && !resendApiKey.trim().isEmpty();
+    }
+
     private String maskSensitiveLog(String content) {
         if (content == null) {
             return null;
         }
-        return content.replaceAll("(?i)([#?&]token=)[^&\\s]+", "$1[REDACTED]");
+        String masked = content.replaceAll("(?i)([#?&]token=)[^&\\s]+", "$1[REDACTED]");
+        masked = masked.replaceAll("(?i)(\\b(?:code|otp) is:?\\s*)[0-9]{6}", "$1[REDACTED]");
+        masked = masked.replaceAll("(?i)(\\b(?:code|otp):?\\s*)[0-9]{6}", "$1[REDACTED]");
+        return masked;
     }
 
     private void sendViaResend(String to, String subject, String body) {

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { useState, useEffect, useCallback, Suspense, useRef } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { X, SlidersHorizontal, MapPin } from 'lucide-react';
 import { storefrontApi } from '@/lib/api/storefront';
 import { Shop } from '@/types/shop';
@@ -13,8 +13,30 @@ import { CategoryPills, CategoryOption } from '@/components/customer/marketplace
 import { AdvancedLocationFilter, LocationFilterValues } from '@/components/customer/marketplace/AdvancedLocationFilter';
 import { TopRatedSection } from '@/components/customer/marketplace/TopRatedSection';
 
+function parseValidPageSize(sizeParam: string | null, defaultSize = 12): number {
+  if (!sizeParam) return defaultSize;
+  const trimmed = sizeParam.trim();
+  // Strictly positive integer digits without decimals or signs
+  if (!/^\d+$/.test(trimmed)) return defaultSize;
+  const parsed = parseInt(trimmed, 10);
+  if (isNaN(parsed) || parsed < 1 || parsed > 100) return defaultSize;
+  return parsed;
+}
+
+function parseValidPageIndex(pageParam: string | null): number {
+  if (!pageParam) return 0;
+  const trimmed = pageParam.trim();
+  if (!/^\d+$/.test(trimmed)) return 0;
+  const parsed = parseInt(trimmed, 10);
+  if (isNaN(parsed) || parsed < 0) return 0;
+  return parsed;
+}
+
 function ExploreContent() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+
   const initialSearch = searchParams.get('search') || '';
   const initialLocation = searchParams.get('location') || '';
   const initialCity = searchParams.get('city') || '';
@@ -27,9 +49,18 @@ function ExploreContent() {
   const initialRadius = searchParams.get('radius') ? parseFloat(searchParams.get('radius')!) : 10;
   const initialType = searchParams.get('businessType') || undefined;
 
+  const initialPage = parseValidPageIndex(searchParams.get('page'));
+  const initialSize = parseValidPageSize(searchParams.get('size'));
+
   const [shops, setShops] = useState<Shop[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState<number>(initialPage);
+  const [pageSize, setPageSize] = useState<number>(initialSize);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [totalElements, setTotalElements] = useState<number>(0);
 
   const [activeCategory, setActiveCategory] = useState<string>(initialType || 'ALL');
   const [activeBusinessType, setActiveBusinessType] = useState<string | undefined>(initialType);
@@ -53,7 +84,67 @@ function ExploreContent() {
   const [isTopRatedLoading, setIsTopRatedLoading] = useState(true);
   const [topRatedError, setTopRatedError] = useState<string | null>(null);
 
+  const searchRequestIdRef = useRef(0);
+
+  // Synchronize URL with pagination state for bookmarking and history navigation
+  const updatePaginationUrl = useCallback(
+    (newPage: number, newSize?: number) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (newPage > 0) {
+        params.set('page', String(newPage));
+      } else {
+        params.delete('page');
+      }
+      const effectiveSize = newSize ?? pageSize;
+      if (effectiveSize !== 12) {
+        params.set('size', String(effectiveSize));
+      } else {
+        params.delete('size');
+      }
+      const query = params.toString();
+      const targetUrl = query ? `${pathname}?${query}` : pathname;
+      router.push(targetUrl, { scroll: false });
+    },
+    [searchParams, pathname, router, pageSize]
+  );
+
+  // Sync state when browser back/forward buttons change search params
+  useEffect(() => {
+    const validPage = parseValidPageIndex(searchParams.get('page'));
+    setCurrentPage((prev) => (prev !== validPage ? validPage : prev));
+
+    const validSize = parseValidPageSize(searchParams.get('size'));
+    setPageSize((prev) => (prev !== validSize ? validSize : prev));
+  }, [searchParams]);
+
+  const handlePageChange = useCallback(
+    (newPage: number) => {
+      setCurrentPage(newPage);
+      updatePaginationUrl(newPage, pageSize);
+    },
+    [pageSize, updatePaginationUrl]
+  );
+
+  const handlePageSizeChange = useCallback(
+    (newSize: number) => {
+      setPageSize(newSize);
+      setCurrentPage(0);
+      updatePaginationUrl(0, newSize);
+    },
+    [updatePaginationUrl]
+  );
+
+  const handleSortChange = useCallback(
+    (newSort: string) => {
+      setSortBy(newSort);
+      setCurrentPage(0);
+      updatePaginationUrl(0, pageSize);
+    },
+    [pageSize, updatePaginationUrl]
+  );
+
   const fetchShops = useCallback(async () => {
+    const requestId = ++searchRequestIdRef.current;
     setIsLoading(true);
     setError(null);
     try {
@@ -70,14 +161,54 @@ function ExploreContent() {
         radiusKm: geoParams.radiusKm,
         businessType: activeBusinessType,
         sortBy: sortBy === 'default' ? undefined : sortBy,
+        page: currentPage,
+        size: pageSize,
       });
+
+      if (requestId !== searchRequestIdRef.current) {
+        return; // Stale asynchronous response discarded
+      }
+
+      const pagination = data.pagination;
+      if (pagination) {
+        setTotalPages(pagination.totalPages ?? (pagination.totalElements > 0 ? 1 : 0));
+        setTotalElements(pagination.totalElements ?? data.length);
+
+        // Out-of-range recovery: if current page exceeds total pages, jump to last available page
+        if (pagination.totalElements > 0 && currentPage >= pagination.totalPages) {
+          const validPage = Math.max(0, pagination.totalPages - 1);
+          setCurrentPage(validPage);
+          updatePaginationUrl(validPage, pageSize);
+          return;
+        }
+      } else {
+        // Fallback for unpaginated or legacy response
+        setTotalPages(data.length > 0 ? 1 : 0);
+        setTotalElements(data.length);
+      }
+
       setShops(data || []);
     } catch (err: any) {
+      if (requestId !== searchRequestIdRef.current) {
+        return;
+      }
       setError(err.message || 'Failed to load bakeries');
     } finally {
-      setIsLoading(false);
+      if (requestId === searchRequestIdRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [searchQuery, locationQuery, locationFilters, geoParams, activeBusinessType, sortBy]);
+  }, [
+    searchQuery,
+    locationQuery,
+    locationFilters,
+    geoParams,
+    activeBusinessType,
+    sortBy,
+    currentPage,
+    pageSize,
+    updatePaginationUrl,
+  ]);
 
   const fetchTopRatedShops = useCallback(async () => {
     setIsTopRatedLoading(true);
@@ -108,8 +239,11 @@ function ExploreContent() {
 
   useEffect(() => {
     fetchShops();
+  }, [fetchShops]);
+
+  useEffect(() => {
     fetchTopRatedShops();
-  }, [fetchShops, fetchTopRatedShops]);
+  }, [fetchTopRatedShops]);
 
   const handleSearch = useCallback((params: {
     search: string;
@@ -131,12 +265,16 @@ function ExploreContent() {
       setGeoParams({});
       setLocationFilters({});
     }
-  }, []);
+    setCurrentPage(0);
+    updatePaginationUrl(0, pageSize);
+  }, [pageSize, updatePaginationUrl]);
 
   const handleSelectCategory = useCallback((category: CategoryOption) => {
     setActiveCategory(category.id);
     setActiveBusinessType(category.businessType);
-  }, []);
+    setCurrentPage(0);
+    updatePaginationUrl(0, pageSize);
+  }, [pageSize, updatePaginationUrl]);
 
   const handleLocationFilterChange = useCallback((filters: LocationFilterValues) => {
     if (filters.mode === 'NEARBY' && filters.latitude && filters.longitude) {
@@ -158,7 +296,9 @@ function ExploreContent() {
       });
       setLocationQuery(filters.label === 'All Locations' ? '' : filters.label);
     }
-  }, []);
+    setCurrentPage(0);
+    updatePaginationUrl(0, pageSize);
+  }, [pageSize, updatePaginationUrl]);
 
   const handleClearFilters = useCallback(() => {
     setActiveCategory('ALL');
@@ -168,7 +308,9 @@ function ExploreContent() {
     setGeoParams({});
     setLocationFilters({});
     setSortBy('default');
-  }, []);
+    setCurrentPage(0);
+    updatePaginationUrl(0, pageSize);
+  }, [pageSize, updatePaginationUrl]);
 
   const POPULAR_CITIES = ['Pune', 'Mumbai', 'Bengaluru'] as const;
 
@@ -188,6 +330,8 @@ function ExploreContent() {
         city,
       });
     }
+    setCurrentPage(0);
+    updatePaginationUrl(0, pageSize);
   };
 
   const getTitle = () => {
@@ -255,7 +399,7 @@ function ExploreContent() {
       {/* Advanced Location Filter */}
       <AdvancedLocationFilter 
         onFilterChange={handleLocationFilterChange}
-        shopCount={shops.length}
+        shopCount={totalElements || shops.length}
       />
 
       {/* Category Pills */}
@@ -274,7 +418,11 @@ function ExploreContent() {
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-brand-border text-xs text-brand-espresso shadow-2xs">
               <span>Keyword: &quot;{searchQuery}&quot;</span>
               <button
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchQuery('');
+                  setCurrentPage(0);
+                  updatePaginationUrl(0, pageSize);
+                }}
                 className="text-brand-muted hover:text-brand-espresso"
               >
                 <X className="w-3 h-3" />
@@ -289,6 +437,8 @@ function ExploreContent() {
                   setLocationQuery('');
                   setLocationFilters({});
                   setGeoParams({});
+                  setCurrentPage(0);
+                  updatePaginationUrl(0, pageSize);
                 }}
                 className="text-brand-muted hover:text-brand-espresso"
               >
@@ -305,7 +455,11 @@ function ExploreContent() {
                   <button
                     key={r}
                     type="button"
-                    onClick={() => setGeoParams((prev) => ({ ...prev, radiusKm: r }))}
+                    onClick={() => {
+                      setGeoParams((prev) => ({ ...prev, radiusKm: r }));
+                      setCurrentPage(0);
+                      updatePaginationUrl(0, pageSize);
+                    }}
                     className={`px-2 py-0.5 rounded-full text-[11px] font-semibold transition-all cursor-pointer ${
                       isSelected
                         ? 'bg-brand-plum text-white shadow-xs'
@@ -325,6 +479,8 @@ function ExploreContent() {
                 onClick={() => {
                   setActiveCategory('ALL');
                   setActiveBusinessType(undefined);
+                  setCurrentPage(0);
+                  updatePaginationUrl(0, pageSize);
                 }}
                 className="text-brand-plum hover:text-brand-espresso"
               >
@@ -368,13 +524,19 @@ function ExploreContent() {
         onRetry={fetchShops}
         onClearFilters={handleClearFilters}
         sortBy={sortBy}
-        onSortChange={setSortBy}
+        onSortChange={handleSortChange}
         title={getTitle()}
         subtitle={
           locationQuery
             ? `Showing verified kitchens delivering freshly baked celebration cakes in ${locationQuery}`
             : 'Connect directly with certified creators for custom quotes and order delivery across India'
         }
+        currentPage={currentPage}
+        totalPages={totalPages}
+        totalElements={totalElements}
+        pageSize={pageSize}
+        onPageChange={handlePageChange}
+        onPageSizeChange={handlePageSizeChange}
       />
     </main>
   );

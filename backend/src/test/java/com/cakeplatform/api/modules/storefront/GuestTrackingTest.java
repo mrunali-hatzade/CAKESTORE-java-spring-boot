@@ -30,6 +30,8 @@ public class GuestTrackingTest {
     @Mock
     private SmsService smsService;
     @Mock
+    private com.cakeplatform.api.modules.notification.EmailService emailService;
+    @Mock
     private PasswordEncoder passwordEncoder;
     @Mock
     private JwtService jwtService;
@@ -135,5 +137,83 @@ public class GuestTrackingTest {
         when(otpRepository.findTopByPhoneNumberOrderByCreatedAtDesc(any())).thenReturn(Optional.of(otp));
         
         assertThrows(RuntimeException.class, () -> guestOtpService.verifyOtp("9876543210", "123456"));
+    }
+
+    @Test
+    void testRequestOtp_EmailFallback_WhenSmsUnconfigured() {
+        when(otpRepository.findTopByPhoneNumberOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(anyString())).thenReturn("hashed_otp");
+        when(smsService.isConfigured()).thenReturn(false);
+        when(emailService.isConfigured()).thenReturn(true);
+        when(userRepository.findByMobileIncludingDeleted("9876543210")).thenReturn(Optional.empty());
+
+        com.cakeplatform.api.modules.auth.dto.OtpDeliveryResponse response =
+                guestOtpService.requestOtp("9876543210", "customer@example.com");
+
+        assertNotNull(response);
+        assertEquals("EMAIL", response.getChannel());
+        assertFalse(response.isSmsConfigured());
+        assertTrue(response.isEmailConfigured());
+        assertTrue(response.getEmailMasked().contains("***"));
+        assertEquals("We've sent a 6-digit verification code to your email.", response.getMessage());
+
+        verify(emailService).sendEmail(eq("customer@example.com"), eq("[CakeStore] Your Verification Code"), contains("code is:"));
+    }
+
+    @Test
+    void testRequestOtp_BothChannels_WhenSmsAndEmailConfigured() {
+        when(otpRepository.findTopByPhoneNumberOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(anyString())).thenReturn("hashed_otp");
+        when(smsService.isConfigured()).thenReturn(true);
+        when(emailService.isConfigured()).thenReturn(true);
+        when(userRepository.findByMobileIncludingDeleted("9876543210")).thenReturn(Optional.empty());
+
+        com.cakeplatform.api.modules.auth.dto.OtpDeliveryResponse response =
+                guestOtpService.requestOtp("9876543210", "buyer@domain.com");
+
+        assertNotNull(response);
+        assertEquals("SMS_AND_EMAIL", response.getChannel());
+        assertTrue(response.isSmsConfigured());
+        assertTrue(response.isEmailConfigured());
+        assertEquals("We've sent a 6-digit verification code to your mobile and email.", response.getMessage());
+
+        verify(smsService).sendSms(eq("+919876543210"), contains("code is:"));
+        verify(emailService).sendEmail(eq("buyer@domain.com"), eq("[CakeStore] Your Verification Code"), contains("code is:"));
+    }
+
+    @Test
+    void testRequestOtp_ReusesTrustedAccountEmail_DoesNotOverrideWithUntrusted() {
+        com.cakeplatform.api.modules.user.User trustedUser = new com.cakeplatform.api.modules.user.User();
+        trustedUser.setMobile("9876543210");
+        trustedUser.setEmail("trusted.customer@example.com");
+
+        when(otpRepository.findTopByPhoneNumberOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(anyString())).thenReturn("hashed_otp");
+        when(smsService.isConfigured()).thenReturn(false);
+        when(emailService.isConfigured()).thenReturn(true);
+        when(userRepository.findByMobileIncludingDeleted("9876543210")).thenReturn(Optional.of(trustedUser));
+
+        com.cakeplatform.api.modules.auth.dto.OtpDeliveryResponse response =
+                guestOtpService.requestOtp("9876543210", "attacker.supplied@evil.com");
+
+        assertNotNull(response);
+        // Trusted email was used, NOT attacker.supplied@evil.com
+        verify(emailService).sendEmail(eq("trusted.customer@example.com"), eq("[CakeStore] Your Verification Code"), anyString());
+        verify(emailService, never()).sendEmail(eq("attacker.supplied@evil.com"), anyString(), anyString());
+    }
+
+    @Test
+    void testRequestOtp_InvalidEmailHandledSafely() {
+        when(otpRepository.findTopByPhoneNumberOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(anyString())).thenReturn("hashed_otp");
+        when(smsService.isConfigured()).thenReturn(false);
+        when(userRepository.findByMobileIncludingDeleted("9876543210")).thenReturn(Optional.empty());
+
+        com.cakeplatform.api.modules.auth.dto.OtpDeliveryResponse response =
+                guestOtpService.requestOtp("9876543210", "not-a-valid-email");
+
+        assertNotNull(response);
+        assertEquals("MOCK_SMS", response.getChannel());
+        verify(emailService, never()).sendEmail(anyString(), anyString(), anyString());
     }
 }

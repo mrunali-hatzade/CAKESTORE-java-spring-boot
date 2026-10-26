@@ -217,6 +217,50 @@ public class JwtService {
                 .getPayload();
     }
 
+    public String generateCheckoutToken(String orderNumber, String customerPhone) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("purpose", "CHECKOUT_SESSION");
+        claims.put("orderNumber", orderNumber);
+        claims.put("phone", customerPhone);
+        return Jwts.builder()
+                .claims(claims)
+                .subject(orderNumber)
+                .issuedAt(new Date(System.currentTimeMillis()))
+                .expiration(new Date(System.currentTimeMillis() + 86400000L)) // 24 hours
+                .signWith(getSignInKey())
+                .compact();
+    }
+
+    public boolean validateCheckoutToken(String token, String orderNumber, String customerPhone) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        try {
+            Claims claims = extractAllClaims(token);
+            if (!"CHECKOUT_SESSION".equals(claims.get("purpose"))) {
+                return false;
+            }
+            if (isTokenExpired(token)) {
+                return false;
+            }
+            String tokenOrder = claims.get("orderNumber", String.class);
+            String tokenPhone = claims.get("phone", String.class);
+            if (orderNumber == null || !orderNumber.equals(tokenOrder)) {
+                return false;
+            }
+            if (customerPhone != null && tokenPhone != null) {
+                String norm1 = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(customerPhone);
+                String norm2 = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(tokenPhone);
+                if (norm1 != null && norm2 != null && !norm1.equals(norm2)) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private SecretKey getSignInKey() {
         if (this.cachedSignInKey != null) {
             return this.cachedSignInKey;

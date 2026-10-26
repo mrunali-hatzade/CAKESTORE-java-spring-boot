@@ -30,7 +30,7 @@ import { Shop } from '@/types/shop';
 import { DeliverySlot } from '@/types/deliverySlot';
 import { Order } from '@/types/order';
 import { useCart } from '@/context/CartContext';
-import { ordersApi } from '@/lib/api/orders';
+import { ordersApi, OtpDeliveryResponse } from '@/lib/api/orders';
 import { deliverySlotsApi } from '@/lib/api/deliverySlots';
 import { storefrontApi } from '@/lib/api/storefront';
 import { Button } from '@/components/ui/Button';
@@ -107,6 +107,9 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [otpError, setOtpError] = useState<string | null>(null);
   const [resendTimer, setResendTimer] = useState(0);
+  const [otpDeliveryInfo, setOtpDeliveryInfo] = useState<OtpDeliveryResponse | null>(null);
+  const [emailFallbackInput, setEmailFallbackInput] = useState('');
+  const [isRequestingEmailFallback, setIsRequestingEmailFallback] = useState(false);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -494,7 +497,8 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
       setIsSubmitting(true);
       setError(null);
       try {
-        await customerAuth.requestOtp(cleanPhone);
+        const delivery = await customerAuth.requestOtp(cleanPhone, customerEmail.trim());
+        setOtpDeliveryInfo(delivery);
         setCheckoutOtp('');
         setShowOtpModal(true);
         setResendTimer(60);
@@ -511,7 +515,7 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
           }
           toast.info('You recently requested an OTP. Please enter it below.');
         } else {
-          setError(msg || 'Failed to send verification code to this mobile number.');
+          setError(msg || 'Failed to send verification code.');
         }
       } finally {
         setIsSubmitting(false);
@@ -651,14 +655,22 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
             },
             onFailure: async (errMsg) => {
               try {
-                await ordersApi.cancelPaymentOrder(order.orderNumber, errMsg || 'Payment gateway failed');
+                await ordersApi.cancelPaymentOrder(
+                  order.orderNumber,
+                  errMsg || 'Payment gateway failed',
+                  paymentOrderData.checkoutToken || paymentOrderData.razorpayOrderId
+                );
               } catch (_) {}
               setError(`Payment was not completed: ${errMsg || 'Transaction failed'}. Your order was not placed.`);
               setIsSubmitting(false);
             },
             onDismiss: async () => {
               try {
-                await ordersApi.cancelPaymentOrder(order.orderNumber, 'Customer closed payment window');
+                await ordersApi.cancelPaymentOrder(
+                  order.orderNumber,
+                  'Customer closed payment window',
+                  paymentOrderData.checkoutToken || paymentOrderData.razorpayOrderId
+                );
               } catch (_) {}
               setError('Payment process was cancelled. Your order was not placed.');
               setIsSubmitting(false);
@@ -666,7 +678,11 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
           });
         } catch (paymentInitErr: any) {
           try {
-            await ordersApi.cancelPaymentOrder(order.orderNumber, paymentInitErr?.message || 'Payment initiation failed');
+            await ordersApi.cancelPaymentOrder(
+              order.orderNumber,
+              paymentInitErr?.message || 'Payment initiation failed',
+              order.transactionId
+            );
           } catch (_) {}
           setError(paymentInitErr?.message || `Unable to initiate online payment for Order #${order.orderNumber}. Your order was not placed.`);
           setIsSubmitting(false);
@@ -1737,11 +1753,73 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
           setShowOtpModal(false);
           setIsSubmitting(false); // Make sure order button resets
         }}
-        title="Verify Your Phone Number"
-        description={`We've sent a 6-digit OTP to ${customerPhone} to secure your order.`}
+        title="Verify Your Order"
         maxWidth="sm"
       >
         <form onSubmit={handleVerifyOtpAndPlaceOrder} className="space-y-4">
+          {/* Channel Banner */}
+          <div className="p-3.5 rounded-xl border border-brand-border bg-[#FAF7F2] text-xs space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-brand-espresso">
+                {otpDeliveryInfo?.channel === 'SMS_AND_EMAIL' ? '📱 ✉️ Mobile & Email Verification' :
+                 otpDeliveryInfo?.channel === 'EMAIL' ? '✉️ Email Verification Fallback' :
+                 otpDeliveryInfo?.channel === 'SMS' ? '📱 Mobile SMS Verification' :
+                 '🛠️ Local Development Verification'}
+              </span>
+            </div>
+            <p className="text-brand-muted text-[11px] leading-relaxed">
+              {otpDeliveryInfo?.channel === 'SMS_AND_EMAIL'
+                ? "We've sent a 6-digit verification code to your mobile and email."
+                : otpDeliveryInfo?.channel === 'EMAIL'
+                ? `We've sent a 6-digit verification code to your email (${otpDeliveryInfo.emailMasked || customerEmail.trim()}).`
+                : otpDeliveryInfo?.channel === 'SMS'
+                ? `We've sent a 6-digit verification code to your mobile (${otpDeliveryInfo.phoneMasked || customerPhone}).`
+                : (otpDeliveryInfo?.message || `We've sent a 6-digit verification code to ${customerPhone}.`)}
+            </p>
+          </div>
+
+          {/* Email Fallback Option if SMS is in mock mode or customer wants email */}
+          {(!otpDeliveryInfo?.emailMasked && !customerEmail.trim()) && (
+            <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-xs space-y-2">
+              <span className="font-bold text-amber-900 block">Want to receive the code via email?</span>
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  placeholder="Enter email address"
+                  value={emailFallbackInput}
+                  onChange={(e) => setEmailFallbackInput(e.target.value)}
+                  className="flex-1 px-3 py-1.5 rounded-lg border border-amber-300 text-xs bg-white focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={isRequestingEmailFallback}
+                  onClick={async () => {
+                    if (!emailFallbackInput || !emailFallbackInput.includes('@')) {
+                      setOtpError('Please enter a valid email address.');
+                      return;
+                    }
+                    setIsRequestingEmailFallback(true);
+                    setOtpError(null);
+                    try {
+                      const cleanPhone = customerPhone.trim().replace(/^0+/, '');
+                      const delivery = await customerAuth.requestOtp(cleanPhone, emailFallbackInput.trim());
+                      setOtpDeliveryInfo(delivery);
+                      setResendTimer(60);
+                      toast.success('Verification code requested via email!');
+                    } catch (err: any) {
+                      setOtpError(err.response?.data?.message || err.message || 'Failed to dispatch email OTP');
+                    } finally {
+                      setIsRequestingEmailFallback(false);
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-[#5C1D2E] text-white font-bold text-xs hover:bg-[#4a1525] transition-colors disabled:opacity-50"
+                >
+                  {isRequestingEmailFallback ? 'Sending...' : 'Send to Email'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {otpError && (
             <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex flex-col gap-1">
               <span className="font-bold">Verification Failed</span>
@@ -1772,7 +1850,10 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
                 type="button"
                 onClick={async () => {
                   try {
-                    await customerAuth.requestOtp(customerPhone.trim().replace(/^0+/, ''));
+                    const cleanPhone = customerPhone.trim().replace(/^0+/, '');
+                    const emailToSend = emailFallbackInput.trim() || customerEmail.trim();
+                    const delivery = await customerAuth.requestOtp(cleanPhone, emailToSend);
+                    setOtpDeliveryInfo(delivery);
                     setResendTimer(60);
                     toast.success('OTP resent successfully!');
                   } catch (err: any) {
@@ -1796,7 +1877,7 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
           </Button>
 
           <p className="text-[10px] text-center text-brand-muted pt-2">
-            Wrong number?{' '}
+            Wrong contact details?{' '}
             <button
               type="button"
               onClick={() => {

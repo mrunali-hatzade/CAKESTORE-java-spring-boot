@@ -243,9 +243,27 @@ export const ownerApi = {
     return apiClient.post<SubscriptionRecord>('/api/owner/subscriptions/cancel', payload);
   },
 
-  // Stage C: Owner Payments & Invoices
-  getPayments: async (): Promise<OwnerPaymentRecord[]> => {
-    return apiClient.get<OwnerPaymentRecord[]>('/api/owner/payments');
+  // Stage C: Owner Payments & Invoices (Paginated)
+  getPayments: async (page = 0, size = 10): Promise<PaginatedResponse<OwnerPaymentRecord>> => {
+    const res: any = await apiClient.get('/api/owner/payments', {
+      params: { page, size },
+    });
+    if (Array.isArray(res)) {
+      return {
+        content: res,
+        pageable: {},
+        totalElements: res.length,
+        totalPages: 1,
+        last: true,
+        size: res.length,
+        number: 0,
+        sort: {},
+        numberOfElements: res.length,
+        first: true,
+        empty: res.length === 0,
+      };
+    }
+    return res;
   },
 
   downloadPaymentInvoice: async (paymentId: number): Promise<void> => {

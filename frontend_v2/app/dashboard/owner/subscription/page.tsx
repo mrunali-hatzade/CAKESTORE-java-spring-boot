@@ -41,6 +41,10 @@ export default function OwnerSubscriptionPage() {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingPayments, setLoadingPayments] = useState(false);
+  const [paymentPage, setPaymentPage] = useState(0);
+  const [paymentTotalPages, setPaymentTotalPages] = useState(0);
+  const [paymentTotalElements, setPaymentTotalElements] = useState(0);
+  const PAYMENT_PAGE_SIZE = 10;
   const [renewing, setRenewing] = useState(false);
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<number | null>(null);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
@@ -54,17 +58,30 @@ export default function OwnerSubscriptionPage() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelError, setCancelError] = useState<string | null>(null);
 
-  const fetchPayments = async () => {
+  const fetchPayments = useCallback(async (pageToFetch?: number) => {
+    const targetPage = typeof pageToFetch === 'number' ? pageToFetch : paymentPage;
     setLoadingPayments(true);
     try {
-      const data = await ownerApi.getPayments();
-      setPayments(data || []);
+      const res = await ownerApi.getPayments(targetPage, PAYMENT_PAGE_SIZE);
+      const content = res?.content || [];
+      const totalPages = res?.totalPages || 0;
+      const totalElements = res?.totalElements || 0;
+
+      setPayments(content);
+      setPaymentTotalPages(totalPages);
+      setPaymentTotalElements(totalElements);
+
+      // Handle empty final page safely if data changes between requests
+      if (targetPage > 0 && content.length === 0 && totalPages > 0) {
+        const fallbackPage = Math.max(0, totalPages - 1);
+        setPaymentPage(fallbackPage);
+      }
     } catch (err: any) {
       console.error('Failed to load payment history', err);
     } finally {
       setLoadingPayments(false);
     }
-  };
+  }, [paymentPage]);
 
   const fetchSubscription = useCallback(async (isManual = false) => {
     if (!isManual) setLoading(true);
@@ -85,13 +102,18 @@ export default function OwnerSubscriptionPage() {
         setSelectedPlanId(plansData[0].planId);
       }
 
-      await fetchPayments();
+      setPaymentPage(0);
+      await fetchPayments(0);
     } catch (err: any) {
       setErrorNotice(err?.message || 'Failed to load subscription details');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchPayments]);
+
+  useEffect(() => {
+    fetchPayments(paymentPage);
+  }, [paymentPage, fetchPayments]);
 
   useEffect(() => {
     fetchSubscription();
@@ -724,7 +746,8 @@ export default function OwnerSubscriptionPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+              <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-owner-border bg-owner-canvas/40 text-owner-muted uppercase tracking-wider font-semibold">
@@ -808,6 +831,43 @@ export default function OwnerSubscriptionPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls */}
+            {paymentTotalElements > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3.5 border-t border-owner-border bg-owner-canvas/30 text-xs gap-3">
+                <p className="text-owner-muted text-xs">
+                  Showing <strong className="text-owner-heading">{paymentTotalElements === 0 ? 0 : paymentPage * PAYMENT_PAGE_SIZE + 1}</strong> to{' '}
+                  <strong className="text-owner-heading">{Math.min((paymentPage + 1) * PAYMENT_PAGE_SIZE, paymentTotalElements)}</strong> of{' '}
+                  <strong className="text-owner-heading">{paymentTotalElements}</strong> records
+                </p>
+                <div className="flex items-center gap-3">
+                  <span className="text-owner-muted text-xs">
+                    Page <strong className="text-owner-heading">{paymentPage + 1}</strong> of <strong className="text-owner-heading">{Math.max(paymentTotalPages, 1)}</strong>
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={paymentPage === 0 || loadingPayments}
+                      onClick={() => setPaymentPage((p) => Math.max(0, p - 1))}
+                      className="text-xs h-8 px-3"
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={paymentPage >= paymentTotalPages - 1 || loadingPayments}
+                      onClick={() => setPaymentPage((p) => Math.min(Math.max(paymentTotalPages - 1, 0), p + 1))}
+                      className="text-xs h-8 px-3"
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </Card>
       </div>

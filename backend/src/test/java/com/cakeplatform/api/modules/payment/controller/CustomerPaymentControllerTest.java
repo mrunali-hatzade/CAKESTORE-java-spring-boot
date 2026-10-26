@@ -62,6 +62,9 @@ public class CustomerPaymentControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private com.cakeplatform.api.security.JwtService jwtService;
+
     private Shop testShop;
     private User testOwner;
     private Order testOrder;
@@ -283,8 +286,10 @@ public class CustomerPaymentControllerTest {
     @Test
     void cancelCustomerPayment_SuccessfullyCancelsOrderAndSetsPaymentFailed() throws Exception {
         when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+        String checkoutToken = jwtService.generateCheckoutToken("ORD-TEST-1234", "9876543210");
 
         mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/cancel-payment")
+                        .header("X-Checkout-Token", checkoutToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("reason", "Customer closed payment modal"))))
                 .andExpect(status().isOk())
@@ -297,12 +302,92 @@ public class CustomerPaymentControllerTest {
     }
 
     @Test
+    @org.springframework.security.test.context.support.WithMockUser(username = "9876543210", roles = {"CUSTOMER"})
+    void cancelCustomerPayment_AuthorizedCustomer_CanCancelOwnOrder() throws Exception {
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/cancel-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("reason", "Customer cancelled own order"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("CANCELLED")));
+
+        assertEquals("CANCELLED", testOrder.getOrderStatus());
+    }
+
+    @Test
+    @org.springframework.security.test.context.support.WithMockUser(username = "9111111111", roles = {"CUSTOMER"})
+    void cancelCustomerPayment_DifferentCustomer_RejectedWithForbidden() throws Exception {
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/cancel-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("reason", "Malicious customer cancellation"))))
+                .andExpect(status().isForbidden());
+
+        // Must not modify the order
+        assertNotEquals("CANCELLED", testOrder.getOrderStatus());
+    }
+
+    @Test
+    @org.springframework.security.test.context.support.WithMockUser(username = "9111111111", roles = {"CUSTOMER"})
+    void cancelCustomerPayment_MismatchedPayloadPhone_CannotOverrideAuthenticatedCustomer() throws Exception {
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+
+        // Even though payload has phone 9876543210, caller is authenticated as 9111111111
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/cancel-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "phone", "9876543210",
+                                "reason", "Spoofed payload phone"
+                        ))))
+                .andExpect(status().isForbidden());
+
+        assertNotEquals("CANCELLED", testOrder.getOrderStatus());
+    }
+
+    @Test
+    void cancelCustomerPayment_UnauthenticatedWithoutValidToken_RejectedWithUnauthorized() throws Exception {
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+
+        // Guessing order number + phone without server checkout token must fail
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/cancel-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "phone", "9876543210",
+                                "reason", "Guessed order number and phone"
+                        ))))
+                .andExpect(status().isUnauthorized());
+
+        assertNotEquals("CANCELLED", testOrder.getOrderStatus());
+    }
+
+    @Test
+    void cancelCustomerPayment_UnauthenticatedWithValidCheckoutToken_CanCancel() throws Exception {
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+        String checkoutToken = jwtService.generateCheckoutToken("ORD-TEST-1234", "9876543210");
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/cancel-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "checkoutToken", checkoutToken,
+                                "reason", "Guest checkout dismissed modal"
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("CANCELLED")));
+
+        assertEquals("CANCELLED", testOrder.getOrderStatus());
+    }
+
+    @Test
     void cancelCustomerPayment_FailsIfOrderIsAlreadyPaid() throws Exception {
         testOrder.setPaymentStatus("PAID");
         testOrder.setOrderStatus("CONFIRMED");
         when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+        String checkoutToken = jwtService.generateCheckoutToken("ORD-TEST-1234", "9876543210");
 
         mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/cancel-payment")
+                        .header("X-Checkout-Token", checkoutToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("reason", "Customer requested cancellation"))))
                 .andExpect(status().isBadRequest());
@@ -313,8 +398,10 @@ public class CustomerPaymentControllerTest {
         testOrder.setPaymentStatus("FAILED");
         testOrder.setOrderStatus("CANCELLED");
         when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+        String checkoutToken = jwtService.generateCheckoutToken("ORD-TEST-1234", "9876543210");
 
         mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/cancel-payment")
+                        .header("X-Checkout-Token", checkoutToken)
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status", is("CANCELLED")))

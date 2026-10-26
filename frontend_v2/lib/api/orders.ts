@@ -1,6 +1,16 @@
 import { apiClient } from './client';
 import { Order, GuestOrderRequest, OrderStatus, PaginatedResponse } from '@/types/order';
 
+export interface OtpDeliveryResponse {
+  channel: 'SMS' | 'EMAIL' | 'SMS_AND_EMAIL' | 'MOCK_SMS';
+  deliveryTarget?: string;
+  smsConfigured: boolean;
+  emailConfigured: boolean;
+  phoneMasked?: string;
+  emailMasked?: string;
+  message: string;
+}
+
 export const ordersApi = {
   createGuestOrder: async (shopId: number | string, orderData: GuestOrderRequest, token?: string | null): Promise<Order> => {
     return apiClient.post<Order>(`/api/storefront/shops/${shopId}/orders`, orderData, { token });
@@ -21,6 +31,7 @@ export const ordersApi = {
     customerName: string;
     customerEmail: string;
     customerPhone: string;
+    checkoutToken?: string;
   }> => {
     return apiClient.post(`/api/storefront/orders/${orderNumber}/create-payment-order`);
   },
@@ -43,13 +54,18 @@ export const ordersApi = {
 
   cancelPaymentOrder: async (
     orderNumber: string,
-    reason?: string
+    reason?: string,
+    checkoutToken?: string
   ): Promise<{
     status: string;
     message: string;
     orderNumber: string;
   }> => {
-    return apiClient.post(`/api/storefront/orders/${orderNumber}/cancel-payment`, { reason });
+    return apiClient.post(
+      `/api/storefront/orders/${orderNumber}/cancel-payment`,
+      { reason, checkoutToken },
+      checkoutToken ? { headers: { 'X-Checkout-Token': checkoutToken } } : undefined
+    );
   },
 
   getOwnerOrders: async (status?: string, paymentStatus?: string, page = 0, size = 20, search?: string): Promise<PaginatedResponse<Order>> => {
@@ -103,8 +119,8 @@ export const ordersApi = {
     window.URL.revokeObjectURL(url);
   },
 
-  requestTrackingOtp: async (phone: string): Promise<void> => {
-    return apiClient.post('/api/customer/storefront/tracking/request-otp', { phone });
+  requestTrackingOtp: async (phone: string, email?: string): Promise<OtpDeliveryResponse> => {
+    return apiClient.post<OtpDeliveryResponse>('/api/customer/storefront/tracking/request-otp', { phone, email });
   },
 
   verifyTrackingOtp: async (phone: string, otp: string): Promise<{ token: string }> => {

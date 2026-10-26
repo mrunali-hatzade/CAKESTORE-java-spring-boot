@@ -20,6 +20,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -69,15 +72,21 @@ public class OwnerPaymentController {
 
     /**
      * C3: Retrieve billing and payment history for the authenticated shop owner.
-     * Enforces database-level tenant isolation.
+     * Enforces database-level tenant isolation and server-side pagination.
      */
     @GetMapping
-    public ResponseEntity<List<OwnerPaymentResponse>> getMyPayments(
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-        Shop shop = shopAccessValidator.getShopByOwnerId(userDetails.getId());
-        List<Payment> payments = paymentRepository.findSubscriptionPaymentsByShopId(shop.getId());
+    public ResponseEntity<Page<OwnerPaymentResponse>> getMyPayments(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        int boundedSize = Math.min(Math.max(size, 1), 50);
+        int boundedPage = Math.max(page, 0);
+        Pageable pageable = PageRequest.of(boundedPage, boundedSize);
 
-        List<OwnerPaymentResponse> response = payments.stream().map(p -> {
+        Shop shop = shopAccessValidator.getShopByOwnerId(userDetails.getId());
+        Page<Payment> payments = paymentRepository.findSubscriptionPaymentsByShopId(shop.getId(), pageable);
+
+        Page<OwnerPaymentResponse> response = payments.map(p -> {
             String planName = "Pro Baker Studio";
             if (p.getSubscription() != null && p.getSubscription().getPlan() != null) {
                 planName = p.getSubscription().getPlan().getName();
@@ -98,9 +107,13 @@ public class OwnerPaymentController {
                     .subscriptionPlanName(planName)
                     .invoiceAvailable("COMPLETED".equalsIgnoreCase(p.getStatus()))
                     .build();
-        }).collect(Collectors.toList());
+        });
 
         return ResponseEntity.ok(response);
+    }
+
+    public ResponseEntity<Page<OwnerPaymentResponse>> getMyPayments(CustomUserDetails userDetails) {
+        return getMyPayments(userDetails, 0, 10);
     }
 
     /**

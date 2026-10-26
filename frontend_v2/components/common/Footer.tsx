@@ -117,14 +117,27 @@ export const Footer: React.FC = () => {
                 <Link href="/pricing" className="hover:text-brand-plum transition-colors">Subscription FAQ</Link>
               </li>
               <li>
-                <Link href="/contact" className="hover:text-brand-plum transition-colors">Report an Issue</Link>
+                <Link href="/terms" className="hover:text-brand-plum transition-colors">Terms of Service</Link>
+              </li>
+              <li>
+                <Link href="/privacy" className="hover:text-brand-plum transition-colors">Privacy Policy</Link>
+              </li>
+              <li>
+                <Link href="/refund-policy" className="hover:text-brand-plum transition-colors">Refund Policy</Link>
               </li>
             </ul>
           </div>
         </div>
 
-        <div className="pt-8 border-t border-brand-border/60 flex flex-col sm:flex-row items-center justify-between text-xs text-brand-muted gap-4">
+        <div className="pt-8 border-t border-brand-border/60 flex flex-col md:flex-row items-center justify-between text-xs text-brand-muted gap-4">
           <p>© 2026 CakeStore SaaS Platform. All rights reserved. Made for Indian cake lovers.</p>
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+            <Link href="/terms" className="hover:text-brand-plum transition-colors">Terms of Service</Link>
+            <span className="text-brand-border" aria-hidden="true">•</span>
+            <Link href="/privacy" className="hover:text-brand-plum transition-colors">Privacy Policy</Link>
+            <span className="text-brand-border" aria-hidden="true">•</span>
+            <Link href="/refund-policy" className="hover:text-brand-plum transition-colors">Refund Policy</Link>
+          </div>
           <p className="flex items-center gap-1.5 font-medium">
             <span>Crafted for artisanal celebration bakers with</span>
             <Heart className="w-3.5 h-3.5 text-brand-crimson fill-brand-crimson" />

@@ -443,17 +443,19 @@ public class StageCPaymentAndSubscriptionTest {
         p2.setProviderPaymentId("pay_abc_2");
         p2.setCreatedAt(LocalDateTime.now());
 
-        when(paymentRepository.findSubscriptionPaymentsByShopId(testShop.getId()))
-                .thenReturn(List.of(p2, p1));
+        when(paymentRepository.findSubscriptionPaymentsByShopId(eq(testShop.getId()), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(p2, p1), org.springframework.data.domain.PageRequest.of(0, 10), 2));
 
-        ResponseEntity<List<OwnerPaymentResponse>> response = ownerPaymentController.getMyPayments(ownerDetails);
+        ResponseEntity<org.springframework.data.domain.Page<OwnerPaymentResponse>> response = ownerPaymentController.getMyPayments(ownerDetails);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
-        assertEquals(2, response.getBody().size());
-        assertEquals(102L, response.getBody().get(0).getId());
-        assertEquals(101L, response.getBody().get(1).getId());
-        assertTrue(response.getBody().get(0).isInvoiceAvailable());
+        assertEquals(2, response.getBody().getContent().size());
+        assertEquals(2, response.getBody().getTotalElements());
+        assertEquals(1, response.getBody().getTotalPages());
+        assertEquals(102L, response.getBody().getContent().get(0).getId());
+        assertEquals(101L, response.getBody().getContent().get(1).getId());
+        assertTrue(response.getBody().getContent().get(0).isInvoiceAvailable());
     }
 
     @Test

@@ -40,6 +40,12 @@ public class CustomerPaymentController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.cakeplatform.api.modules.audit.ActivityLoggerService activityLogger;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.security.JwtService jwtService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.user.UserRepository userRepository;
+
     public void setEmailService(com.cakeplatform.api.modules.notification.EmailService emailService) {
         this.emailService = emailService;
     }
@@ -50,6 +56,14 @@ public class CustomerPaymentController {
 
     public void setActivityLogger(com.cakeplatform.api.modules.audit.ActivityLoggerService activityLogger) {
         this.activityLogger = activityLogger;
+    }
+
+    public void setJwtService(com.cakeplatform.api.security.JwtService jwtService) {
+        this.jwtService = jwtService;
+    }
+
+    public void setUserRepository(com.cakeplatform.api.modules.user.UserRepository userRepository) {
+        this.userRepository = userRepository;
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -130,18 +144,21 @@ public class CustomerPaymentController {
             orderRepository.save(order);
         }
 
-        return ResponseEntity.ok(Map.of(
-                "orderNumber", order.getOrderNumber(),
-                "razorpayOrderId", razorpayOrderId,
-                "amount", authoritativeAmount,
-                "amountPaise", amountPaise,
-                "currency", "INR",
-                "keyId", razorpayService.getKeyId() != null ? razorpayService.getKeyId() : "",
-                "shopName", order.getShop() != null ? order.getShop().getBusinessName() : "CakeStore",
-                "customerName", order.getCustomerName() != null ? order.getCustomerName() : "",
-                "customerEmail", order.getCustomerEmail() != null ? order.getCustomerEmail() : "",
-                "customerPhone", order.getCustomerPhone() != null ? order.getCustomerPhone() : ""
-        ));
+        Map<String, Object> responseMap = new java.util.HashMap<>();
+        responseMap.put("orderNumber", order.getOrderNumber());
+        responseMap.put("razorpayOrderId", razorpayOrderId);
+        responseMap.put("amount", authoritativeAmount);
+        responseMap.put("amountPaise", amountPaise);
+        responseMap.put("currency", "INR");
+        responseMap.put("keyId", razorpayService.getKeyId() != null ? razorpayService.getKeyId() : "");
+        responseMap.put("shopName", order.getShop() != null ? order.getShop().getBusinessName() : "CakeStore");
+        responseMap.put("customerName", order.getCustomerName() != null ? order.getCustomerName() : "");
+        responseMap.put("customerEmail", order.getCustomerEmail() != null ? order.getCustomerEmail() : "");
+        responseMap.put("customerPhone", order.getCustomerPhone() != null ? order.getCustomerPhone() : "");
+        if (jwtService != null) {
+            responseMap.put("checkoutToken", jwtService.generateCheckoutToken(order.getOrderNumber(), order.getCustomerPhone()));
+        }
+        return ResponseEntity.ok(responseMap);
     }
 
     /**
@@ -274,10 +291,14 @@ public class CustomerPaymentController {
     @Transactional
     public ResponseEntity<Map<String, Object>> cancelCustomerPayment(
             @PathVariable String orderNumber,
+            @RequestHeader(value = "X-Checkout-Token", required = false) String checkoutTokenHeader,
             @RequestBody(required = false) Map<String, String> payload) {
         Order order = orderRepository.findByOrderNumberWithLock(orderNumber)
                 .or(() -> orderRepository.findByOrderNumber(orderNumber))
                 .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderNumber));
+
+        // Enforce server-side ownership authorization
+        validateCancellationAuthorization(order, checkoutTokenHeader, payload);
 
         if ("PAID".equalsIgnoreCase(order.getPaymentStatus())) {
             throw new IllegalStateException("Cannot cancel payment for an already paid order");
@@ -327,6 +348,96 @@ public class CustomerPaymentController {
                 "message", "Payment process was cancelled. Order has not been placed.",
                 "orderNumber", order.getOrderNumber()
         ));
+    }
+
+    private void validateCancellationAuthorization(Order order, String checkoutTokenHeader, Map<String, String> payload) {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+
+        boolean isAuthenticated = auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal());
+
+        if (isAuthenticated) {
+            // Check if caller is platform admin
+            boolean isAdmin = auth.getAuthorities().stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+            if (isAdmin) {
+                return;
+            }
+
+            // Check if caller is the shop owner of this shop
+            boolean isShopOwner = auth.getAuthorities().stream().anyMatch(a -> "ROLE_SHOP_OWNER".equals(a.getAuthority()));
+            if (isShopOwner && order.getShop() != null && order.getShop().getOwner() != null) {
+                String ownerEmail = order.getShop().getOwner().getEmail();
+                if (ownerEmail != null && ownerEmail.equalsIgnoreCase(auth.getName())) {
+                    return;
+                }
+            }
+
+            // Authenticated Customer: Resolve phone strictly server-side from security context
+            String callerPhone = null;
+            if (auth.getPrincipal() instanceof com.cakeplatform.api.security.CustomUserDetails cud && cud.getUser() != null) {
+                callerPhone = cud.getUser().getMobile();
+            }
+            if ((callerPhone == null || callerPhone.isBlank()) && userRepository != null) {
+                String identifier = auth.getName();
+                com.cakeplatform.api.modules.user.User user = userRepository.findByEmailIgnoreCase(identifier)
+                        .orElseGet(() -> userRepository.findByMobile(identifier).orElse(null));
+                if (user != null) {
+                    callerPhone = user.getMobile();
+                }
+            }
+            if (callerPhone == null || callerPhone.isBlank()) {
+                callerPhone = auth.getName();
+            }
+
+            String normalizedCallerPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(callerPhone);
+            String normalizedOrderPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(order.getCustomerPhone());
+
+            if (normalizedCallerPhone == null || !normalizedCallerPhone.equals(normalizedOrderPhone)) {
+                // Request phone in payload must NOT override authenticated identity
+                throw new org.springframework.security.access.AccessDeniedException("Unauthorized: You do not have permission to cancel this order");
+            }
+            // Customer phone matches authenticated identity
+            return;
+        }
+
+        // Unauthenticated guest checkout: require trustworthy server-validated checkout session
+        String token = checkoutTokenHeader;
+        if ((token == null || token.isBlank()) && payload != null) {
+            token = payload.get("checkoutToken");
+        }
+
+        // 1. Validate signed server checkout session token
+        if (token != null && !token.isBlank() && jwtService != null) {
+            boolean valid = jwtService.validateCheckoutToken(token, order.getOrderNumber(), order.getCustomerPhone());
+            if (valid) {
+                return;
+            }
+        }
+
+        // 2. Validate server-generated payment transaction ID (razorpayOrderId)
+        String candidateOrderId = (payload != null) ? payload.get("razorpayOrderId") : null;
+        if (candidateOrderId == null || candidateOrderId.isBlank()) {
+            candidateOrderId = token;
+        }
+
+        if (candidateOrderId != null && !candidateOrderId.isBlank() && order.getTransactionId() != null
+                && candidateOrderId.equals(order.getTransactionId())) {
+            // Verify caller provided matching customer phone if phone field was provided
+            String reqPhone = (payload != null) ? payload.get("phone") : null;
+            if (reqPhone != null && !reqPhone.isBlank()) {
+                String normReqPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(reqPhone);
+                String normOrderPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(order.getCustomerPhone());
+                if (normReqPhone != null && normReqPhone.equals(normOrderPhone)) {
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+
+        // If neither authenticated nor presenting a valid server-validated checkout session token:
+        // Do not rely solely on a caller-supplied phone number plus order number.
+        throw new org.springframework.security.access.AccessDeniedException("Unauthorized: Valid checkout session token or customer authentication required to cancel payment");
     }
 
     private Payment savePaymentRecordIdempotent(Order order, String transactionId, String razorpayOrderId) {

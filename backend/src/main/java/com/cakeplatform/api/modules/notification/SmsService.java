@@ -27,6 +27,10 @@ public class SmsService {
 
     private boolean isConfigured = false;
 
+    public boolean isConfigured() {
+        return isConfigured;
+    }
+
     @PostConstruct
     public void init() {
         if (accountSid != null && authToken != null && fromPhoneNumber != null && !accountSid.isBlank()) {

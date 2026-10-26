@@ -26,10 +26,17 @@ import java.util.Optional;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import java.time.LocalDateTime;
+import java.util.List;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -205,5 +212,148 @@ public class OwnerPaymentControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getMyPayments_DefaultPagination_ReturnsPageWithDefaults() throws Exception {
+        Payment p1 = new Payment();
+        p1.setId(101L);
+        p1.setShop(testShop);
+        p1.setAmount(new BigDecimal("499.00"));
+        p1.setStatus("COMPLETED");
+        p1.setProviderPaymentId("pay_101");
+        p1.setCreatedAt(LocalDateTime.now().minusDays(1));
+
+        SubscriptionPlan plan = new SubscriptionPlan();
+        plan.setId(1L);
+        plan.setName("Starter Plan");
+        p1.setPlan(plan);
+
+        when(paymentRepository.findSubscriptionPaymentsByShopId(eq(10L), any(Pageable.class)))
+                .thenAnswer(inv -> {
+                    Pageable pageable = inv.getArgument(1);
+                    return new PageImpl<>(List.of(p1), pageable, 1);
+                });
+
+        mockMvc.perform(get("/api/owner/payments")
+                .with(user(testUser))
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(101))
+                .andExpect(jsonPath("$.content[0].subscriptionPlanName").value("Starter Plan"))
+                .andExpect(jsonPath("$.content[0].invoiceAvailable").value(true))
+                .andExpect(jsonPath("$.number").value(0))
+                .andExpect(jsonPath("$.size").value(10))
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.totalPages").value(1))
+                .andExpect(jsonPath("$.first").value(true))
+                .andExpect(jsonPath("$.last").value(true));
+
+        verify(paymentRepository).findSubscriptionPaymentsByShopId(eq(10L), eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
+    void getMyPayments_CustomPageAndSize_Honored() throws Exception {
+        when(paymentRepository.findSubscriptionPaymentsByShopId(eq(10L), any(Pageable.class)))
+                .thenAnswer(inv -> {
+                    Pageable pageable = inv.getArgument(1);
+                    return new PageImpl<>(List.of(), pageable, 25);
+                });
+
+        mockMvc.perform(get("/api/owner/payments?page=2&size=5")
+                .with(user(testUser))
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.number").value(2))
+                .andExpect(jsonPath("$.size").value(5))
+                .andExpect(jsonPath("$.totalElements").value(25))
+                .andExpect(jsonPath("$.totalPages").value(5));
+
+        verify(paymentRepository).findSubscriptionPaymentsByShopId(eq(10L), eq(PageRequest.of(2, 5)));
+    }
+
+    @Test
+    void getMyPayments_PageSizeClampedToMax50() throws Exception {
+        when(paymentRepository.findSubscriptionPaymentsByShopId(eq(10L), any(Pageable.class)))
+                .thenAnswer(inv -> {
+                    Pageable pageable = inv.getArgument(1);
+                    return new PageImpl<>(List.of(), pageable, 0);
+                });
+
+        mockMvc.perform(get("/api/owner/payments?page=0&size=100")
+                .with(user(testUser))
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size").value(50));
+
+        verify(paymentRepository).findSubscriptionPaymentsByShopId(eq(10L), eq(PageRequest.of(0, 50)));
+    }
+
+    @Test
+    void getMyPayments_PageSizeClampedToMin1() throws Exception {
+        when(paymentRepository.findSubscriptionPaymentsByShopId(eq(10L), any(Pageable.class)))
+                .thenAnswer(inv -> {
+                    Pageable pageable = inv.getArgument(1);
+                    return new PageImpl<>(List.of(), pageable, 0);
+                });
+
+        mockMvc.perform(get("/api/owner/payments?page=0&size=-5")
+                .with(user(testUser))
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size").value(1));
+
+        verify(paymentRepository).findSubscriptionPaymentsByShopId(eq(10L), eq(PageRequest.of(0, 1)));
+    }
+
+    @Test
+    void getMyPayments_NegativePageClampedToZero() throws Exception {
+        when(paymentRepository.findSubscriptionPaymentsByShopId(eq(10L), any(Pageable.class)))
+                .thenAnswer(inv -> {
+                    Pageable pageable = inv.getArgument(1);
+                    return new PageImpl<>(List.of(), pageable, 0);
+                });
+
+        mockMvc.perform(get("/api/owner/payments?page=-3&size=10")
+                .with(user(testUser))
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.number").value(0));
+
+        verify(paymentRepository).findSubscriptionPaymentsByShopId(eq(10L), eq(PageRequest.of(0, 10)));
+    }
+
+    @Test
+    void getMyPayments_OutOfRangePage_ReturnsEmptyContentWithMetadata() throws Exception {
+        when(paymentRepository.findSubscriptionPaymentsByShopId(eq(10L), any(Pageable.class)))
+                .thenAnswer(inv -> {
+                    Pageable pageable = inv.getArgument(1);
+                    return new PageImpl<>(List.of(), pageable, 10);
+                });
+
+        mockMvc.perform(get("/api/owner/payments?page=999&size=10")
+                .with(user(testUser))
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isEmpty())
+                .andExpect(jsonPath("$.empty").value(true))
+                .andExpect(jsonPath("$.number").value(999))
+                .andExpect(jsonPath("$.totalElements").value(10))
+                .andExpect(jsonPath("$.totalPages").value(1));
+    }
+
+    @Test
+    void getMyPayments_TenantIsolation_UsesAuthenticatedOwnerShopOnly() throws Exception {
+        when(paymentRepository.findSubscriptionPaymentsByShopId(eq(10L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
+
+        // Attempting to supply another shop ID via param or query has no effect
+        mockMvc.perform(get("/api/owner/payments?shopId=999")
+                .with(user(testUser))
+                .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk());
+
+        // Verified strictly called with testShop ID (10L), never arbitrary shop 999
+        verify(paymentRepository).findSubscriptionPaymentsByShopId(eq(10L), any(Pageable.class));
     }
 }

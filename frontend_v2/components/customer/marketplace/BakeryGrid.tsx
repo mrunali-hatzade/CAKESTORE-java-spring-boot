@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Store, SlidersHorizontal, RotateCcw, Compass, AlertCircle } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import Link from 'next/link';
+import { Store, SlidersHorizontal, RotateCcw, Compass, AlertCircle, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react';
 import { Shop } from '@/types/shop';
 import { BakeryCard } from './BakeryCard';
 import { Card } from '@/components/ui/Card';
@@ -17,6 +18,14 @@ interface BakeryGridProps {
   subtitle?: string;
   sortBy?: string;
   onSortChange?: (sort: string) => void;
+  currentPage?: number;
+  totalPages?: number;
+  totalElements?: number;
+  pageSize?: number;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
+  viewAllHref?: string;
+  viewAllLabel?: string;
 }
 
 const BakeryCardSkeleton = () => (
@@ -51,7 +60,31 @@ export const BakeryGrid: React.FC<BakeryGridProps> = ({
   subtitle = 'Discover verified artisanal cake bakers in your area',
   sortBy = 'default',
   onSortChange,
+  currentPage = 0,
+  totalPages = 1,
+  totalElements,
+  pageSize = 12,
+  onPageChange,
+  onPageSizeChange,
+  viewAllHref,
+  viewAllLabel,
 }) => {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  const total = typeof totalElements === 'number' ? totalElements : shops.length;
+  const startRecord = total === 0 || shops.length === 0 ? 0 : currentPage * pageSize + 1;
+  const endRecord = total === 0 || shops.length === 0 ? 0 : Math.min(currentPage * pageSize + shops.length, total);
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 0 || (totalPages > 0 && newPage >= totalPages)) {
+      return;
+    }
+    onPageChange?.(newPage);
+    if (sectionRef.current) {
+      sectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
   const sortedShops = [...shops].sort((a, b) => {
     if (sortBy === 'distance') {
       const distA = a.distanceKm != null ? a.distanceKm : Infinity;
@@ -64,7 +97,7 @@ export const BakeryGrid: React.FC<BakeryGridProps> = ({
   });
 
   return (
-    <section className="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
+    <section ref={sectionRef} id="bakery-grid" className="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
       {/* Grid Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between pb-6 border-b border-brand-border/60 gap-4 mb-8">
         <div>
@@ -80,11 +113,24 @@ export const BakeryGrid: React.FC<BakeryGridProps> = ({
             <span className="text-xs font-medium text-brand-muted">
               Searching kitchens...
             </span>
-          ) : shops.length > 0 ? (
+          ) : total > 0 ? (
             <span className="text-xs font-semibold text-brand-espresso/80">
-              {shops.length} {shops.length === 1 ? 'bakery' : 'bakeries'} found
+              {totalElements && totalElements > shops.length
+                ? `Showing ${shops.length} of ${totalElements} ${totalElements === 1 ? 'bakery' : 'bakeries'}`
+                : `${total} ${total === 1 ? 'bakery' : 'bakeries'} found`}
             </span>
           ) : null}
+
+          {viewAllHref && !isLoading && shops.length > 0 && (
+            <Link
+              href={viewAllHref}
+              id="header-view-all-bakeries"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-brand-border text-xs font-semibold text-brand-plum bg-white shadow-2xs hover:bg-brand-cream/60 hover:border-brand-plum/40 transition-all"
+            >
+              <span>View All Bakeries</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          )}
 
           {shops.length > 0 && (
             <div className="flex items-center gap-1.5 text-xs text-brand-espresso border border-brand-border rounded-xl px-2.5 py-1.5 bg-white shadow-2xs">
@@ -153,10 +199,13 @@ export const BakeryGrid: React.FC<BakeryGridProps> = ({
                 <RotateCcw className="w-3.5 h-3.5" />
                 Clear Filters
               </Button>
-              <Button onClick={onClearFilters} size="sm" className="gap-1.5">
+              <Link
+                href={viewAllHref || '/explore'}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-plum text-white text-xs font-semibold shadow-soft hover:bg-brand-plum-hover transition-all"
+              >
                 <Compass className="w-3.5 h-3.5" />
                 Explore All Bakeries
-              </Button>
+              </Link>
             </div>
           )}
         </div>
@@ -168,6 +217,98 @@ export const BakeryGrid: React.FC<BakeryGridProps> = ({
           {sortedShops.map((shop) => (
             <BakeryCard key={shop.id} shop={shop} />
           ))}
+        </div>
+      )}
+
+      {/* Pagination Controls on /explore */}
+      {onPageChange && !isLoading && !error && shops.length > 0 && (totalPages > 1 || (onPageSizeChange && total > 12)) && (
+        <div className="mt-12 pt-6 border-t border-brand-border/60 flex flex-col sm:flex-row items-center justify-between gap-4">
+          {/* Record Counter */}
+          <div className="text-xs sm:text-sm text-brand-muted font-medium text-center sm:text-left">
+            Showing <span className="font-semibold text-brand-espresso">{startRecord}</span> to{' '}
+            <span className="font-semibold text-brand-espresso">{endRecord}</span> of{' '}
+            <span className="font-semibold text-brand-espresso">{total}</span>{' '}
+            {total === 1 ? 'bakery' : 'bakeries'}
+          </div>
+
+          {/* Controls: Page Size Selector + Prev/Next Buttons */}
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {onPageSizeChange && (
+              <div className="flex items-center gap-1.5 text-xs text-brand-muted font-medium mr-2">
+                <span className="hidden sm:inline">Per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => onPageSizeChange(Number(e.target.value))}
+                  aria-label="Bakeries per page"
+                  className="bg-white border border-brand-border rounded-xl px-2.5 py-1.5 text-xs font-semibold text-brand-espresso shadow-2xs focus:outline-none cursor-pointer hover:border-brand-plum/40 transition-colors"
+                >
+                  {![12, 24, 48].includes(pageSize) && (
+                    <option value={pageSize}>{pageSize}</option>
+                  )}
+                  <option value={12}>12</option>
+                  <option value={24}>24</option>
+                  <option value={48}>48</option>
+                </select>
+              </div>
+            )}
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage <= 0}
+                  aria-label="Previous page"
+                  className="gap-1 px-3 py-1.5 text-xs font-semibold rounded-xl border-brand-border hover:bg-brand-cream/60 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span className="hidden sm:inline">Previous</span>
+                </Button>
+
+                <span className="px-3 py-1.5 text-xs font-semibold text-brand-espresso bg-white border border-brand-border rounded-xl shadow-2xs">
+                  Page {currentPage + 1} of {Math.max(1, totalPages)}
+                </span>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage >= totalPages - 1}
+                  aria-label="Next page"
+                  className="gap-1 px-3 py-1.5 text-xs font-semibold rounded-xl border-brand-border hover:bg-brand-cream/60 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <span className="hidden sm:inline">Next</span>
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* View All Bakeries Navigation Banner on Homepage */}
+      {viewAllHref && !isLoading && !error && shops.length > 0 && (
+        <div className="mt-12 pt-8 border-t border-brand-border/60 text-center flex flex-col items-center justify-center space-y-3">
+          <Link
+            href={viewAllHref}
+            id="bottom-view-all-bakeries"
+            className="inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-2xl bg-brand-plum text-white font-semibold text-sm shadow-soft hover:bg-brand-plum-hover transition-all duration-200 group"
+          >
+            <span>{viewAllLabel || 'View All Bakeries'}</span>
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+          </Link>
+          {totalElements && totalElements > shops.length ? (
+            <p className="text-xs text-brand-muted">
+              Showing {shops.length} of {totalElements} bakeries matching your criteria. Discover all available bakeries on the explore page.
+            </p>
+          ) : (
+            <p className="text-xs text-brand-muted">
+              Discover all verified artisanal cake bakers and boutique studios across India.
+            </p>
+          )}
         </div>
       )}
     </section>

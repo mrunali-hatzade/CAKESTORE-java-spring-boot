@@ -266,9 +266,17 @@ public class RevenueSegregationE2ETest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        List<OwnerPaymentResponse> payments = objectMapper.readValue(
-                result.getResponse().getContentAsString(),
-                new TypeReference<List<OwnerPaymentResponse>>() {});
+        com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(result.getResponse().getContentAsString());
+        List<OwnerPaymentResponse> payments;
+        if (root.has("content")) {
+            payments = objectMapper.readValue(
+                    root.get("content").toString(),
+                    new TypeReference<List<OwnerPaymentResponse>>() {});
+        } else {
+            payments = objectMapper.readValue(
+                    result.getResponse().getContentAsString(),
+                    new TypeReference<List<OwnerPaymentResponse>>() {});
+        }
 
         assertNotNull(payments);
         assertFalse(payments.isEmpty(), "Owner must have subscription payments");
