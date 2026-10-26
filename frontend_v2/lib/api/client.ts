@@ -40,6 +40,29 @@ export function clearStoredToken(): void {
   }
 }
 
+let isHandlingSessionExpiry = false;
+
+export function handleSessionExpiration(endpoint: string): void {
+  if (isHandlingSessionExpiry) return;
+  isHandlingSessionExpiry = true;
+
+  clearStoredToken();
+
+  if (typeof window !== 'undefined') {
+    const currentPath = window.location.pathname;
+    const isProtectedRoute = currentPath.startsWith('/dashboard') || currentPath.startsWith('/admin');
+
+    if (isProtectedRoute) {
+      const redirectUrl = `/login?session_expired=true&redirect=${encodeURIComponent(currentPath)}`;
+      window.location.href = redirectUrl;
+    }
+  }
+
+  setTimeout(() => {
+    isHandlingSessionExpiry = false;
+  }, 3000);
+}
+
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const { params, token, headers = {}, ...rest } = options;
 
@@ -141,10 +164,14 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
         }
       }
 
-      // Removed aggressive auto-logout and redirect on 401 per user request
       if (response.status === 401) {
-        // Just pass the error back without forcing a redirect
         console.warn('API returned 401 Unauthorized for', endpoint);
+        const isAuthLoginEndpoint = endpoint.includes('/api/auth/login') || endpoint.includes('/api/auth/forgot-password');
+        if (hasExplicitAuthHeader || reqHeaders['Authorization']) {
+          if (!isAuthLoginEndpoint) {
+            handleSessionExpiration(endpoint);
+          }
+        }
       }
 
       throw new ApiError(response.status, errorMessage, responseData);

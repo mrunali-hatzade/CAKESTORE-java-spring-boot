@@ -21,6 +21,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final CustomUserDetailsService userDetailsService;
+    private final TokenRevocationService tokenRevocationService;
 
     @Override
     protected void doFilterInternal(
@@ -28,7 +29,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
-        if (request.getServletPath().contains("/api/auth")) {
+        String servletPath = request.getServletPath();
+        if (servletPath != null && (
+                servletPath.equals("/api/auth/login") ||
+                servletPath.equals("/api/auth/register") ||
+                servletPath.equals("/api/auth/forgot-password") ||
+                servletPath.equals("/api/auth/reset-password")
+        )) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -45,10 +52,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         jwt = authHeader.substring(7);
         try {
             userEmail = jwtService.extractUsername(jwt);
-            if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            if (userEmail != null) {
                 UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
 
                 if (jwtService.isTokenValid(jwt, userDetails)) {
+                    com.cakeplatform.api.modules.user.User user = (userDetails instanceof CustomUserDetails cud) ? cud.getUser() : null;
+                    java.util.Date issuedAt = jwtService.extractIssuedAt(jwt);
+                    if (tokenRevocationService.isTokenRevoked(jwt, issuedAt, user)) {
+                        SecurityContextHolder.clearContext();
+                        response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token has been revoked");
+                        return;
+                    }
+
                     java.util.Collection<? extends org.springframework.security.core.GrantedAuthority> authorities = userDetails.getAuthorities();
                     String grantedRole = jwtService.extractClaim(jwt, claims -> claims.get("granted_role", String.class));
                     if ("CUSTOMER".equals(grantedRole)) {
@@ -64,10 +79,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             new WebAuthenticationDetailsSource().buildDetails(request)
                     );
                     SecurityContextHolder.getContext().setAuthentication(authToken);
+                } else {
+                    SecurityContextHolder.clearContext();
                 }
             }
         } catch (Exception e) {
-            // Ignore token extraction/validation errors and allow it to fail at security level
+            SecurityContextHolder.clearContext();
         }
 
         filterChain.doFilter(request, response);

@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth/AuthContext';
 import { useCart } from '@/context/CartContext';
 import { Button } from '@/components/ui/Button';
 import { CustomerOrderLookupModal } from '@/components/customer/common/CustomerOrderLookupModal';
+import { CartDrawer } from '@/components/customer/storefront/CartDrawer';
 
 export const Navbar: React.FC = () => {
   const pathname = usePathname();
@@ -196,6 +197,9 @@ export const Navbar: React.FC = () => {
         isOpen={orderLookupOpen}
         onClose={() => setOrderLookupOpen(false)}
       />
+
+      {/* Slide-out Cart/Basket Drawer */}
+      <CartDrawer />
     </>
   );
 };

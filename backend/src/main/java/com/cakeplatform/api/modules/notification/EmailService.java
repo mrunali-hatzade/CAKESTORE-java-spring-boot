@@ -122,12 +122,19 @@ public class EmailService {
                 log.info("From   : {}", mailFrom);
                 log.info("To     : {}", to);
                 log.info("Subject: {}", subject);
-                log.info("Body:\n{}", body);
+                log.info("Body:\n{}", maskSensitiveLog(body));
                 log.info("=================================================");
             }
         } catch (Exception ex) {
             log.error("Failed to deliver transactional email to {} for subject '{}': {}", to, subject, ex.getMessage(), ex);
         }
+    }
+
+    private String maskSensitiveLog(String content) {
+        if (content == null) {
+            return null;
+        }
+        return content.replaceAll("(?i)([#?&]token=)[^&\\s]+", "$1[REDACTED]");
     }
 
     private void sendViaResend(String to, String subject, String body) {

@@ -57,4 +57,8 @@ export const authApi = {
   changePassword: async (data: { currentPassword: string; newPassword: string }): Promise<any> => {
     return apiClient.post('/api/auth/change-password', data);
   },
+
+  logout: async (): Promise<any> => {
+    return apiClient.post('/api/auth/logout');
+  },
 };

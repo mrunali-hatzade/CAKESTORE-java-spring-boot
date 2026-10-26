@@ -57,8 +57,10 @@ public class StartupValidator implements ApplicationRunner {
             failed = true;
         }
 
-        if (!StringUtils.hasText(jwtSecret) || "45f4f9e809b96ece4dc9605067190fe487d40b41e2f701098420bdfa4739f82b".equals(jwtSecret)) {
-            log.error("CRITICAL: JWT_SECRET is missing, empty, or using default dev value.");
+        if (!StringUtils.hasText(jwtSecret) 
+                || isKnownInsecureJwtSecret(jwtSecret) 
+                || isWeakJwtSecret(jwtSecret)) {
+            log.error("CRITICAL: JWT_SECRET is missing, empty, weak, or using default dev value.");
             failed = true;
         }
 
@@ -100,5 +102,26 @@ public class StartupValidator implements ApplicationRunner {
         } else {
             log.info("Production environment validation PASSED.");
         }
+    }
+
+    private boolean isKnownInsecureJwtSecret(String secret) {
+        if (secret == null) return false;
+        String trimmed = secret.trim();
+        return "45f4f9e809b96ece4dc9605067190fe487d40b41e2f701098420bdfa4739f82b".equalsIgnoreCase(trimmed)
+                || "ZGV2LWxvY2FsLW5vbi1wcm9kdWN0aW9uLWp3dC1zZWNyZXQta2V5LTMyYnl0ZXM=".equals(trimmed);
+    }
+
+    private boolean isWeakJwtSecret(String secret) {
+        if (secret == null) return true;
+        String trimmed = secret.trim();
+        try {
+            byte[] decoded = io.jsonwebtoken.io.Decoders.BASE64.decode(trimmed);
+            if (decoded != null && decoded.length >= 32) {
+                return false;
+            }
+        } catch (Exception ignored) {
+            // Not valid Base64; check raw bytes length
+        }
+        return trimmed.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32;
     }
 }

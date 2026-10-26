@@ -44,6 +44,12 @@ public class User {
     @Column(nullable = false)
     private UserStatus status = UserStatus.ACTIVE;
 
+    @Column(name = "token_version", nullable = false)
+    private Integer tokenVersion = 1;
+
+    @Column(name = "tokens_invalidated_before")
+    private LocalDateTime tokensInvalidatedBefore;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

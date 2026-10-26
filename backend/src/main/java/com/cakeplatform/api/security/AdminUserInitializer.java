@@ -45,6 +45,9 @@ public class AdminUserInitializer implements ApplicationRunner {
     @Autowired
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
+    @Value("${app.seed.demo-shops:false}")
+    private boolean seedDemoShops;
+
     @Override
     public void run(ApplicationArguments args) {
         // 1. Initialize default admin
@@ -55,20 +58,24 @@ public class AdminUserInitializer implements ApplicationRunner {
         resolveOrRestoreUser("admin@cakestore.com", "Demo Administrator", "9999999998", UserRole.ADMIN, "admin123");
         log.info("Demo administrator role and credentials synchronized.");
 
-        // 3. Initialize frontend demo owner
-        User demoOwner = resolveOrRestoreUser("owner@sweetdelight.com", "Sweet Delight Owner", "9876543210", UserRole.SHOP_OWNER, "password123");
-        resolveOrRestoreShop(demoOwner, "Sweet Delight Bakery", "owner@sweetdelight.com", "9876543210", "Artisanal handcrafted cakes and confectionery", "Mumbai", "Maharashtra", "400001");
-        log.info("Demo bakery owner and shop initialized successfully.");
+        if (seedDemoShops) {
+            // 3. Initialize frontend demo owner
+            User demoOwner = resolveOrRestoreUser("owner@sweetdelight.com", "Sweet Delight Owner", "9876543210", UserRole.SHOP_OWNER, "password123");
+            resolveOrRestoreShop(demoOwner, "Sweet Delight Bakery", "owner@sweetdelight.com", "9876543210", "Artisanal handcrafted cakes and confectionery", "Mumbai", "Maharashtra", "400001");
+            log.info("Demo bakery owner and shop initialized successfully.");
 
-        // 4. Initialize personal user account
-        User personalUser = resolveOrRestoreUser("mrunalithatzade20@gmail.com", "Mrunali", "9876543211", UserRole.SHOP_OWNER, "password123");
-        resolveOrRestoreShop(personalUser, "Mrunali's Artisanal Bakery", "mrunalithatzade20@gmail.com", "9876543211", "Handcrafted custom cakes & bakery delicacies", "Pune", "Maharashtra", "411001");
-        log.info("Personal bakery account initialized successfully.");
+            // 4. Initialize personal user account
+            User personalUser = resolveOrRestoreUser("mrunalithatzade20@gmail.com", "Mrunali", "9876543211", UserRole.SHOP_OWNER, "password123");
+            resolveOrRestoreShop(personalUser, "Mrunali's Artisanal Bakery", "mrunalithatzade20@gmail.com", "9876543211", "Handcrafted custom cakes & bakery delicacies", "Pune", "Maharashtra", "411001");
+            log.info("Personal bakery account initialized successfully.");
 
-        // 5. Initialize owner@example.com for testing convenience (matches auth.http)
-        User exampleOwner = resolveOrRestoreUser("owner@example.com", "Demo Shop Owner", "9876543212", UserRole.SHOP_OWNER, "Password123!");
-        resolveOrRestoreShop(exampleOwner, "Jane's Amazing Cakes", "owner@example.com", "9876543212", "Handcrafted custom cakes & bakery delicacies", "Pune", "Maharashtra", "411001");
-        log.info("Demo owner@example.com initialized successfully.");
+            // 5. Initialize owner@example.com for testing convenience (matches auth.http)
+            User exampleOwner = resolveOrRestoreUser("owner@example.com", "Demo Shop Owner", "9876543212", UserRole.SHOP_OWNER, "Password123!");
+            resolveOrRestoreShop(exampleOwner, "Jane's Amazing Cakes", "owner@example.com", "9876543212", "Handcrafted custom cakes & bakery delicacies", "Pune", "Maharashtra", "411001");
+            log.info("Demo owner@example.com initialized successfully.");
+        } else {
+            log.info("Demo shops seeding is disabled (app.seed.demo-shops=false). Platform directory starts clean.");
+        }
     }
 
     private void resolveOrRestoreShop(User owner, String businessName, String email, String phone, String description, String city, String state, String pincode) {

@@ -66,4 +66,17 @@ public class AuthController {
         response.put("message", "Password has been successfully changed.");
         return ResponseEntity.ok(response);
     }
+
+    @PostMapping("/logout")
+    public ResponseEntity<java.util.Map<String, String>> logout(
+            jakarta.servlet.http.HttpServletRequest request,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal com.cakeplatform.api.security.CustomUserDetails userDetails
+    ) {
+        String authHeader = request.getHeader("Authorization");
+        String rawToken = (authHeader != null && authHeader.startsWith("Bearer ")) ? authHeader.substring(7) : null;
+        authService.logout(rawToken, userDetails != null ? userDetails.getUser() : null);
+        java.util.Map<String, String> response = new java.util.HashMap<>();
+        response.put("message", "Successfully logged out.");
+        return ResponseEntity.ok(response);
+    }
 }

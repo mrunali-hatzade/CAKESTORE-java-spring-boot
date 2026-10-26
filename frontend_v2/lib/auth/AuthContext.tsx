@@ -53,10 +53,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return res;
   };
 
-  const logout = () => {
-    clearStoredToken();
-    setToken(null);
-    setUser(null);
+  const logout = async () => {
+    try {
+      await authApi.logout();
+    } catch {
+      // Ignore errors if network is down or session is already invalid
+    } finally {
+      clearStoredToken();
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('cakestore_user');
+      }
+      setToken(null);
+      setUser(null);
+    }
   };
 
   const hasRole = (role: UserRole): boolean => {

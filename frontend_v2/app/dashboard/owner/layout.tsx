@@ -684,12 +684,47 @@ function OwnerLayoutContent({ children }: { children: ReactNode }) {
   );
 }
 
+export function OwnerAuthGuard({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { user, isAuthenticated, isLoading } = useAuth();
+
+  const isOwner =
+    user?.role === 'ROLE_SHOP_OWNER' ||
+    (user?.role as unknown as string) === 'SHOP_OWNER';
+
+  useEffect(() => {
+    if (!isLoading) {
+      if (!isAuthenticated || !isOwner) {
+        router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+      }
+    }
+  }, [isLoading, isAuthenticated, isOwner, router, pathname]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-brand-cream-light text-brand-plum">
+        <div className="w-8 h-8 border-2 border-brand-plum border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !isOwner) {
+    return null;
+  }
+
+  return <>{children}</>;
+}
+
 export default function OwnerLayout({ children }: { children: ReactNode }) {
   return (
-    <OwnerProvider>
-      <UnsavedChangesProvider>
-        <OwnerLayoutContent>{children}</OwnerLayoutContent>
-      </UnsavedChangesProvider>
-    </OwnerProvider>
+    <OwnerAuthGuard>
+      <OwnerProvider>
+        <UnsavedChangesProvider>
+          <OwnerLayoutContent>{children}</OwnerLayoutContent>
+        </UnsavedChangesProvider>
+      </OwnerProvider>
+    </OwnerAuthGuard>
   );
 }
+

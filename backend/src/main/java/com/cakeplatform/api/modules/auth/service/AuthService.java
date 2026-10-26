@@ -63,6 +63,13 @@ public class AuthService {
     private com.cakeplatform.api.modules.shop.ShopStorefrontSettingsRepository shopStorefrontSettingsRepository;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.security.TokenRevocationService tokenRevocationService;
+
+    public void setTokenRevocationService(com.cakeplatform.api.security.TokenRevocationService tokenRevocationService) {
+        this.tokenRevocationService = tokenRevocationService;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.cakeplatform.api.modules.location.service.GeocodingService geocodingService;
 
     public void setGeocodingService(com.cakeplatform.api.modules.location.service.GeocodingService geocodingService) {
@@ -491,6 +498,8 @@ public class AuthService {
         
         User user = resetToken.getUser();
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setTokenVersion(user.getTokenVersion() != null ? user.getTokenVersion() + 1 : 2);
+        user.setTokensInvalidatedBefore(LocalDateTime.now());
         userRepository.save(user);
         
         resetToken.setUsed(true);
@@ -511,6 +520,14 @@ public class AuthService {
         }
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setTokenVersion(user.getTokenVersion() != null ? user.getTokenVersion() + 1 : 2);
+        user.setTokensInvalidatedBefore(LocalDateTime.now());
         userRepository.save(user);
+    }
+
+    public void logout(String rawToken, User user) {
+        if (tokenRevocationService != null && rawToken != null && !rawToken.trim().isEmpty()) {
+            tokenRevocationService.revokeToken(rawToken, user);
+        }
     }
 }

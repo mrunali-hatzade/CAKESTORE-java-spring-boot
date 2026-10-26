@@ -41,6 +41,10 @@ public class RazorpayService {
         this.settingsService = settingsService;
     }
 
+    public String getKeyId() {
+        return getActiveKeyId();
+    }
+
     private String getActiveKeyId() {
         com.cakeplatform.api.modules.settings.GlobalSettings s = settingsService.getSettings();
         if (s != null && s.getRazorpayKeyId() != null && !s.getRazorpayKeyId().isBlank()) return s.getRazorpayKeyId();

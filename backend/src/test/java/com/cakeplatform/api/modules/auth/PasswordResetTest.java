@@ -62,10 +62,8 @@ public class PasswordResetTest {
 
     @BeforeEach
     void setUp() {
-        passwordResetTokenRepository.deleteAll();
-        jdbcTemplate.execute("DELETE FROM password_reset_tokens"); jdbcTemplate.execute("DELETE FROM users WHERE email LIKE '%test.reset%'");
-
-        passwordResetTokenRepository.deleteAll();
+        passwordResetTokenRepository.deleteAllInBatch();
+        jdbcTemplate.execute("DELETE FROM users WHERE email LIKE '%test.reset%'");
         if (devEmailSink != null) devEmailSink.clear();
         
         testUser = setupUser("test.reset_java_uuid_randomUUID_toString_substring_0_8@example.com", "Test User");
