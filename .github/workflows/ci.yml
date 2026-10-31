@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+      - development
   pull_request:
     branches:
       - main
+      - development
   workflow_dispatch:
 
 permissions:
@@ -48,13 +50,13 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Backend tests
-        working-directory: backend
-        run: mvn clean verify
-
       - name: Testcontainers PostgreSQL Integration Test
         working-directory: backend
         run: mvn test -Dtest=AdminProvisioningPostgresIntegrationTest
+
+      - name: Backend unit and integration tests
+        working-directory: backend
+        run: mvn test -Dtest="!AdminProvisioningPostgresIntegrationTest"
 
       - name: Publish Test Reports
         uses: actions/upload-artifact@v4
