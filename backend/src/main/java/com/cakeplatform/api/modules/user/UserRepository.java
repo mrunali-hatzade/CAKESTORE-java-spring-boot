@@ -18,6 +18,12 @@ public interface UserRepository extends JpaRepository<User, Long> {
     java.util.List<User> findByRole(UserRole role);
     java.util.List<User> findByRoleAndStatus(UserRole role, UserStatus status);
     long countByRole(UserRole role);
+
+    @org.springframework.data.jpa.repository.Query(value = "SELECT COUNT(*) FROM users WHERE role = 'ADMIN'", nativeQuery = true)
+    long countAllAdminsIncludingDeleted();
+
+    @org.springframework.data.jpa.repository.Query(value = "SELECT COUNT(*) FROM users WHERE LOWER(email) = LOWER(?1)", nativeQuery = true)
+    long countByEmailIgnoreCaseIncludingDeleted(String email);
     
     long countByCreatedAtGreaterThanEqual(java.time.LocalDateTime startOfDay);
     long countByCreatedAtBetween(java.time.LocalDateTime start, java.time.LocalDateTime end);

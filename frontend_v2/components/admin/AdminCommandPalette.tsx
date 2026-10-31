@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import {
   Search, LayoutDashboard, Store, CreditCard, ShoppingBag, Receipt,
   MessageSquare, MessageCircle, Mail, Bell, X, ArrowRight, Loader2,
-  ShieldAlert
+  ShieldAlert,
+  KeyRound
 } from 'lucide-react';
 import { getAllShops } from '@/lib/api/admin';
 import { communicationApi } from '@/lib/api/communication';
@@ -36,6 +37,7 @@ const STATIC_NAV_SHORTCUTS: NavShortcut[] = [
   { id: 'nav-broadcasts', type: 'shortcut', label: 'Broadcasts', description: 'Send mass emails and alerts', href: '/admin/messages', icon: Mail },
   { id: 'nav-notifications', type: 'shortcut', label: 'Notifications', description: 'View your platform alerts', href: '/admin/notifications', icon: Bell },
   { id: 'nav-settings', type: 'shortcut', label: 'Global Settings', description: 'Platform configuration and security', href: '/admin/settings', icon: ShieldAlert },
+  { id: 'nav-security', type: 'shortcut', label: 'Admin Security', description: 'Change administrator password and security credentials', href: '/admin/security', icon: KeyRound },
 ];
 
 export const AdminCommandPalette: React.FC<AdminCommandPaletteProps> = ({ isOpen, onClose }) => {

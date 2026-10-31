@@ -41,10 +41,12 @@ export async function generateMetadata({
 
   const locationPart = shop.city ? ` in ${shop.city}` : '';
   const title = `${shop.businessName} — Artisanal Bakery${locationPart}`;
+  const rawDescription =
+    shop.description || shop.aboutStory || shop.bio || shop.tagline;
   const description =
-    shop.bio ||
-    shop.tagline ||
-    `Order fresh artisanal celebration cakes, pastries, and custom desserts directly from ${shop.businessName}${locationPart}.`;
+    rawDescription && typeof rawDescription === 'string' && rawDescription.trim().length > 0
+      ? rawDescription.trim()
+      : `Order fresh artisanal celebration cakes, pastries, and custom desserts directly from ${shop.businessName}${locationPart}.`;
 
   const imageUrl =
     shop.coverImageUrl || shop.logoUrl || '/marketplace-hero-bg.jpg';
@@ -85,37 +87,56 @@ export default async function ShopLayout({
   // Generate truthful Schema.org Bakery / LocalBusiness JSON-LD only from verified shop fields
   let jsonLd = null;
   if (shop && shop.businessName) {
+    const rawDescription =
+      shop.description || shop.aboutStory || shop.bio || shop.tagline;
+    const ratingValue = Number(shop.averageRating ?? shop.rating);
+    const reviewCountValue = Number(shop.totalReviews ?? shop.reviewCount);
+    const hasValidRating =
+      !isNaN(ratingValue) &&
+      ratingValue > 0 &&
+      !isNaN(reviewCountValue) &&
+      reviewCountValue > 0;
+
+    const hasValidGeo =
+      shop.latitude != null &&
+      shop.longitude != null &&
+      !isNaN(Number(shop.latitude)) &&
+      !isNaN(Number(shop.longitude));
+
+    const streetAddress =
+      [shop.addressLine1, shop.addressLine2, shop.address]
+        .filter((line: any) => typeof line === 'string' && line.trim().length > 0)
+        .join(', ') || undefined;
+
     jsonLd = {
       '@context': 'https://schema.org',
       '@type': 'Bakery',
       name: shop.businessName,
-      description: shop.bio || shop.tagline || undefined,
+      description: rawDescription && rawDescription.trim().length > 0 ? rawDescription.trim() : undefined,
       url: `${siteUrl}/shop/${shop.id}`,
       image: shop.coverImageUrl || shop.logoUrl || undefined,
       address: {
         '@type': 'PostalAddress',
-        streetAddress: shop.address || undefined,
+        streetAddress,
         addressLocality: shop.city || undefined,
         addressRegion: shop.state || undefined,
         postalCode: shop.pincode || undefined,
         addressCountry: 'IN',
       },
-      geo:
-        shop.latitude && shop.longitude
-          ? {
-              '@type': 'GeoCoordinates',
-              latitude: Number(shop.latitude),
-              longitude: Number(shop.longitude),
-            }
-          : undefined,
-      aggregateRating:
-        shop.rating && shop.rating > 0 && shop.reviewCount && shop.reviewCount > 0
-          ? {
-              '@type': 'AggregateRating',
-              ratingValue: Number(shop.rating),
-              reviewCount: Number(shop.reviewCount),
-            }
-          : undefined,
+      geo: hasValidGeo
+        ? {
+            '@type': 'GeoCoordinates',
+            latitude: Number(shop.latitude),
+            longitude: Number(shop.longitude),
+          }
+        : undefined,
+      aggregateRating: hasValidRating
+        ? {
+            '@type': 'AggregateRating',
+            ratingValue,
+            reviewCount: reviewCountValue,
+          }
+        : undefined,
     };
   }
 

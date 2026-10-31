@@ -39,12 +39,21 @@ spring:
 
 server:
   port: 8080
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:framework}
 
 jwt:
   secret: ${JWT_SECRET:}
   expiration: ${JWT_EXPIRATION_MS:86400000}
 
 app:
+  admin:
+    bootstrap:
+      enabled: ${APP_ADMIN_BOOTSTRAP_ENABLED:false}
+      email: ${APP_ADMIN_BOOTSTRAP_EMAIL:${ADMIN_BOOTSTRAP_EMAIL:}}
+      password: ${APP_ADMIN_BOOTSTRAP_PASSWORD:${ADMIN_BOOTSTRAP_PASSWORD:}}
+      full-name: ${APP_ADMIN_BOOTSTRAP_FULL_NAME:${ADMIN_BOOTSTRAP_FULL_NAME:System Administrator}}
+      mobile: ${APP_ADMIN_BOOTSTRAP_MOBILE:${ADMIN_BOOTSTRAP_MOBILE:}}
+      exit-on-completion: ${APP_ADMIN_BOOTSTRAP_EXIT_ON_COMPLETION:false}
   sms:
     log-payloads: true
   demo-data:

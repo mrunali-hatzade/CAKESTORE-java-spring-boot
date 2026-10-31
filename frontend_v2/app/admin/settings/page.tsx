@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { adminSettingsApi, GlobalSettings } from '@/lib/api/adminSettings';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import { Save, Building2, CreditCard, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Save, Building2, CreditCard, Eye, EyeOff, CheckCircle2, AlertCircle, KeyRound, ChevronRight } from 'lucide-react';
 import { useToast } from '@/components/common/Toast';
 import { useUnsavedChanges } from '@/context/UnsavedChangesContext';
 import { useRegisterAdminRefresh } from '@/context/AdminRefreshContext';
@@ -265,6 +266,30 @@ export default function AdminSettingsPage() {
               </div>
               <p className="text-xs text-slate-400 mt-1">Used to verify incoming webhooks from Razorpay for successful payments.</p>
             </div>
+          </div>
+        </Card>
+
+        {/* Administrator Security & Credentials Card */}
+        <Card className="p-6 border-slate-200 bg-white">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600 shrink-0">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-slate-800">Administrator Security & Credentials</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Update your administrator account password and manage authentication safeguards.
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/admin/security"
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors shrink-0"
+            >
+              <span>Manage Password</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </Link>
           </div>
         </Card>
 

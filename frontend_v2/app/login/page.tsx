@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Cake, Lock, Mail, Phone, ArrowRight, Eye, EyeOff, Sparkles, CheckCircle2, ShieldCheck } from 'lucide-react';
@@ -17,6 +17,18 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('password_changed') === 'true') {
+        setInfoMessage('Your password was changed successfully. Please log in with your new credentials.');
+      } else if (params.get('session_expired') === 'true') {
+        setInfoMessage('Your session has expired or was revoked. Please log in again.');
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,6 +144,13 @@ export default function LoginPage() {
               Enter your credentials to access your bakery dashboard
             </p>
           </div>
+
+          {infoMessage && (
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-medium flex items-center gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{infoMessage}</span>
+            </div>
+          )}
 
           {error && <ErrorState message={error} className="text-left" />}
 

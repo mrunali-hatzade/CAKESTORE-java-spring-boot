@@ -73,14 +73,12 @@ public class PasswordRecoveryEmailFlowTest {
             devEmailSink.clear();
         }
 
-        testUser = userRepository.findByEmailIgnoreCase("flow.test@example.com").orElse(null);
-        if (testUser == null) {
-            testUser = new User();
-            testUser.setEmail("flow.test@example.com");
-            testUser.setRole(UserRole.CUSTOMER);
-            testUser.setStatus(UserStatus.ACTIVE);
-            testUser.setFullName("Flow Test User");
-        }
+        String email = "flow.test_" + java.util.UUID.randomUUID().toString().substring(0, 8) + "@example.com";
+        testUser = new User();
+        testUser.setEmail(email);
+        testUser.setRole(UserRole.CUSTOMER);
+        testUser.setStatus(UserStatus.ACTIVE);
+        testUser.setFullName("Flow Test User");
         testUser.setPasswordHash(passwordEncoder.encode("InitialPassword123!"));
         testUser = userRepository.save(testUser);
 

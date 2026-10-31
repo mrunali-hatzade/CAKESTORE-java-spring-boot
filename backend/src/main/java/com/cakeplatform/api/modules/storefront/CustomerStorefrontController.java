@@ -95,7 +95,7 @@ public class CustomerStorefrontController {
         com.cakeplatform.api.modules.shop.BusinessType parsedType = null;
         if (org.springframework.util.StringUtils.hasText(businessType)) {
             try {
-                parsedType = com.cakeplatform.api.modules.shop.BusinessType.valueOf(businessType.trim().toUpperCase());
+                parsedType = com.cakeplatform.api.modules.shop.BusinessType.fromString(businessType);
             } catch (IllegalArgumentException ignored) {
                 if (page != null) {
                     return ResponseEntity.ok(new org.springframework.data.domain.PageImpl<>(java.util.Collections.emptyList()));
@@ -130,7 +130,7 @@ public class CustomerStorefrontController {
         com.cakeplatform.api.modules.shop.BusinessType parsedType = null;
         if (org.springframework.util.StringUtils.hasText(businessType)) {
             try {
-                parsedType = com.cakeplatform.api.modules.shop.BusinessType.valueOf(businessType.trim().toUpperCase());
+                parsedType = com.cakeplatform.api.modules.shop.BusinessType.fromString(businessType);
             } catch (IllegalArgumentException ignored) {
                 return ResponseEntity.ok(java.util.Collections.emptyList());
             }

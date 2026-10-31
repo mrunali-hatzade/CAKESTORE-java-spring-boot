@@ -62,6 +62,10 @@ public class AuthService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.cakeplatform.api.modules.shop.ShopStorefrontSettingsRepository shopStorefrontSettingsRepository;
 
+    public void setShopStorefrontSettingsRepository(com.cakeplatform.api.modules.shop.ShopStorefrontSettingsRepository shopStorefrontSettingsRepository) {
+        this.shopStorefrontSettingsRepository = shopStorefrontSettingsRepository;
+    }
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.cakeplatform.api.security.TokenRevocationService tokenRevocationService;
 
@@ -217,12 +221,8 @@ public class AuthService {
         shop.setYearsInBusiness(request.getYearsInBusiness());
         shop.setFssaiRegistration(request.getFssaiRegistration());
         
-        try {
-            if (request.getBusinessType() != null) {
-                shop.setBusinessType(com.cakeplatform.api.modules.shop.BusinessType.valueOf(request.getBusinessType().toUpperCase()));
-            }
-        } catch (IllegalArgumentException e) {
-            // ignore or log
+        if (request.getBusinessType() != null && !request.getBusinessType().trim().isEmpty()) {
+            shop.setBusinessType(com.cakeplatform.api.modules.shop.BusinessType.fromString(request.getBusinessType()));
         }
         
         shop.setAddressLine1(request.getAddressLine1());
@@ -264,15 +264,18 @@ public class AuthService {
 
         Shop savedShop = shopRepository.save(shop);
 
-        // Auto-enable address privacy by default for newly registered home bakers
-        if (savedShop.getBusinessType() == com.cakeplatform.api.modules.shop.BusinessType.HOME_BAKERY && shopStorefrontSettingsRepository != null) {
+        // Initialize storefront settings with home-baker address privacy enabled by default
+        if (shopStorefrontSettingsRepository != null) {
             try {
+                boolean isHomeBakery = (savedShop.getBusinessType() == com.cakeplatform.api.modules.shop.BusinessType.HOME_BAKERY);
                 com.cakeplatform.api.modules.shop.ShopStorefrontSettings settings = com.cakeplatform.api.modules.shop.ShopStorefrontSettings.builder()
                         .shop(savedShop)
-                        .hideStreetAddress(true)
+                        .hideStreetAddress(isHomeBakery)
                         .build();
                 shopStorefrontSettingsRepository.save(settings);
-            } catch (Exception ignored) {}
+            } catch (Exception ex) {
+                log.error("Failed to initialize shop storefront settings for shop {}: {}", savedShop.getId(), ex.getMessage());
+            }
         }
 
         // 3. Dispatch Admin Notifications: NEW_BAKERY & BAKERY_AWAITING_APPROVAL
@@ -517,6 +520,10 @@ public class AuthService {
 
         if (newPassword == null || newPassword.length() < 8) {
             throw new IllegalArgumentException("New password must be at least 8 characters long");
+        }
+
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw new IllegalArgumentException("New password must be different from current password");
         }
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));

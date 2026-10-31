@@ -31,8 +31,9 @@ public class InvoiceService {
 
         // Shop Details
         document.add(new Paragraph(order.getShop().getBusinessName(), boldFont));
-        boolean hideStreet = order.getShop().getStorefrontSettings() != null &&
-                Boolean.TRUE.equals(order.getShop().getStorefrontSettings().getHideStreetAddress());
+        boolean hideStreet = (order.getShop().getStorefrontSettings() != null)
+                ? Boolean.TRUE.equals(order.getShop().getStorefrontSettings().getHideStreetAddress())
+                : (order.getShop().getBusinessType() == com.cakeplatform.api.modules.shop.BusinessType.HOME_BAKERY);
         if (hideStreet) {
             java.util.List<String> localityParts = java.util.stream.Stream.of(
                     order.getShop().getArea(),

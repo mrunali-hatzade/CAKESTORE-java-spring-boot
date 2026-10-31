@@ -84,8 +84,9 @@ test('CakeStore: Public Website SEO Metadata & Structured Data Suite', async (t)
     assert.ok(content.includes('url: `${baseUrl}/privacy`'), 'Sitemap must contain /privacy');
     assert.ok(content.includes('url: `${baseUrl}/refund-policy`'), 'Sitemap must contain /refund-policy');
 
-    // Verify dynamic shop generation
-    assert.ok(content.includes('/api/storefront/shops/search?size=50'), 'Sitemap must query public storefront API');
+    // Verify paginated dynamic shop generation and deduplication
+    assert.ok(content.includes('page=${currentPage}&size=${PAGE_SIZE}'), 'Sitemap must query paginated public storefront API');
+    assert.ok(content.includes('dynamicShopMap'), 'Sitemap must use Map to deduplicate bakery shop URLs');
     assert.ok(content.includes('url: `${baseUrl}/shop/${shop.id}`'), 'Sitemap must include dynamic bakery shop URLs');
 
     // Verify private routes are NOT in sitemap
@@ -146,14 +147,38 @@ test('CakeStore: Public Website SEO Metadata & Structured Data Suite', async (t)
 
     // Verify aggregateRating is conditional on real verified ratings (no fabricated numbers)
     assert.ok(
-      content.includes('shop.rating && shop.rating > 0 && shop.reviewCount && shop.reviewCount > 0'),
+      content.includes('hasValidRating') && content.includes('ratingValue > 0'),
       'aggregateRating must only be rendered if real rating and reviewCount exist'
     );
 
     // Verify geo coordinates are conditional on verified coordinates
     assert.ok(
-      content.includes('shop.latitude && shop.longitude'),
+      content.includes('hasValidGeo'),
       'GeoCoordinates must only be rendered if latitude and longitude exist'
     );
+  });
+
+  // Test 6: Dynamic Product layout prevents canonical URL inheritance and generates Product schema
+  await t.test('6. app/shop/[id]/product/[productId]/layout.tsx isolates product canonical URLs and generates truthful Product schema', () => {
+    const productLayoutPath = path.join(FRONTEND_DIR, 'app', 'shop', '[id]', 'product', '[productId]', 'layout.tsx');
+    assert.ok(fs.existsSync(productLayoutPath), 'app/shop/[id]/product/[productId]/layout.tsx must exist');
+
+    const content = fs.readFileSync(productLayoutPath, 'utf8');
+
+    // Verify dynamic canonical URL includes product ID (does NOT inherit shop URL)
+    assert.ok(
+      content.includes('`/shop/${params.id}/product/${params.productId}`'),
+      'Product layout must declare distinct canonical URL /shop/${params.id}/product/${params.productId}'
+    );
+
+    // Verify OpenGraph and Twitter
+    assert.ok(content.includes('openGraph:'), 'Must configure openGraph metadata for product');
+    assert.ok(content.includes('twitter:'), 'Must configure twitter metadata for product');
+
+    // Verify Schema.org Product and Offer
+    assert.ok(content.includes("'@type': 'Product'"), 'Must specify Product schema type');
+    assert.ok(content.includes("'@type': 'Offer'"), 'Must specify Offer schema type');
+    assert.ok(content.includes("priceCurrency: 'INR'"), 'Must specify INR currency');
+    assert.ok(content.includes("seller: {"), 'Must link seller to Bakery schema');
   });
 });

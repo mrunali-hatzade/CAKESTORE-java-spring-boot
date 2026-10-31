@@ -229,8 +229,12 @@ public class OwnerStorefrontService {
     @Transactional
     public ShopStorefrontSettings updateStorefrontSettings(Long ownerId, ShopStorefrontSettingsRequest request) {
         Shop shop = shopAccessValidator.getValidShopForOwner(ownerId);
+        boolean isHomeBakery = shop.getBusinessType() == BusinessType.HOME_BAKERY;
         ShopStorefrontSettings settings = shopStorefrontSettingsRepository.findByShopId(shop.getId())
-                .orElseGet(() -> ShopStorefrontSettings.builder().shop(shop).build());
+                .orElseGet(() -> ShopStorefrontSettings.builder()
+                        .shop(shop)
+                        .hideStreetAddress(isHomeBakery)
+                        .build());
 
         if (request.getHeroBannerEnabled() != null) settings.setHeroBannerEnabled(request.getHeroBannerEnabled());
         if (request.getTopRatedEnabled() != null) settings.setTopRatedEnabled(request.getTopRatedEnabled());

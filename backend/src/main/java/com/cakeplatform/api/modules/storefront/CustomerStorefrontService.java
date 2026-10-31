@@ -429,7 +429,7 @@ public class CustomerStorefrontService {
         BusinessType bType = null;
         if (p.getBusinessType() != null) {
             try {
-                bType = BusinessType.valueOf(p.getBusinessType());
+                bType = BusinessType.fromString(p.getBusinessType());
             } catch (Exception ignored) {}
         }
         VerificationStatus vStatus = null;
@@ -455,7 +455,9 @@ public class CustomerStorefrontService {
         } else if (shopStorefrontSettingsRepository != null) {
             hideStreet = shopStorefrontSettingsRepository.findByShopId(p.getId())
                     .map(s -> Boolean.TRUE.equals(s.getHideStreetAddress()))
-                    .orElse(false);
+                    .orElse(bType == BusinessType.HOME_BAKERY);
+        } else {
+            hideStreet = (bType == BusinessType.HOME_BAKERY);
         }
         return StorefrontShopSummaryDTO.builder()
 
@@ -581,7 +583,10 @@ public class CustomerStorefrontService {
             ss = shopStorefrontSettingsRepository.findByShopId(shop.getId()).orElse(null);
             response.setStorefrontSettings(ss);
         }
-        if (ss != null && Boolean.TRUE.equals(ss.getHideStreetAddress())) {
+        boolean hideStreet = (ss != null)
+                ? Boolean.TRUE.equals(ss.getHideStreetAddress())
+                : (shop.getBusinessType() == com.cakeplatform.api.modules.shop.BusinessType.HOME_BAKERY);
+        if (hideStreet) {
             response.setAddress(null);
             response.setAddressLine1(null);
             response.setAddressLine2(null);

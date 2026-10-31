@@ -94,7 +94,7 @@ export default function OnboardingPage() {
 
   // Step 2: Bakery Identity
   const [businessName, setBusinessName] = useState('');
-  const [businessType, setBusinessType] = useState('HOME_BAKER');
+  const [businessType, setBusinessType] = useState('HOME_BAKERY');
   const [businessDescription, setBusinessDescription] = useState('');
   const [businessPhone, setBusinessPhone] = useState('');
 
@@ -627,10 +627,11 @@ export default function OnboardingPage() {
                 <Select
                   label="Bakery Business Type"
                   options={[
-                    { value: 'HOME_BAKER', label: '🏠 Home Baker / Artisan Kitchen' },
-                    { value: 'PASTRY_SHOP', label: '🏬 Pastry Boutique / Retail Shop' },
-                    { value: 'CUSTOM_CAKE_STUDIO', label: '🎂 Custom Cake Studio' },
-                    { value: 'COMMERCIAL_BAKERY', label: '🏭 Commercial Bakery' },
+                    { value: 'HOME_BAKERY', label: '🏠 Home Baker / Artisan Kitchen' },
+                    { value: 'BAKERY_SHOP', label: '🏬 Pastry Boutique / Retail Shop' },
+                    { value: 'CAKE_STUDIO', label: '🎂 Custom Cake Studio' },
+                    { value: 'ONLINE_CAKE_BUSINESS', label: '🏭 Commercial Bakery' },
+                    { value: 'OTHER', label: '✨ Other Specialty Bakery' },
                   ]}
                   value={businessType}
                   onChange={(e) => setBusinessType(e.target.value)}

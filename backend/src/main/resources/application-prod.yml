@@ -28,6 +28,13 @@ spring:
           ssl:
             enable: true
 
+server:
+  port: ${PORT:8080}
+  # ForwardedHeaderFilter enables request.getRemoteAddr() to reflect X-Forwarded-For client IP.
+  # Security Trust Boundary: Upstream reverse proxy (Nginx, Cloudflare, App Gateway) MUST strip/overwrite
+  # untrusted incoming X-Forwarded-For headers to prevent client IP spoofing.
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:framework}
+
 jwt:
   secret: ${JWT_SECRET}
   expiration: 86400000

@@ -69,10 +69,10 @@ export const Footer: React.FC = () => {
                 <Link href="/explore" className="hover:text-brand-plum transition-colors">All Indian Bakeries</Link>
               </li>
               <li>
-                <Link href="/explore?businessType=HOME_BAKER" className="hover:text-brand-plum transition-colors">Artisan Home Bakers</Link>
+                <Link href="/explore?businessType=HOME_BAKERY" className="hover:text-brand-plum transition-colors">Artisan Home Bakers</Link>
               </li>
               <li>
-                <Link href="/explore?businessType=CUSTOM_CAKE_STUDIO" className="hover:text-brand-plum transition-colors">Custom Cake Studios</Link>
+                <Link href="/explore?businessType=CAKE_STUDIO" className="hover:text-brand-plum transition-colors">Custom Cake Studios</Link>
               </li>
               <li>
                 <Link href="/how-it-works" className="hover:text-brand-plum transition-colors">How Ordering Works</Link>

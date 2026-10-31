@@ -22,6 +22,7 @@ import {
   Search,
   ShoppingBag,
   Receipt,
+  KeyRound,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
 import AdminNotificationBell from '@/components/admin/AdminNotificationBell';
@@ -88,6 +89,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
   const systemNavItems = [
     { label: 'Notifications', href: '/admin/notifications', icon: Bell },
     { label: 'Global Settings', href: '/admin/settings', icon: ShieldAlert },
+    { label: 'Admin Security', href: '/admin/security', icon: KeyRound },
   ];
 
   const handleLogout = () => {
@@ -263,9 +265,19 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
         {/* Super Admin Profile & Sign Out */}
         <div className="p-5 border-t border-slate-800/80 bg-slate-950/50 shrink-0 mt-auto">
           <div className="mb-3 px-1">
-            <p className="text-sm text-white font-semibold truncate" title={user?.fullName || 'Admin User'}>
-              {user?.fullName || 'Super Admin'}
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-white font-semibold truncate" title={user?.fullName || 'Admin User'}>
+                {user?.fullName || 'Super Admin'}
+              </p>
+              <Link
+                href="/admin/security"
+                className="text-[11px] text-indigo-400 hover:text-indigo-300 font-medium hover:underline flex items-center gap-1 shrink-0 ml-1"
+                title="Change Admin Password"
+              >
+                <KeyRound className="w-3 h-3" />
+                <span>Security</span>
+              </Link>
+            </div>
             <p className="text-[11px] text-indigo-400 font-semibold tracking-wider uppercase mt-0.5 truncate" title={user?.email || ''}>
               {user?.email || 'admin@cakestore.com'}
             </p>
@@ -313,7 +325,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
                 <span className="truncate sm:hidden">Search...</span>
               </div>
               <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono font-semibold bg-white border border-slate-200 rounded text-slate-400 shadow-sm shrink-0">
-                <span className="text-[10px]">⌘</span>K
+                <span className="text-[10px]">âŒ˜</span>K
               </kbd>
             </button>
           </div>

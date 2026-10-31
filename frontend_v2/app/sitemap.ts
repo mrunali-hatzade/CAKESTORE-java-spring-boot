@@ -61,31 +61,53 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  let dynamicRoutes: MetadataRoute.Sitemap = [];
+  const dynamicShopMap = new Map<number, MetadataRoute.Sitemap[number]>();
+  const PAGE_SIZE = 100;
+  const MAX_PAGES = 50; // Safety cap allowing up to 5,000 shops
+
   try {
-    const res = await fetch(`${apiUrl}/api/storefront/shops/search?size=50`, {
-      next: { revalidate: 3600 },
-    });
-    if (res.ok) {
+    let currentPage = 0;
+    let totalPages = 1;
+
+    while (currentPage < totalPages && currentPage < MAX_PAGES) {
+      const res = await fetch(
+        `${apiUrl}/api/storefront/shops/search?page=${currentPage}&size=${PAGE_SIZE}`,
+        {
+          next: { revalidate: 3600 },
+        }
+      );
+
+      if (!res.ok) break;
+
       const data = await res.json();
-      const shops = Array.isArray(data)
+      const shops: any[] = Array.isArray(data)
         ? data
         : Array.isArray(data?.content)
         ? data.content
         : [];
 
-      dynamicRoutes = shops
-        .filter((s: any) => s && s.id)
-        .map((shop: any) => ({
-          url: `${baseUrl}/shop/${shop.id}`,
-          lastModified: new Date(),
-          changeFrequency: 'weekly' as const,
-          priority: 0.8,
-        }));
+      for (const shop of shops) {
+        if (shop && shop.id && !dynamicShopMap.has(shop.id)) {
+          dynamicShopMap.set(shop.id, {
+            url: `${baseUrl}/shop/${shop.id}`,
+            lastModified: new Date(),
+            changeFrequency: 'weekly',
+            priority: 0.8,
+          });
+        }
+      }
+
+      if (typeof data?.totalPages === 'number') {
+        totalPages = data.totalPages;
+      } else {
+        break; // Unpaginated plain array response
+      }
+
+      currentPage++;
     }
   } catch {
     // If backend is unreachable during static build, static routes preserve sitemap validity
   }
 
-  return [...staticRoutes, ...dynamicRoutes];
+  return [...staticRoutes, ...Array.from(dynamicShopMap.values())];
 }

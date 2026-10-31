@@ -17,7 +17,6 @@ jobs:
     name: Build and Test
     runs-on: ubuntu-latest
 
-    
     services:
       postgres:
         image: postgres:16
@@ -52,6 +51,17 @@ jobs:
       - name: Backend tests
         working-directory: backend
         run: mvn clean verify
+
+      - name: Testcontainers PostgreSQL Integration Test
+        working-directory: backend
+        run: mvn test -Dtest=AdminProvisioningPostgresIntegrationTest
+
+      - name: Publish Test Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: surefire-test-reports
+          path: backend/target/surefire-reports/
 
       - name: Build Docker image
         run: docker build -t cakestore-api:${{ github.sha }} ./backend

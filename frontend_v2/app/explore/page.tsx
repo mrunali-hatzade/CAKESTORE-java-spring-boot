@@ -23,6 +23,16 @@ function parseValidPageSize(sizeParam: string | null, defaultSize = 12): number 
   return parsed;
 }
 
+function normalizeBusinessType(raw?: string | null): string | undefined {
+  if (!raw) return undefined;
+  const upper = raw.trim().toUpperCase().replaceAll('-', '_');
+  if (upper === 'HOME_BAKER') return 'HOME_BAKERY';
+  if (upper === 'PASTRY_SHOP') return 'BAKERY_SHOP';
+  if (upper === 'CUSTOM_CAKE_STUDIO') return 'CAKE_STUDIO';
+  if (upper === 'COMMERCIAL_BAKERY') return 'ONLINE_CAKE_BUSINESS';
+  return upper;
+}
+
 function parseValidPageIndex(pageParam: string | null): number {
   if (!pageParam) return 0;
   const trimmed = pageParam.trim();
@@ -47,7 +57,7 @@ function ExploreContent() {
   const initialLat = searchParams.get('lat') ? parseFloat(searchParams.get('lat')!) : undefined;
   const initialLng = searchParams.get('lng') ? parseFloat(searchParams.get('lng')!) : undefined;
   const initialRadius = searchParams.get('radius') ? parseFloat(searchParams.get('radius')!) : 10;
-  const initialType = searchParams.get('businessType') || undefined;
+  const initialType = normalizeBusinessType(searchParams.get('businessType'));
 
   const initialPage = parseValidPageIndex(searchParams.get('page'));
   const initialSize = parseValidPageSize(searchParams.get('size'));

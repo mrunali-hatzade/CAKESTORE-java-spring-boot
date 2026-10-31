@@ -145,7 +145,7 @@ The following test accounts are automatically provisioned by `AdminUserInitializ
 - **Feature:** Server-side duplicate detection and state preservation
 - **Prerequisites:** An existing registered account in database (e.g. `owner@sweetdelight.com` / `9876543210`).
 - **Exact Browser Actions:**
-  1. Navigate to `http://localhost:3001/onboarding`.
+  1. Navigate to `http://localhost:3001/onboarding`. 
   2. In Step 1, enter existing credentials:
      - Email: `owner@sweetdelight.com`
      - Mobile: `9876543210`
