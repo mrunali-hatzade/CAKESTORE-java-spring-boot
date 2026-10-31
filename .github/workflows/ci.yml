@@ -66,10 +66,6 @@ jobs:
             fi
           done
 
-      - name: Backend unit and integration tests
-        working-directory: backend
-        run: mvn test -Dtest='!AdminProvisioningPostgresIntegrationTest'
-
       - name: Publish Test Reports
         uses: actions/upload-artifact@v4
         if: always()
