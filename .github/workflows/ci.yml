@@ -53,36 +53,32 @@ jobs:
       - name: Testcontainers PostgreSQL Integration Test
         working-directory: backend
         run: |
-          mvn test -Dtest=AdminProvisioningPostgresIntegrationTest 2>&1 | tee maven-test.log || {
-            echo "### Testcontainers Integration Test Failed" >> $GITHUB_STEP_SUMMARY
-            echo '```text' >> $GITHUB_STEP_SUMMARY
-            tail -n 120 maven-test.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            for f in target/surefire-reports/*.txt; do
-              if [ -f "$f" ]; then
-                echo "#### File: $f" >> $GITHUB_STEP_SUMMARY
-                echo '```text' >> $GITHUB_STEP_SUMMARY
-                cat "$f" >> $GITHUB_STEP_SUMMARY
-                echo '```' >> $GITHUB_STEP_SUMMARY
-              fi
-            done
-            exit 1
-          }
-          echo "### Testcontainers Integration Test Passed" >> $GITHUB_STEP_SUMMARY
-          echo '```text' >> $GITHUB_STEP_SUMMARY
-          tail -n 50 maven-test.log >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          mvn test -Dtest=AdminProvisioningPostgresIntegrationTest 2>&1 | tee testcontainers.log
+          echo "=== SUREFIRE TXT OUTPUT ==="
+          for f in target/surefire-reports/*.txt; do
+            if [ -f "$f" ]; then
+              echo "--- $f ---"
+              cat "$f"
+              echo "### Report: $f" >> $GITHUB_STEP_SUMMARY
+              echo '```text' >> $GITHUB_STEP_SUMMARY
+              cat "$f" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+          done
 
       - name: Backend unit and integration tests
         working-directory: backend
-        run: mvn test -Dtest="!AdminProvisioningPostgresIntegrationTest"
+        run: mvn test -Dtest='!AdminProvisioningPostgresIntegrationTest'
 
       - name: Publish Test Reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: surefire-test-reports
-          path: backend/target/surefire-reports/
+          path: |
+            backend/target/surefire-reports/**
+            backend/testcontainers.log
+          if-no-files-found: warn
 
       - name: Build Docker image
         run: docker build -t cakestore-api:${{ github.sha }} ./backend
