@@ -350,13 +350,12 @@ public class AdminProvisioningPostgresIntegrationTest {
     void testExistingAdminsRefusalAgainstRealPostgres() {
         // Ensure at least one administrator exists in the database
         if (userRepository.countAllAdminsIncludingDeleted() == 0) {
-            User seedAdmin = User.builder()
-                    .email("existing.seed.admin@cakestore.local")
-                    .passwordHash(passwordEncoder.encode(STRONG_PASSWORD))
-                    .fullName("Pre-Existing Seed Admin")
-                    .role(UserRole.ADMIN)
-                    .status(UserStatus.ACTIVE)
-                    .build();
+            User seedAdmin = new User();
+            seedAdmin.setEmail("existing.seed.admin@cakestore.local");
+            seedAdmin.setPasswordHash(passwordEncoder.encode(STRONG_PASSWORD));
+            seedAdmin.setFullName("Pre-Existing Seed Admin");
+            seedAdmin.setRole(UserRole.ADMIN);
+            seedAdmin.setStatus(UserStatus.ACTIVE);
             userRepository.save(seedAdmin);
         }
 
