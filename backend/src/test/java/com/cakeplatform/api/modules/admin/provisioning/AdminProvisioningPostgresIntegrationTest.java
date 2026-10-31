@@ -1,10 +1,16 @@
 package com.cakeplatform.api.modules.admin.provisioning;
 
+import com.cakeplatform.api.modules.user.User;
 import com.cakeplatform.api.modules.user.UserRepository;
+import com.cakeplatform.api.modules.user.UserRole;
+import com.cakeplatform.api.modules.user.UserStatus;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -35,15 +41,17 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Isolated PostgreSQL Integration Test for Initial Admin Provisioning.
  *
- * Requirements enforced (AUTH-FIX-06.2):
+ * Requirements enforced (AUTH-FIX-06.2 / AUTH-FIX-06.3):
  * 1. Dedicated disposable PostgreSQL container managed exclusively via Testcontainers.
  * 2. Never connects to shared development (cake_platform), staging, or production databases.
  * 3. Never falls back to local PostgreSQL if Docker is unavailable (fails fast with explicit environment diagnostic).
  * 4. Verifies real database-level PostgreSQL advisory lock concurrency without in-memory mocks or proxies.
+ * 5. Ordered test execution ensures clean initial state before sequential admin existence tests.
  */
 @Testcontainers
 @SpringBootTest
 @ActiveProfiles("test")
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class AdminProvisioningPostgresIntegrationTest {
 
     @Container
@@ -144,6 +152,7 @@ public class AdminProvisioningPostgresIntegrationTest {
     }
 
     @Test
+    @Order(1)
     @DisplayName("1. Advisory Lock Blocking: Connection 2 blocks on PostgreSQL engine until Connection 1 commits")
     void testDualConnectionAdvisoryLockBlockingAndRelease() throws Exception {
         long lockKey = AdminProvisioningService.ADMIN_BOOTSTRAP_LOCK_KEY;
@@ -195,6 +204,7 @@ public class AdminProvisioningPostgresIntegrationTest {
     }
 
     @Test
+    @Order(2)
     @DisplayName("2. Rollback Release: Transaction rollback automatically releases PostgreSQL advisory lock")
     void testRollbackReleasesAdvisoryLock() throws Exception {
         long lockKey = AdminProvisioningService.ADMIN_BOOTSTRAP_LOCK_KEY;
@@ -239,6 +249,7 @@ public class AdminProvisioningPostgresIntegrationTest {
     }
 
     @Test
+    @Order(3)
     @DisplayName("3. Concurrent Provisioning Race: Real PostgreSQL advisory lock coordinates two independent services against clean container")
     void testTwoIndependentProvisioningServicesRace() throws Exception {
         // Step 1: Verify the clean container database initially contains strictly zero administrators
@@ -334,9 +345,21 @@ public class AdminProvisioningPostgresIntegrationTest {
     }
 
     @Test
+    @Order(4)
     @DisplayName("4. Existing Admin Guard: In an environment with existing administrators, bootstrap immediately refuses against PostgreSQL")
     void testExistingAdminsRefusalAgainstRealPostgres() {
-        // At this point, exactly 1 admin exists from Test 3
+        // Ensure at least one administrator exists in the database
+        if (userRepository.countAllAdminsIncludingDeleted() == 0) {
+            User seedAdmin = User.builder()
+                    .email("existing.seed.admin@cakestore.local")
+                    .passwordHash(passwordEncoder.encode(STRONG_PASSWORD))
+                    .fullName("Pre-Existing Seed Admin")
+                    .role(UserRole.ADMIN)
+                    .status(UserStatus.ACTIVE)
+                    .build();
+            userRepository.save(seedAdmin);
+        }
+
         AdminProvisioningService service = new AdminProvisioningService(userRepository, passwordEncoder);
         service.setDataSource(dataSource);
         service.setJdbcTemplate(jdbcTemplate);
