@@ -53,25 +53,25 @@ jobs:
       - name: Testcontainers PostgreSQL Integration Test
         working-directory: backend
         run: |
-          if mvn test -Dtest=AdminProvisioningPostgresIntegrationTest; then
-            TEST_STATUS="SUCCESS"
-          else
-            TEST_STATUS="FAILED"
-          fi
-          echo "### Testcontainers Integration Test Result: $TEST_STATUS" >> $GITHUB_STEP_SUMMARY
-          for f in target/surefire-reports/*.txt; do
-            if [ -f "$f" ]; then
-              echo "#### File: $f" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              cat "$f" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "=== $f ==="
-              cat "$f"
-            fi
-          done
-          if [ "$TEST_STATUS" = "FAILED" ]; then
+          mvn test -Dtest=AdminProvisioningPostgresIntegrationTest 2>&1 | tee maven-test.log || {
+            echo "### Testcontainers Integration Test Failed" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            tail -n 120 maven-test.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            for f in target/surefire-reports/*.txt; do
+              if [ -f "$f" ]; then
+                echo "#### File: $f" >> $GITHUB_STEP_SUMMARY
+                echo '```text' >> $GITHUB_STEP_SUMMARY
+                cat "$f" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+              fi
+            done
             exit 1
-          fi
+          }
+          echo "### Testcontainers Integration Test Passed" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          tail -n 50 maven-test.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Backend unit and integration tests
         working-directory: backend
