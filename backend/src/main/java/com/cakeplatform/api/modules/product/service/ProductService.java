@@ -108,8 +108,29 @@ public class ProductService {
         product.setAvailability(request.getAvailability() != null ? request.getAvailability() : true);
         product.setStatus("ACTIVE");
         product.setAllowEggChoice(Boolean.TRUE.equals(request.getAllowEggChoice()));
-        product.setEggPreferenceDefault(request.getEggPreferenceDefault() != null ? request.getEggPreferenceDefault() : "EGGLESS");
+
+        String eggPreferenceDefault = request.getEggPreferenceDefault();
+        if (eggPreferenceDefault == null && product.getEggPreferenceDefault() != null) {
+            eggPreferenceDefault = product.getEggPreferenceDefault();
+        } else if (eggPreferenceDefault == null) {
+            eggPreferenceDefault = "EGGLESS";
+        }
+        product.setEggPreferenceDefault(eggPreferenceDefault);
         product.setEgglessPriceDiff(request.getEgglessPriceDiff() != null ? request.getEgglessPriceDiff() : java.math.BigDecimal.ZERO);
+
+        // Classification Rule:
+        // 1. If isEggless is explicitly specified (true or false), honor the explicit setting.
+        // 2. Otherwise (omitted/null), classify as eggless only if default recipe is EGGLESS.
+        // allowEggChoice does NOT independently make a product eggless.
+        boolean eggless;
+        if (request.getIsEggless() != null) {
+            eggless = request.getIsEggless();
+        } else {
+            eggless = "EGGLESS".equalsIgnoreCase(eggPreferenceDefault);
+        }
+        product.setIsEggless(eggless);
+        product.setIsVegan(Boolean.TRUE.equals(request.getIsVegan()));
+        product.setIsGlutenFree(Boolean.TRUE.equals(request.getIsGlutenFree()));
 
         if (request.getCategoryId() != null) {
             com.cakeplatform.api.modules.product.ProductCategory category = categoryRepository.findByIdAndShopId(request.getCategoryId(), shop.getId())

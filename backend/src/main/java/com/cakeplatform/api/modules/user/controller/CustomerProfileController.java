@@ -93,4 +93,15 @@ public class CustomerProfileController {
         profileService.setDefaultAddress(userDetails.getId(), addressId);
         return ResponseEntity.ok(Map.of("success", true));
     }
+
+    @PatchMapping("/addresses/{addressId}/default")
+    public ResponseEntity<Map<String, Boolean>> setDefaultAddressPatch(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long addressId) {
+        if (userDetails == null || userDetails.getId() == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        profileService.setDefaultAddress(userDetails.getId(), addressId);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
 }

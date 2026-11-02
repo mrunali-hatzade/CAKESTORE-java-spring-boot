@@ -24,5 +24,5 @@ public interface ShopSummaryProjection {
     Long getTotalReviews();
     Double getDistanceKm();
     Boolean getHideStreetAddress();
+    String getTimezone();
 }
-

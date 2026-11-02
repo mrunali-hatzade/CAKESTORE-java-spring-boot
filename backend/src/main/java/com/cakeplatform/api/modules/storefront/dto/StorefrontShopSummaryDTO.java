@@ -36,4 +36,7 @@ public class StorefrontShopSummaryDTO {
     private Double averageRating;
     private Long totalReviews;
     private Boolean isPureVeg;
+    private Boolean isOpenNow;
+    private String openStatusText;
+    private String timezone;
 }

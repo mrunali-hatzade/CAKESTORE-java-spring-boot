@@ -26,6 +26,8 @@ export interface ShopDeliveryConfig {
   minOrderForFreeDelivery?: number | null;
   deliveryNotes?: string | null;
   deliveryEnabled?: boolean;
+  maxDeliveryRadiusKm?: number | null;
+  serviceablePincodes?: string | null;
 }
 
 export interface ShopStorefrontSettings {
@@ -118,6 +120,11 @@ export interface Shop {
   averageRating?: number;
   totalReviews?: number;
 
+  // Operating Hours & Open Status
+  isOpenNow?: boolean;
+  openStatusText?: string;
+  timezone?: string;
+
   // Storefront Configuration & Components
   banners?: ShopBanner[];
   businessHours?: ShopBusinessHours[];
@@ -142,6 +149,8 @@ export interface ShopSearchFilters {
   longitude?: number;
   radiusKm?: number;
   sortBy?: string;
+  openNow?: boolean;
+  dietary?: string[];
   page?: number;
   size?: number;
 }

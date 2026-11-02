@@ -58,6 +58,8 @@ export interface Product {
   category?: string;
   imageUrl?: string;
   isEggless: boolean;
+  isVegan?: boolean;
+  isGlutenFree?: boolean;
   allowEggChoice?: boolean;
   eggPreferenceDefault?: 'EGGLESS' | 'REGULAR' | string;
   egglessPriceDiff?: number;
@@ -89,6 +91,8 @@ export interface CreateProductRequest {
   category?: string;
   imageUrl?: string;
   isEggless?: boolean;
+  isVegan?: boolean;
+  isGlutenFree?: boolean;
   allowEggChoice?: boolean;
   eggPreferenceDefault?: string;
   egglessPriceDiff?: number;

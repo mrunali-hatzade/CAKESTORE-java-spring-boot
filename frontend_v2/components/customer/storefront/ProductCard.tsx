@@ -158,30 +158,44 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, shop, onSelec
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
-          {/* Top-Left: VEG / Non-Veg Indicator Badge */}
-          {(() => {
-            const hasEggChoice = Boolean(product.allowEggChoice);
-            const isVeg = hasEggChoice
-              ? (product.eggPreferenceDefault === 'EGGLESS')
-              : (product.isEggless ?? (product.eggPreferenceDefault === 'EGGLESS'));
-            const badgeLabel = hasEggChoice
-              ? 'EGGLESS OPTION'
-              : (isVeg ? (shop?.isPureVeg ? '100% VEG' : 'VEG') : 'NON-VEG');
-            const isGreen = hasEggChoice || isVeg;
+          {/* Top-Left: Dietary Badges Container */}
+          <div className="absolute top-3 left-3 flex flex-col gap-1 items-start z-10">
+            {(() => {
+              const hasEggChoice = Boolean(product.allowEggChoice);
+              const isVeg = hasEggChoice
+                ? (product.eggPreferenceDefault === 'EGGLESS')
+                : (product.isEggless ?? (product.eggPreferenceDefault === 'EGGLESS'));
+              const badgeLabel = hasEggChoice
+                ? 'EGGLESS OPTION'
+                : (isVeg ? (shop?.isPureVeg ? '100% VEG' : 'VEG') : 'NON-VEG');
+              const isGreen = hasEggChoice || isVeg;
 
-            return (
-              <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md shadow-xs text-[10px] font-bold z-10 border border-brand-border/40">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    isGreen ? 'bg-emerald-600 ring-2 ring-emerald-600/20' : 'bg-amber-600 ring-2 ring-amber-600/20'
-                  }`}
-                />
-                <span className={isGreen ? 'text-emerald-800' : 'text-amber-900'}>
-                  {badgeLabel}
-                </span>
-              </div>
-            );
-          })()}
+              return (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/95 backdrop-blur-md shadow-xs text-[10px] font-bold border border-brand-border/40">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isGreen ? 'bg-emerald-600 ring-2 ring-emerald-600/20' : 'bg-amber-600 ring-2 ring-amber-600/20'
+                    }`}
+                  />
+                  <span className={isGreen ? 'text-emerald-800' : 'text-amber-900'}>
+                    {badgeLabel}
+                  </span>
+                </div>
+              );
+            })()}
+
+            {product.isVegan && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50/95 border border-green-200 text-green-800 text-[10px] font-bold shadow-2xs backdrop-blur-xs">
+                🌱 Vegan
+              </span>
+            )}
+
+            {product.isGlutenFree && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50/95 border border-amber-200 text-amber-800 text-[10px] font-bold shadow-2xs backdrop-blur-xs">
+                🌾 Gluten-Free
+              </span>
+            )}
+          </div>
 
           {/* Out of Stock Overlay */}
           {!isAvailable && (

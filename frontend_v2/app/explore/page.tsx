@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, Suspense, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
-import { X, SlidersHorizontal, MapPin } from 'lucide-react';
+import { X, SlidersHorizontal, MapPin, Clock, Map as MapIcon, LayoutGrid } from 'lucide-react';
 import { storefrontApi } from '@/lib/api/storefront';
 import { Shop } from '@/types/shop';
 import { Navbar } from '@/components/common/Navbar';
@@ -12,6 +13,20 @@ import { BakeryGrid } from '@/components/customer/marketplace/BakeryGrid';
 import { CategoryPills, CategoryOption } from '@/components/customer/marketplace/CategoryPills';
 import { AdvancedLocationFilter, LocationFilterValues } from '@/components/customer/marketplace/AdvancedLocationFilter';
 import { TopRatedSection } from '@/components/customer/marketplace/TopRatedSection';
+import { DietaryFilter } from '@/components/customer/marketplace/DietaryFilter';
+
+const BakeryMap = dynamic(
+  () => import('@/components/customer/marketplace/BakeryMap').then((mod) => mod.BakeryMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[520px] w-full bg-brand-cream/40 rounded-3xl animate-pulse flex flex-col items-center justify-center text-xs text-brand-muted border border-brand-border/60">
+        <MapPin className="w-8 h-8 text-brand-plum/40 animate-bounce mb-2" />
+        <span>Loading interactive map...</span>
+      </div>
+    ),
+  }
+);
 
 function parseValidPageSize(sizeParam: string | null, defaultSize = 12): number {
   if (!sizeParam) return defaultSize;
@@ -62,9 +77,19 @@ function ExploreContent() {
   const initialPage = parseValidPageIndex(searchParams.get('page'));
   const initialSize = parseValidPageSize(searchParams.get('size'));
 
+  const initialOpenNow = searchParams.get('openNow') === 'true';
+  const initialDietary = searchParams.get('dietary')
+    ? searchParams.get('dietary')!.split(',').filter(Boolean)
+    : [];
+
   const [shops, setShops] = useState<Shop[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Map & View Mode State
+  const [viewMode, setViewMode] = useState<'grid' | 'split'>('grid');
+  const [selectedShopId, setSelectedShopId] = useState<number | null>(null);
+  const [hoveredShopId, setHoveredShopId] = useState<number | null>(null);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(initialPage);
@@ -72,6 +97,8 @@ function ExploreContent() {
   const [totalPages, setTotalPages] = useState<number>(1);
   const [totalElements, setTotalElements] = useState<number>(0);
 
+  const [openNow, setOpenNow] = useState<boolean>(initialOpenNow);
+  const [selectedDietary, setSelectedDietary] = useState<string[]>(initialDietary);
   const [activeCategory, setActiveCategory] = useState<string>(initialType || 'ALL');
   const [activeBusinessType, setActiveBusinessType] = useState<string | undefined>(initialType);
   const [searchQuery, setSearchQuery] = useState<string>(initialSearch);
@@ -111,11 +138,16 @@ function ExploreContent() {
       } else {
         params.delete('size');
       }
+      if (selectedDietary.length > 0) {
+        params.set('dietary', selectedDietary.join(','));
+      } else {
+        params.delete('dietary');
+      }
       const query = params.toString();
       const targetUrl = query ? `${pathname}?${query}` : pathname;
       router.push(targetUrl, { scroll: false });
     },
-    [searchParams, pathname, router, pageSize]
+    [searchParams, pathname, router, pageSize, selectedDietary]
   );
 
   // Sync state when browser back/forward buttons change search params
@@ -125,7 +157,50 @@ function ExploreContent() {
 
     const validSize = parseValidPageSize(searchParams.get('size'));
     setPageSize((prev) => (prev !== validSize ? validSize : prev));
+
+    const validOpenNow = searchParams.get('openNow') === 'true';
+    setOpenNow((prev) => (prev !== validOpenNow ? validOpenNow : prev));
+
+    const dietaryParam = searchParams.get('dietary');
+    const validDietary = dietaryParam ? dietaryParam.split(',').filter(Boolean) : [];
+    setSelectedDietary((prev) => {
+      const prevKey = prev.slice().sort().join(',');
+      const nextKey = validDietary.slice().sort().join(',');
+      return prevKey !== nextKey ? validDietary : prev;
+    });
   }, [searchParams]);
+
+  const handleDietaryChange = useCallback(
+    (newDietary: string[]) => {
+      setSelectedDietary(newDietary);
+      setCurrentPage(0);
+      const params = new URLSearchParams(searchParams.toString());
+      if (newDietary.length > 0) {
+        params.set('dietary', newDietary.join(','));
+      } else {
+        params.delete('dietary');
+      }
+      params.delete('page');
+      const query = params.toString();
+      router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [searchParams, pathname, router]
+  );
+
+  const handleToggleOpenNow = useCallback(() => {
+    const next = !openNow;
+    setOpenNow(next);
+    setCurrentPage(0);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next) {
+      params.set('openNow', 'true');
+    } else {
+      params.delete('openNow');
+    }
+    params.delete('page');
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [openNow, searchParams, pathname, router]);
 
   const handlePageChange = useCallback(
     (newPage: number) => {
@@ -171,6 +246,8 @@ function ExploreContent() {
         radiusKm: geoParams.radiusKm,
         businessType: activeBusinessType,
         sortBy: sortBy === 'default' ? undefined : sortBy,
+        openNow: openNow ? true : undefined,
+        dietary: selectedDietary.length > 0 ? selectedDietary : undefined,
         page: currentPage,
         size: pageSize,
       });
@@ -215,6 +292,8 @@ function ExploreContent() {
     geoParams,
     activeBusinessType,
     sortBy,
+    openNow,
+    selectedDietary,
     currentPage,
     pageSize,
     updatePaginationUrl,
@@ -237,6 +316,7 @@ function ExploreContent() {
         radiusKm: geoParams.radiusKm,
         businessType: activeBusinessType,
         sortBy: 'rating',
+        dietary: selectedDietary.length > 0 ? selectedDietary : undefined,
         size: 4,
       });
       setTopRatedShops(data || []);
@@ -245,7 +325,7 @@ function ExploreContent() {
     } finally {
       setIsTopRatedLoading(false);
     }
-  }, [searchQuery, locationQuery, locationFilters, geoParams, activeBusinessType]);
+  }, [searchQuery, locationQuery, locationFilters, geoParams, activeBusinessType, selectedDietary]);
 
   useEffect(() => {
     fetchShops();
@@ -318,9 +398,28 @@ function ExploreContent() {
     setGeoParams({});
     setLocationFilters({});
     setSortBy('default');
+    setOpenNow(false);
+    setSelectedDietary([]);
+    setSelectedShopId(null);
     setCurrentPage(0);
-    updatePaginationUrl(0, pageSize);
-  }, [pageSize, updatePaginationUrl]);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('dietary');
+    params.delete('search');
+    params.delete('location');
+    params.delete('city');
+    params.delete('state');
+    params.delete('district');
+    params.delete('area');
+    params.delete('pincode');
+    params.delete('lat');
+    params.delete('lng');
+    params.delete('radius');
+    params.delete('businessType');
+    params.delete('openNow');
+    params.delete('page');
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [searchParams, pathname, router]);
 
   const POPULAR_CITIES = ['Pune', 'Mumbai', 'Bengaluru'] as const;
 
@@ -413,17 +512,58 @@ function ExploreContent() {
       />
 
       {/* Category Pills */}
-      <div className="flex justify-center mb-6">
+      <div className="flex justify-center mb-4">
         <CategoryPills
           activeCategory={activeCategory}
           onSelectCategory={handleSelectCategory}
         />
       </div>
 
+      {/* Dietary Filters */}
+      <div className="flex justify-center mb-6">
+        <DietaryFilter
+          selected={selectedDietary}
+          onChange={handleDietaryChange}
+        />
+      </div>
+
       {/* Active Filter Ribbon */}
-      {(searchQuery || locationQuery || activeCategory !== 'ALL') && (
+      {(searchQuery || locationQuery || activeCategory !== 'ALL' || openNow || selectedDietary.length > 0) && (
         <div className="flex flex-wrap items-center justify-center gap-2 mb-8 animate-in fade-in duration-200">
           <span className="text-xs font-semibold text-brand-muted">Active Filters:</span>
+          {openNow && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-medium shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <Clock className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Open Now</span>
+              <button
+                onClick={handleToggleOpenNow}
+                className="text-emerald-700 hover:text-emerald-900 cursor-pointer"
+                aria-label="Remove Open Now filter"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+          {selectedDietary.map((pref) => {
+            const label = pref.toLowerCase().replace(/_/g, ' ');
+            const capitalized = label.charAt(0).toUpperCase() + label.slice(1);
+            return (
+              <span
+                key={pref}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-medium shadow-2xs"
+              >
+                <span>{capitalized}</span>
+                <button
+                  onClick={() => handleDietaryChange(selectedDietary.filter((d) => d !== pref))}
+                  className="text-emerald-700 hover:text-emerald-900 cursor-pointer"
+                  aria-label={`Remove ${pref} filter`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            );
+          })}
           {searchQuery && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-brand-border text-xs text-brand-espresso shadow-2xs">
               <span>Keyword: &quot;{searchQuery}&quot;</span>
@@ -526,28 +666,131 @@ function ExploreContent() {
         }
       />
 
-      {/* Grid */}
-      <BakeryGrid
-        shops={shops}
-        isLoading={isLoading}
-        error={error}
-        onRetry={fetchShops}
-        onClearFilters={handleClearFilters}
-        sortBy={sortBy}
-        onSortChange={handleSortChange}
-        title={getTitle()}
-        subtitle={
-          locationQuery
-            ? `Showing verified kitchens delivering freshly baked celebration cakes in ${locationQuery}`
-            : 'Connect directly with certified creators for custom quotes and order delivery across India'
-        }
-        currentPage={currentPage}
-        totalPages={totalPages}
-        totalElements={totalElements}
-        pageSize={pageSize}
-        onPageChange={handlePageChange}
-        onPageSizeChange={handlePageSizeChange}
-      />
+      {/* View & Availability Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6 bg-white/70 backdrop-blur-xs p-3 sm:px-4 sm:py-3 rounded-2xl border border-brand-border/60 shadow-2xs">
+        {/* Left: Open Now Quick Toggle */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleToggleOpenNow}
+            aria-pressed={openNow}
+            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
+              openNow
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                : 'bg-white text-brand-espresso border-neutral-200 hover:border-emerald-300 hover:bg-emerald-50/50'
+            }`}
+          >
+            <Clock className={`w-3.5 h-3.5 ${openNow ? 'text-white' : 'text-emerald-600'}`} />
+            <span>Open Now</span>
+            {openNow && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+          </button>
+          <span className="text-xs text-brand-muted hidden sm:inline">
+            {openNow ? 'Showing currently open bakeries' : 'Filter by operating hours'}
+          </span>
+        </div>
+
+        {/* Right: View Mode Toggle (Grid vs Split Map/Grid) */}
+        <div className="flex items-center gap-1.5 bg-brand-cream/60 p-1 rounded-xl border border-brand-border/50">
+          <button
+            type="button"
+            onClick={() => setViewMode('grid')}
+            aria-pressed={viewMode === 'grid'}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+              viewMode === 'grid'
+                ? 'bg-white text-brand-plum font-bold shadow-2xs'
+                : 'text-brand-muted hover:text-brand-espresso'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Grid</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('split')}
+            aria-pressed={viewMode === 'split'}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+              viewMode === 'split'
+                ? 'bg-white text-brand-plum font-bold shadow-2xs'
+                : 'text-brand-muted hover:text-brand-espresso'
+            }`}
+          >
+            <MapIcon className="w-3.5 h-3.5" />
+            <span>Map & List</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Results View */}
+      {viewMode === 'split' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <div className="lg:col-span-7 space-y-6">
+            <BakeryGrid
+              shops={shops}
+              isLoading={isLoading}
+              error={error}
+              onRetry={fetchShops}
+              onClearFilters={handleClearFilters}
+              sortBy={sortBy}
+              onSortChange={handleSortChange}
+              title={getTitle()}
+              subtitle={
+                locationQuery
+                  ? `Showing verified kitchens delivering freshly baked celebration cakes in ${locationQuery}`
+                  : 'Connect directly with certified creators for custom quotes and order delivery across India'
+              }
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalElements={totalElements}
+              pageSize={pageSize}
+              onPageChange={handlePageChange}
+              onPageSizeChange={handlePageSizeChange}
+              columns={2}
+              selectedShopId={selectedShopId}
+              onSelectShop={(shop) => setSelectedShopId(shop ? shop.id : null)}
+              hoveredShopId={hoveredShopId}
+              onHoverShop={setHoveredShopId}
+            />
+          </div>
+          <div className="lg:col-span-5 sticky top-24">
+            <div className="bg-white rounded-3xl p-3 border border-brand-border/70 shadow-soft">
+              <BakeryMap
+                shops={shops}
+                selectedShopId={selectedShopId}
+                onSelectShop={(shop) => setSelectedShopId(shop ? shop.id : null)}
+                hoveredShopId={hoveredShopId}
+                className="h-[600px] w-full rounded-2xl"
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <BakeryGrid
+          shops={shops}
+          isLoading={isLoading}
+          error={error}
+          onRetry={fetchShops}
+          onClearFilters={handleClearFilters}
+          sortBy={sortBy}
+          onSortChange={handleSortChange}
+          title={getTitle()}
+          subtitle={
+            locationQuery
+              ? `Showing verified kitchens delivering freshly baked celebration cakes in ${locationQuery}`
+              : 'Connect directly with certified creators for custom quotes and order delivery across India'
+          }
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalElements={totalElements}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
+          onPageSizeChange={handlePageSizeChange}
+          columns={3}
+          selectedShopId={selectedShopId}
+          onSelectShop={(shop) => setSelectedShopId(shop ? shop.id : null)}
+          hoveredShopId={hoveredShopId}
+          onHoverShop={setHoveredShopId}
+        />
+      )}
     </main>
   );
 }

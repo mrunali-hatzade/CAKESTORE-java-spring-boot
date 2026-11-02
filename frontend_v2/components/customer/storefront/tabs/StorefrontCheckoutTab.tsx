@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ShoppingBag,
+  PackageCheck,
   CheckCircle2,
   Calendar,
   MapPin,
@@ -25,6 +26,11 @@ import {
   X,
   Loader2,
   ExternalLink,
+  Plus,
+  Check,
+  Home,
+  Building2,
+  Briefcase,
 } from 'lucide-react';
 import { Shop } from '@/types/shop';
 import { DeliverySlot } from '@/types/deliverySlot';
@@ -43,7 +49,8 @@ import { paymentsService } from '@/lib/services/payments';
 import { ShopDeliveryConfig } from '@/types/shop';
 import { useCustomerAuth } from '@/lib/auth/CustomerAuthContext';
 import { Modal } from '@/components/ui/Modal';
-import { customerProfileApi, CustomerAddress, CustomerProfile } from '@/lib/api/customerProfile';
+import { CustomerOrderLookupModal } from '@/components/customer/common/CustomerOrderLookupModal';
+import { customerProfileApi, customerAddressApi, CustomerAddress, CustomerProfile } from '@/lib/api/customerProfile';
 
 interface StorefrontCheckoutTabProps {
   shop: Shop;
@@ -139,6 +146,27 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [deliveryPincode, setDeliveryPincode] = useState('');
+  const [isAddAddressModalOpen, setIsAddAddressModalOpen] = useState(false);
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
+  const [addressEligibility, setAddressEligibility] = useState<{
+    checked: boolean;
+    canDeliver: boolean;
+    rejectionReason?: string;
+  }>({ checked: false, canDeliver: true });
+  const [newAddressForm, setNewAddressForm] = useState({
+    recipientName: '',
+    recipientPhone: '',
+    addressLine1: '',
+    addressLine2: '',
+    landmark: '',
+    city: '',
+    state: '',
+    pincode: '',
+    addressType: 'HOME' as 'HOME' | 'WORK' | 'OTHER',
+    saveToProfile: true,
+    isDefault: false,
+  });
   const [deliveryDate, setDeliveryDate] = useState('');
   const [selectedSlotId, setSelectedSlotId] = useState<number | undefined>(undefined);
   const [timeSelectionMode, setTimeSelectionMode] = useState<'SLOT' | 'CUSTOM'>('SLOT');
@@ -165,6 +193,7 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
   const [isDownloadingInvoice, setIsDownloadingInvoice] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmedOrder, setConfirmedOrder] = useState<Order | null>(null);
+  const [isMyOrdersModalOpen, setIsMyOrdersModalOpen] = useState(false);
   // Always fetch the latest delivery config fresh from the API when checkout loads
   const [liveDeliveryConfig, setLiveDeliveryConfig] = useState<ShopDeliveryConfig | null>(
     shop.deliveryConfig || null
@@ -270,12 +299,25 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
           const addrs = await customerProfileApi.getAddresses(customerAuth.token!);
           setSavedAddresses(addrs);
           
-          const defaultAddr = addrs.find(a => a.default);
+          const defaultAddr = addrs.find(a => a.default || a.isDefault);
           if (defaultAddr && !deliveryAddress) {
             setSelectedAddressId(defaultAddr.id);
-            setDeliveryAddress(defaultAddr.deliveryAddress);
-            if (defaultAddr.recipientName && !customerName) setCustomerName(defaultAddr.recipientName);
-            if (defaultAddr.recipientPhone && !customerPhone) setCustomerPhone(defaultAddr.recipientPhone);
+            const fullAddr = defaultAddr.formattedAddress || defaultAddr.deliveryAddress || [
+              defaultAddr.addressLine1,
+              defaultAddr.addressLine2,
+              defaultAddr.landmark,
+              defaultAddr.city,
+              defaultAddr.state,
+              defaultAddr.pincode
+            ].filter(Boolean).join(', ');
+            setDeliveryAddress(fullAddr);
+            if (defaultAddr.pincode) setDeliveryPincode(defaultAddr.pincode);
+            if ((defaultAddr.recipientName || defaultAddr.fullName) && !customerName) {
+              setCustomerName(defaultAddr.recipientName || defaultAddr.fullName || '');
+            }
+            if ((defaultAddr.recipientPhone || defaultAddr.mobileNumber) && !customerPhone) {
+              setCustomerPhone(defaultAddr.recipientPhone || defaultAddr.mobileNumber || '');
+            }
           }
         } catch (err) {
           console.error("Failed to fetch customer profile data", err);
@@ -289,11 +331,183 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerAuth.isAuthenticated, customerAuth.token]);
 
-  const handleSelectSavedAddress = (addr: CustomerAddress) => {
+  const handleSelectSavedAddress = async (addr: CustomerAddress) => {
     setSelectedAddressId(addr.id);
-    setDeliveryAddress(addr.deliveryAddress);
-    setCustomerName(addr.recipientName);
-    setCustomerPhone(addr.recipientPhone);
+    const fullAddr = addr.formattedAddress || addr.deliveryAddress || [
+      addr.addressLine1,
+      addr.addressLine2,
+      addr.landmark,
+      addr.city,
+      addr.state,
+      addr.pincode
+    ].filter(Boolean).join(', ');
+    setDeliveryAddress(fullAddr);
+    if (addr.pincode) {
+      setDeliveryPincode(addr.pincode);
+    }
+    const name = addr.recipientName || addr.fullName || '';
+    if (name) setCustomerName(name);
+    const phone = addr.recipientPhone || addr.mobileNumber || '';
+    if (phone) setCustomerPhone(phone);
+
+    // Validate delivery eligibility against authoritative quote
+    if (shop?.id && effectiveFulfillmentMethod === 'HOME_DELIVERY') {
+      try {
+        const quote = await storefrontApi.calculateQuote(shop.id, {
+          fulfillmentMethod: 'HOME_DELIVERY',
+          couponCode: appliedCoupon?.code || undefined,
+          deliveryAddress: fullAddr,
+          deliveryPincode: addr.pincode || undefined,
+          deliveryLatitude: addr.latitude || undefined,
+          deliveryLongitude: addr.longitude || undefined,
+          items: items.map((i) => ({
+            productId: i.productId,
+            quantity: i.quantity,
+            variantId: i.variantId,
+            addonIds: i.addonIds && i.addonIds.length > 0 ? i.addonIds : undefined,
+          })),
+        });
+        if (quote) {
+          setAddressEligibility({
+            checked: true,
+            canDeliver: quote.canDeliver !== false,
+            rejectionReason: quote.rejectionReason || undefined,
+          });
+        }
+      } catch {
+        // ignore background quote check error
+      }
+    }
+  };
+
+  const handleSaveNewAddress = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (
+      !newAddressForm.recipientName.trim() ||
+      !newAddressForm.recipientPhone.trim() ||
+      !newAddressForm.addressLine1.trim() ||
+      !newAddressForm.city.trim() ||
+      !newAddressForm.pincode.trim()
+    ) {
+      toast.error('Please fill in recipient name, phone, address line 1, city, and PIN code.');
+      return;
+    }
+    if (!/^[1-9][0-9]{5}$/.test(newAddressForm.pincode.trim())) {
+      toast.error('Please enter a valid 6-digit Indian PIN code (e.g. 560001).');
+      return;
+    }
+    const cleanRecipientPhone = newAddressForm.recipientPhone.trim().replace(/^0+/, '');
+    if (!cleanRecipientPhone || !/^\+?[1-9]\d{9,14}$/.test(cleanRecipientPhone)) {
+      toast.error('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    const composedAddress = [
+      newAddressForm.addressLine1.trim(),
+      newAddressForm.addressLine2.trim() || null,
+      newAddressForm.landmark.trim() ? `Near ${newAddressForm.landmark.trim()}` : null,
+      newAddressForm.city.trim(),
+      newAddressForm.state.trim() || null,
+      newAddressForm.pincode.trim(),
+    ].filter(Boolean).join(', ');
+
+    if (customerAuth.isAuthenticated && customerAuth.token && newAddressForm.saveToProfile) {
+      setIsSavingAddress(true);
+      try {
+        const saved = await customerAddressApi.addAddress({
+          fullName: newAddressForm.recipientName.trim(),
+          recipientName: newAddressForm.recipientName.trim(),
+          mobileNumber: cleanRecipientPhone,
+          recipientPhone: cleanRecipientPhone,
+          addressLine1: newAddressForm.addressLine1.trim(),
+          addressLine2: newAddressForm.addressLine2.trim() || undefined,
+          landmark: newAddressForm.landmark.trim() || undefined,
+          city: newAddressForm.city.trim(),
+          state: newAddressForm.state.trim() || undefined,
+          pincode: newAddressForm.pincode.trim(),
+          addressType: newAddressForm.addressType,
+          label: newAddressForm.addressType === 'HOME' ? 'Home' : newAddressForm.addressType === 'WORK' ? 'Work' : 'Other',
+          deliveryAddress: composedAddress,
+          default: newAddressForm.isDefault,
+          isDefault: newAddressForm.isDefault,
+        }, customerAuth.token);
+
+        toast.success('Address saved successfully!');
+        const updatedAddrs = await customerAddressApi.getAddresses(customerAuth.token);
+        setSavedAddresses(updatedAddrs);
+        setSelectedAddressId(saved.id);
+        const fullAddr = saved.formattedAddress || saved.deliveryAddress || composedAddress;
+        setDeliveryAddress(fullAddr);
+        setDeliveryPincode(saved.pincode || newAddressForm.pincode.trim());
+        setCustomerName(saved.recipientName || newAddressForm.recipientName.trim());
+        setCustomerPhone(cleanRecipientPhone);
+        setIsAddAddressModalOpen(false);
+
+        if (shop?.id && effectiveFulfillmentMethod === 'HOME_DELIVERY') {
+          try {
+            const quote = await storefrontApi.calculateQuote(shop.id, {
+              fulfillmentMethod: 'HOME_DELIVERY',
+              couponCode: appliedCoupon?.code || undefined,
+              deliveryAddress: fullAddr,
+              deliveryPincode: saved.pincode || newAddressForm.pincode.trim(),
+              items: items.map((i) => ({
+                productId: i.productId,
+                quantity: i.quantity,
+                variantId: i.variantId,
+                addonIds: i.addonIds && i.addonIds.length > 0 ? i.addonIds : undefined,
+              })),
+            });
+            if (quote) {
+              setAddressEligibility({
+                checked: true,
+                canDeliver: quote.canDeliver !== false,
+                rejectionReason: quote.rejectionReason || undefined,
+              });
+            }
+          } catch {
+            // ignore
+          }
+        }
+      } catch (err: any) {
+        toast.error(err.response?.data?.message || err.message || 'Failed to save address');
+      } finally {
+        setIsSavingAddress(false);
+      }
+    } else {
+      setSelectedAddressId(null);
+      setDeliveryAddress(composedAddress);
+      setDeliveryPincode(newAddressForm.pincode.trim());
+      setCustomerName(newAddressForm.recipientName.trim());
+      setCustomerPhone(cleanRecipientPhone);
+      setIsAddAddressModalOpen(false);
+      toast.success('Delivery address set for this order');
+
+      if (shop?.id && effectiveFulfillmentMethod === 'HOME_DELIVERY') {
+        try {
+          const quote = await storefrontApi.calculateQuote(shop.id, {
+            fulfillmentMethod: 'HOME_DELIVERY',
+            couponCode: appliedCoupon?.code || undefined,
+            deliveryAddress: composedAddress,
+            deliveryPincode: newAddressForm.pincode.trim(),
+            items: items.map((i) => ({
+              productId: i.productId,
+              quantity: i.quantity,
+              variantId: i.variantId,
+              addonIds: i.addonIds && i.addonIds.length > 0 ? i.addonIds : undefined,
+            })),
+          });
+          if (quote) {
+            setAddressEligibility({
+              checked: true,
+              canDeliver: quote.canDeliver !== false,
+              rejectionReason: quote.rejectionReason || undefined,
+            });
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
   };
 
   const applicableSlots = useMemo<DeliverySlot[]>(() => {
@@ -458,6 +672,8 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
       const quote = await storefrontApi.calculateQuote(shop.id, {
         fulfillmentMethod: effectiveFulfillmentMethod,
         couponCode: appliedCoupon?.code || undefined,
+        deliveryAddress: enrichedDeliveryAddress,
+        deliveryPincode: deliveryPincode.trim() || undefined,
         items: items.map((i) => ({
           productId: i.productId,
           quantity: i.quantity,
@@ -465,6 +681,11 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
           addonIds: i.addonIds && i.addonIds.length > 0 ? i.addonIds : undefined,
         })),
       });
+
+      if (quote && quote.canDeliver === false && effectiveFulfillmentMethod === 'HOME_DELIVERY') {
+        setError(quote.rejectionReason || "This address is outside this bakery's delivery area. You can choose store pickup if available.");
+        return;
+      }
 
       if (quote && (quote.finalTotal !== finalTotal || quote.deliveryFee !== deliveryCharge)) {
         setPriceMismatchModal({
@@ -593,6 +814,7 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
         customerPhone: cleanPhone,
         paymentMethod: backendPaymentMethod,
         deliveryAddress: enrichedDeliveryAddress,
+        deliveryPincode: deliveryPincode.trim() || undefined,
         deliveryDate,
         deliverySlotId: finalSlotId,
         specialInstructions: enrichedInstructions,
@@ -881,6 +1103,17 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
               <span>Download Invoice</span>
             </Button>
 
+            {customerAuth.isAuthenticated && (
+              <button
+                type="button"
+                onClick={() => setIsMyOrdersModalOpen(true)}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-brand-blush/60 hover:bg-brand-blush text-brand-plum text-xs font-bold transition-all border border-brand-plum/20"
+              >
+                <PackageCheck className="w-4 h-4" />
+                <span>View All My Orders</span>
+              </button>
+            )}
+
             <button
               onClick={() => onNavigateTab('track')}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-2xl bg-brand-plum hover:bg-brand-plum-hover text-white text-xs font-bold transition-all shadow-xs"
@@ -889,8 +1122,15 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
-        </div>
+          {isMyOrdersModalOpen && (
+          <CustomerOrderLookupModal
+            isOpen={isMyOrdersModalOpen}
+            onClose={() => setIsMyOrdersModalOpen(false)}
+            initialTab="PHONE"
+          />
+        )}
       </div>
+    </div>
     );
   }
 
@@ -1111,51 +1351,160 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
                 </div>
               </div>
             ) : (
-              <>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-brand-plum" />
+                    <span className="text-xs font-bold text-brand-espresso">Delivery Address</span>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="text-xs h-7 px-2.5 rounded-xl border-brand-plum text-brand-plum hover:bg-brand-plum hover:text-white"
+                    onClick={() => {
+                      setNewAddressForm({
+                        recipientName: customerName || '',
+                        recipientPhone: customerPhone || '',
+                        addressLine1: '',
+                        addressLine2: '',
+                        landmark: '',
+                        city: shop.city || '',
+                        state: '',
+                        pincode: '',
+                        addressType: 'HOME',
+                        saveToProfile: customerAuth.isAuthenticated,
+                        isDefault: savedAddresses.length === 0,
+                      });
+                      setIsAddAddressModalOpen(true);
+                    }}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1" />
+                    Add New Address
+                  </Button>
+                </div>
+
                 {savedAddresses.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-sm font-medium text-brand-text mb-2">Saved Addresses</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                      {savedAddresses.map(addr => (
-                        <div 
-                          key={addr.id} 
-                          onClick={() => handleSelectSavedAddress(addr)}
-                          className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                            selectedAddressId === addr.id 
-                              ? 'border-brand-primary bg-brand-primary/5 shadow-sm' 
-                              : 'border-brand-border hover:border-brand-primary/50'
-                          }`}
-                        >
-                          <div className="flex justify-between mb-1">
-                            <span className="font-semibold text-sm flex items-center text-brand-text">
-                              {addr.label}
-                              {addr.default && <span className="ml-2 text-[10px] bg-brand-cream text-brand-primary px-1.5 py-0.5 rounded uppercase font-bold">Default</span>}
-                            </span>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {savedAddresses.map((addr) => {
+                        const isSelected = selectedAddressId === addr.id;
+                        const addrType = addr.addressType || (addr.label?.toUpperCase() as any) || 'HOME';
+                        return (
+                          <div
+                            key={addr.id}
+                            onClick={() => handleSelectSavedAddress(addr)}
+                            className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all relative ${
+                              isSelected
+                                ? 'border-[#5C1D2E] bg-brand-cream/60 shadow-xs ring-1 ring-[#5C1D2E]'
+                                : 'border-brand-border/80 bg-white hover:border-brand-border hover:bg-[#FAF7F2]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-brand-blush text-brand-plum">
+                                {addrType === 'HOME' && <Home className="w-3 h-3" />}
+                                {addrType === 'WORK' && <Briefcase className="w-3 h-3" />}
+                                {addrType === 'OTHER' && <Building2 className="w-3 h-3" />}
+                                <span>{addr.label || addrType}</span>
+                              </span>
+                              {(addr.default || addr.isDefault) && (
+                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                  Default
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="text-xs font-bold text-brand-espresso">
+                              {addr.recipientName || addr.fullName}
+                            </p>
+                            <p className="text-[11px] text-brand-muted">
+                              {addr.recipientPhone || addr.mobileNumber}
+                            </p>
+                            <p className="text-xs text-brand-espresso mt-1.5 line-clamp-2 leading-relaxed">
+                              {addr.formattedAddress || addr.deliveryAddress}
+                            </p>
+                            {addr.pincode && (
+                              <p className="text-[10px] font-semibold text-brand-muted mt-1">
+                                PIN: <span className="text-brand-espresso">{addr.pincode}</span>
+                              </p>
+                            )}
                           </div>
-                          <p className="text-xs text-brand-muted line-clamp-2">{addr.deliveryAddress}</p>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
-                    
-                    <div className="flex items-center">
+
+                    <div className="flex items-center py-1">
                       <div className="flex-1 h-px bg-brand-border/60"></div>
-                      <span className="px-3 text-xs text-brand-muted font-medium uppercase tracking-wider">Or enter manually</span>
+                      <span className="px-3 text-[10px] text-brand-muted font-bold uppercase tracking-wider">
+                        Or manual address
+                      </span>
                       <div className="flex-1 h-px bg-brand-border/60"></div>
                     </div>
                   </div>
                 )}
 
-                <Input
-                  label="Delivery Street Address"
-                  required
-                  placeholder="e.g. Flat 302, Green Valley Apartments, MG Road"
-                  value={deliveryAddress}
-                  onChange={(e) => {
-                    setDeliveryAddress(e.target.value);
-                    setSelectedAddressId(null);
-                  }}
-                />
-              </>
+                <div className="space-y-3">
+                  <Input
+                    label="Delivery Street Address"
+                    required
+                    placeholder="Flat / House no, Building, Street, Area"
+                    value={deliveryAddress}
+                    onChange={(e) => {
+                      setDeliveryAddress(e.target.value);
+                      setSelectedAddressId(null);
+                    }}
+                  />
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <Input
+                        label="Delivery PIN Code"
+                        placeholder="6-digit PIN (e.g. 560001)"
+                        maxLength={6}
+                        value={deliveryPincode}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                          setDeliveryPincode(val);
+                          setSelectedAddressId(null);
+                        }}
+                      />
+                      <p className="text-[10px] text-brand-muted mt-1">
+                        Used to verify the bakery&apos;s delivery zone.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Delivery Eligibility Alert Banner */}
+                {addressEligibility.checked && !addressEligibility.canDeliver && (
+                  <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-red-800 text-xs flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <span className="font-bold">Delivery is not available to this address:</span>
+                      <p className="text-[11px] text-red-700">
+                        {addressEligibility.rejectionReason ||
+                          "This address is outside the bakery's serviceable delivery radius or PIN code zone."}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setFulfillmentMethod('SELF_PICKUP')}
+                        className="text-xs font-bold text-red-900 underline hover:text-red-950 mt-1 inline-block"
+                      >
+                        Switch to Bakery Store Pickup instead
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {addressEligibility.checked && addressEligibility.canDeliver && deliveryPincode && (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="font-medium text-[11px]">
+                      Address is within this bakery&apos;s serviceable delivery zone.
+                    </span>
+                  </div>
+                )}
+              </div>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1603,6 +1952,33 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
               </div>
             </div>
 
+            {/* Delivery Destination Preview */}
+            {effectiveFulfillmentMethod === 'HOME_DELIVERY' && deliveryAddress && (
+              <div className="p-3 bg-brand-cream/50 rounded-2xl border border-brand-border/70 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 text-brand-plum font-bold">
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>Delivering to</span>
+                </div>
+                {customerName && (
+                  <p className="font-semibold text-brand-espresso">
+                    {customerName} {customerPhone ? `(${customerPhone})` : ''}
+                  </p>
+                )}
+                <p className="text-brand-muted line-clamp-2">{deliveryAddress}</p>
+                {deliveryPincode && (
+                  <p className="text-[10px] text-brand-muted">
+                    PIN: <span className="font-medium text-brand-espresso">{deliveryPincode}</span>
+                  </p>
+                )}
+                {addressEligibility.checked && !addressEligibility.canDeliver && (
+                  <p className="text-red-600 font-semibold text-[11px] pt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>Outside delivery area</span>
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Submit Button */}
             <Button
               type="submit"
@@ -1889,6 +2265,135 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
               Go back and edit
             </button>
           </p>
+        </form>
+      </Modal>
+
+      {/* Add New Address Modal */}
+      <Modal
+        isOpen={isAddAddressModalOpen}
+        onClose={() => setIsAddAddressModalOpen(false)}
+        title="Add Delivery Address"
+        maxWidth="md"
+      >
+        <form onSubmit={handleSaveNewAddress} className="space-y-4">
+          <div className="grid grid-cols-3 gap-2">
+            {(['HOME', 'WORK', 'OTHER'] as const).map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={`py-2 px-3 text-xs font-bold rounded-xl border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  newAddressForm.addressType === type
+                    ? 'border-brand-plum bg-brand-plum/10 text-brand-plum'
+                    : 'border-brand-border/70 text-brand-muted hover:border-brand-border'
+                }`}
+                onClick={() => setNewAddressForm({ ...newAddressForm, addressType: type })}
+              >
+                {type === 'HOME' && <Home className="w-3.5 h-3.5" />}
+                {type === 'WORK' && <Briefcase className="w-3.5 h-3.5" />}
+                {type === 'OTHER' && <Building2 className="w-3.5 h-3.5" />}
+                <span>{type === 'HOME' ? 'Home' : type === 'WORK' ? 'Work' : 'Other'}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Recipient Name"
+              required
+              placeholder="e.g. John Doe"
+              value={newAddressForm.recipientName}
+              onChange={(e) => setNewAddressForm({ ...newAddressForm, recipientName: e.target.value })}
+            />
+            <Input
+              label="Mobile Number"
+              required
+              placeholder="10-digit mobile number"
+              value={newAddressForm.recipientPhone}
+              onChange={(e) => setNewAddressForm({ ...newAddressForm, recipientPhone: e.target.value.replace(/\D/g, '') })}
+            />
+          </div>
+
+          <Input
+            label="House / Flat / Building / Street (Line 1)"
+            required
+            placeholder="e.g. Flat 302, Palm Heights, 5th Cross"
+            value={newAddressForm.addressLine1}
+            onChange={(e) => setNewAddressForm({ ...newAddressForm, addressLine1: e.target.value })}
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Area / Locality (Line 2)"
+              placeholder="e.g. Indiranagar (optional)"
+              value={newAddressForm.addressLine2}
+              onChange={(e) => setNewAddressForm({ ...newAddressForm, addressLine2: e.target.value })}
+            />
+            <Input
+              label="Landmark"
+              placeholder="e.g. Near Metro Station (optional)"
+              value={newAddressForm.landmark}
+              onChange={(e) => setNewAddressForm({ ...newAddressForm, landmark: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Input
+              label="City"
+              required
+              placeholder="e.g. Bangalore"
+              value={newAddressForm.city}
+              onChange={(e) => setNewAddressForm({ ...newAddressForm, city: e.target.value })}
+            />
+            <Input
+              label="State"
+              placeholder="e.g. Karnataka"
+              value={newAddressForm.state}
+              onChange={(e) => setNewAddressForm({ ...newAddressForm, state: e.target.value })}
+            />
+            <Input
+              label="PIN Code"
+              required
+              placeholder="6-digit PIN"
+              maxLength={6}
+              value={newAddressForm.pincode}
+              onChange={(e) => setNewAddressForm({ ...newAddressForm, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+            />
+          </div>
+
+          {customerAuth.isAuthenticated && (
+            <div className="space-y-2 pt-2 border-t border-brand-border/40">
+              <label className="flex items-center space-x-2 cursor-pointer text-xs text-brand-espresso">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 text-brand-plum border-brand-border rounded focus:ring-brand-plum cursor-pointer"
+                  checked={newAddressForm.saveToProfile}
+                  onChange={(e) => setNewAddressForm({ ...newAddressForm, saveToProfile: e.target.checked })}
+                />
+                <span>Save this address to my profile for future orders</span>
+              </label>
+
+              {newAddressForm.saveToProfile && (
+                <label className="flex items-center space-x-2 cursor-pointer text-xs text-brand-espresso">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 text-brand-plum border-brand-border rounded focus:ring-brand-plum cursor-pointer"
+                    checked={newAddressForm.isDefault}
+                    onChange={(e) => setNewAddressForm({ ...newAddressForm, isDefault: e.target.checked })}
+                  />
+                  <span>Make this my default delivery address</span>
+                </label>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end space-x-3 pt-4 border-t border-brand-border/40">
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsAddAddressModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" isLoading={isSavingAddress}>
+              Save and Select
+            </Button>
+          </div>
         </form>
       </Modal>
 

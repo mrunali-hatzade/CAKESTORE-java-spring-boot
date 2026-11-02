@@ -23,4 +23,10 @@ public class StorefrontQuoteRequest {
     private String couponCode;
 
     private String deliveryAddress;
+
+    private String deliveryPincode;
+
+    private Double deliveryLatitude;
+
+    private Double deliveryLongitude;
 }

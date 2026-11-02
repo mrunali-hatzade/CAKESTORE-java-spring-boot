@@ -11,4 +11,8 @@ public interface CustomerAddressRepository extends JpaRepository<CustomerAddress
     List<CustomerAddress> findByCustomerIdOrderByIsDefaultDescCreatedAtDesc(Long customerId);
     
     Optional<CustomerAddress> findByIdAndCustomerId(Long id, Long customerId);
+
+    Optional<CustomerAddress> findByCustomerIdAndIsDefaultTrue(Long customerId);
+
+    long countByCustomerId(Long customerId);
 }

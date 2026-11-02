@@ -23,6 +23,9 @@ public class StorefrontProductDto {
     private Boolean allowEggChoice;
     private String eggPreferenceDefault;
     private BigDecimal egglessPriceDiff;
+    private Boolean isEggless;
+    private Boolean isVegan;
+    private Boolean isGlutenFree;
     private String imageUrl;
     private Boolean availability;
     private String status;

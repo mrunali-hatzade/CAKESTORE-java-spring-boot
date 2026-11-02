@@ -52,6 +52,12 @@ export function buildShopSearchParams(filters: ShopSearchFilters = {}): Record<s
   if (filters.sortBy && filters.sortBy.trim()) {
     params.sortBy = filters.sortBy.trim();
   }
+  if (filters.openNow != null) {
+    params.openNow = String(filters.openNow);
+  }
+  if (filters.dietary && filters.dietary.length > 0) {
+    params.dietary = filters.dietary.join(',');
+  }
   if (filters.page != null) {
     params.page = filters.page.toString();
   }
@@ -173,25 +179,95 @@ export const storefrontApi = {
     }
   },
 
-  getStorefrontProducts: async (shopId: number | string): Promise<Product[]> => {
+  getShopCategories: async (shopId: number | string): Promise<Category[]> => {
     try {
-      const prods = await apiClient.get<Product[]>(`/api/storefront/shops/${shopId}/products`);
-      return Array.isArray(prods) ? prods : [];
+      const data = await apiClient.get<Category[]>(`/api/storefront/shops/${shopId}/categories`);
+      return Array.isArray(data) ? data : [];
     } catch (err: any) {
       throw err;
     }
   },
 
-  getProductDetails: async (
-    shopId: number | string,
-    productId: number | string
-  ): Promise<Product> => {
-    return apiClient.get<Product>(`/api/storefront/shops/${shopId}/products/${productId}`);
+  getStorefrontCategories: async (shopId: number | string): Promise<Category[]> => {
+    return storefrontApi.getShopCategories(shopId);
   },
 
-  getStorefrontCategories: async (shopId: number | string): Promise<Category[]> => {
+  getShopProducts: async (
+    shopId: number | string,
+    filters?: {
+      category?: string;
+      search?: string;
+      minPrice?: number;
+      maxPrice?: number;
+      isEggless?: boolean;
+      isPureVeg?: boolean;
+      sortBy?: string;
+      page?: number;
+      size?: number;
+    }
+  ): Promise<Product[]> => {
     try {
-      const data = await apiClient.get<Category[]>(`/api/storefront/shops/${shopId}/categories`);
+      const params: Record<string, string> = {};
+      if (filters?.category) params.category = filters.category;
+      if (filters?.search) params.search = filters.search;
+      if (filters?.minPrice != null) params.minPrice = filters.minPrice.toString();
+      if (filters?.maxPrice != null) params.maxPrice = filters.maxPrice.toString();
+      if (filters?.isEggless != null) params.isEggless = filters.isEggless.toString();
+      if (filters?.isPureVeg != null) params.isPureVeg = filters.isPureVeg.toString();
+      if (filters?.sortBy) params.sortBy = filters.sortBy;
+      if (filters?.page != null) params.page = filters.page.toString();
+      if (filters?.size != null) params.size = filters.size.toString();
+
+      const data = await apiClient.get<Product[]>(`/api/storefront/shops/${shopId}/products`, { params });
+      return Array.isArray(data) ? data : [];
+    } catch (err: any) {
+      throw err;
+    }
+  },
+
+  getStorefrontProducts: async (
+    shopId: number | string,
+    filters?: {
+      category?: string;
+      search?: string;
+      minPrice?: number;
+      maxPrice?: number;
+      isEggless?: boolean;
+      isPureVeg?: boolean;
+      sortBy?: string;
+      page?: number;
+      size?: number;
+    }
+  ): Promise<Product[]> => {
+    return storefrontApi.getShopProducts(shopId, filters);
+  },
+
+  getProductById: async (shopId: number | string, productId: number | string): Promise<Product> => {
+    try {
+      return await apiClient.get<Product>(`/api/storefront/shops/${shopId}/products/${productId}`);
+    } catch (err: any) {
+      throw err;
+    }
+  },
+
+  getProductDetails: async (shopId: number | string, productId: number | string): Promise<Product> => {
+    return storefrontApi.getProductById(shopId, productId);
+  },
+
+  createOrder: async (shopId: number | string, payload: any): Promise<any> => {
+    return apiClient.post(`/api/storefront/shops/${shopId}/orders`, payload);
+  },
+
+  getGuestOrder: async (orderNumber: string, emailOrPhone: string): Promise<any> => {
+    return apiClient.get(`/api/storefront/orders/guest/${orderNumber}`, {
+      params: { emailOrPhone },
+    });
+  },
+
+  getShopDeliverySlots: async (shopId: number | string, date?: string): Promise<any[]> => {
+    try {
+      const params = date ? { date } : {};
+      const data = await apiClient.get<any[]>(`/api/storefront/shops/${shopId}/delivery-slots`, { params });
       return Array.isArray(data) ? data : [];
     } catch (err: any) {
       throw err;
@@ -371,3 +447,4 @@ export const storefrontApi = {
     return apiClient.post(`/api/storefront/shops/${shopId}/quote`, payload);
   },
 };
+

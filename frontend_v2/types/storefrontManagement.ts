@@ -43,6 +43,8 @@ export interface ShopDeliveryConfig {
   minOrderForFreeDelivery?: number | null;
   deliveryNotes?: string | null;
   deliveryEnabled?: boolean;
+  maxDeliveryRadiusKm?: number | null;
+  serviceablePincodes?: string | null;
 }
 
 export interface StorefrontQuoteItem {
@@ -56,6 +58,10 @@ export interface StorefrontQuoteRequest {
   fulfillmentMethod: 'HOME_DELIVERY' | 'SELF_PICKUP';
   couponCode?: string;
   items: StorefrontQuoteItem[];
+  deliveryAddress?: string;
+  deliveryPincode?: string;
+  deliveryLatitude?: number;
+  deliveryLongitude?: number;
 }
 
 export interface StorefrontQuoteResponse {
@@ -69,6 +75,8 @@ export interface StorefrontQuoteResponse {
   deliveryEnabled: boolean;
   freeDeliveryThreshold?: number;
   appliedCoupon?: string;
+  canDeliver?: boolean;
+  rejectionReason?: string | null;
 }
 
 export interface ShopStorefrontSettings {
@@ -155,4 +163,3 @@ export interface WebsiteConfigurationRequest {
   deliveryConfig: Partial<ShopDeliveryConfig>;
   storefrontSettings: Partial<ShopStorefrontSettings>;
 }
-

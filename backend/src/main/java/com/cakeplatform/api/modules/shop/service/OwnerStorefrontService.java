@@ -151,8 +151,8 @@ public class OwnerStorefrontService {
             if (request.getOpenTime() == null || request.getCloseTime() == null) {
                 throw new IllegalArgumentException("Opening and closing times are required when the day is open");
             }
-            if (!request.getCloseTime().isAfter(request.getOpenTime())) {
-                throw new IllegalArgumentException("Closing time must be strictly after opening time");
+            if (request.getOpenTime().equals(request.getCloseTime())) {
+                throw new IllegalArgumentException("Opening time and closing time cannot be identical");
             }
         }
 
@@ -206,6 +206,8 @@ public class OwnerStorefrontService {
         config.setFixedChargeAmount(request.getFixedChargeAmount());
         config.setMinOrderForFreeDelivery(request.getMinOrderForFreeDelivery());
         config.setDeliveryNotes(request.getDeliveryNotes());
+        config.setMaxDeliveryRadiusKm(request.getMaxDeliveryRadiusKm());
+        config.setServiceablePincodes(DeliveryEligibilityService.sanitizePincodes(request.getServiceablePincodes()));
 
         ShopDeliveryConfig saved = shopDeliveryConfigRepository.save(config);
         if (storefrontCacheService != null) storefrontCacheService.evictShopDetails(shop.getId());

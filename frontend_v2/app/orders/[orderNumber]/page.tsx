@@ -17,6 +17,8 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Navbar } from '@/components/common/Navbar';
 import { Footer } from '@/components/common/Footer';
 import { useToast } from '@/components/common/Toast';
+import { useCustomerAuth } from '@/lib/auth/CustomerAuthContext';
+import { KeyRound, Phone, Sparkles } from 'lucide-react';
 
 export default function OrderTrackingPage() {
   const params = useParams();
@@ -28,6 +30,12 @@ export default function OrderTrackingPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const customerAuth = useCustomerAuth();
+  const [authStep, setAuthStep] = useState<'PHONE' | 'OTP'>('PHONE');
+  const [phoneInput, setPhoneInput] = useState('');
+  const [otpInput, setOtpInput] = useState('');
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Review states
   const [eligibilityMap, setEligibilityMap] = useState<Record<number, OrderItemEligibility>>({});
@@ -127,6 +135,48 @@ export default function OrderTrackingPage() {
     fetchOrder();
   }, [fetchOrder]);
 
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanPhone = phoneInput.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '').replace(/^0(?=\d{10}$)/, '');
+    if (cleanPhone.length < 10) {
+      setAuthError('Please enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+    setAuthError(null);
+    setIsVerifyingOtp(true);
+    try {
+      await customerAuth.requestOtp(cleanPhone);
+      setAuthStep('OTP');
+      toast.success('Verification passcode sent to +91 ' + cleanPhone);
+    } catch (err: any) {
+      setAuthError(err.message || 'Failed to send verification code. Please try again.');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanPhone = phoneInput.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '').replace(/^0(?=\d{10}$)/, '');
+    const cleanOtp = otpInput.replace(/\D/g, '');
+    if (cleanOtp.length < 6) {
+      setAuthError('Please enter the 6-digit verification code.');
+      return;
+    }
+    setAuthError(null);
+    setIsVerifyingOtp(true);
+    try {
+      await customerAuth.verifyOtp(cleanPhone, cleanOtp);
+      toast.success('Identity verified! Loading order details...');
+      setError(null);
+      await fetchOrder();
+    } catch (err: any) {
+      setAuthError(err.message || 'Invalid or expired verification code.');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
   const handleDownloadInvoice = async () => {
     if (!order) return;
     setIsDownloading(true);
@@ -154,11 +204,129 @@ export default function OrderTrackingPage() {
 
   if (error || !order) {
     return (
-      <div className="min-h-screen flex flex-col bg-brand-cream-light">
+      <div className="min-h-screen flex flex-col bg-brand-cream-light font-sans">
         <Navbar />
-        <div className="flex-1 flex items-center justify-center p-6">
-          <ErrorState message={error || 'Order not found'} onRetry={fetchOrder} />
-        </div>
+        <main className="flex-1 max-w-lg mx-auto w-full px-4 sm:px-6 py-12 flex flex-col justify-center">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-brand-border/80 shadow-soft text-center space-y-6">
+            <div className="w-14 h-14 rounded-2xl bg-brand-plum text-white flex items-center justify-center mx-auto shadow-soft">
+              <ShieldCheck className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-bold text-brand-plum uppercase tracking-wider bg-brand-blush/60 px-3 py-1 rounded-full border border-brand-plum/20">
+                Secure Order Access
+              </span>
+              <h2 className="text-xl sm:text-2xl font-serif font-bold text-brand-espresso mt-1">
+                Verify Phone to Track Order
+              </h2>
+              <p className="text-xs text-brand-muted max-w-sm mx-auto">
+                For customer privacy, order tracking and invoices require one-time mobile verification for Order <strong className="text-brand-espresso">#{orderNumber}</strong>.
+              </p>
+            </div>
+
+            {authError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center gap-2 text-left">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{authError}</span>
+              </div>
+            )}
+
+            {authStep === 'PHONE' ? (
+              <form onSubmit={handleSendOtp} className="space-y-4 text-left">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-brand-espresso">
+                    Order Mobile Number <span className="text-brand-crimson">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-brand-muted">
+                      🇮🇳 +91
+                    </span>
+                    <input
+                      type="tel"
+                      required
+                      autoFocus
+                      maxLength={10}
+                      placeholder="98765 43210"
+                      value={phoneInput}
+                      onChange={(e) => {
+                        setPhoneInput(e.target.value.replace(/\D/g, ''));
+                        if (authError) setAuthError(null);
+                      }}
+                      className="w-full pl-16 pr-4 py-2.5 rounded-xl border border-brand-border bg-white text-sm font-medium text-brand-espresso placeholder:text-brand-muted focus:outline-none focus:ring-2 focus:ring-brand-plum/20 focus:border-brand-plum transition-all"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  type="submit"
+                  size="md"
+                  isLoading={isVerifyingOtp}
+                  disabled={phoneInput.length < 10}
+                  className="w-full font-bold shadow-soft"
+                >
+                  <span>Send Verification Code</span>
+                </Button>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyOtp} className="space-y-4 text-left">
+                <div className="p-3 rounded-xl bg-brand-cream-light/70 border border-brand-border/60 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="text-brand-muted block text-[10px]">Verifying for</span>
+                    <span className="font-bold text-brand-espresso">+91 {phoneInput}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthStep('PHONE');
+                      setAuthError(null);
+                    }}
+                    className="text-[11px] font-bold text-brand-plum hover:underline"
+                  >
+                    Change
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-brand-espresso text-center">
+                    Enter 6-Digit Passcode
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    maxLength={6}
+                    placeholder="123456"
+                    value={otpInput}
+                    onChange={(e) => {
+                      setOtpInput(e.target.value.replace(/\D/g, ''));
+                      if (authError) setAuthError(null);
+                    }}
+                    className="w-full text-center text-xl font-bold tracking-widest py-2.5 rounded-xl border border-brand-border bg-white text-brand-espresso focus:outline-none focus:ring-2 focus:ring-brand-plum/20 focus:border-brand-plum transition-all"
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  size="md"
+                  isLoading={isVerifyingOtp}
+                  disabled={otpInput.length < 6}
+                  className="w-full font-bold shadow-soft"
+                >
+                  <span>Verify &amp; View Order</span>
+                </Button>
+              </form>
+            )}
+
+            <div className="pt-2">
+              <Link
+                href="/explore"
+                className="text-xs font-semibold text-brand-muted hover:text-brand-plum transition-colors"
+              >
+                ← Back to Marketplace
+              </Link>
+            </div>
+          </div>
+        </main>
         <Footer />
       </div>
     );

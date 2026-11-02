@@ -91,6 +91,7 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "s.longitude AS longitude, " +
                    "s.status AS status, " +
                    "s.verification_status AS verification_status, " +
+                   "s.timezone AS timezone, " +
                    "ROUND(CAST(AVG(f.rating) AS numeric), 1) AS avg_rating, " +
                    "COUNT(f.id) AS total_reviews, " +
                    "(6371 * acos(LEAST(1.0, GREATEST(-1.0, " +
@@ -118,6 +119,36 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "      LOWER(COALESCE(s.description, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR " +
                    "      LOWER(COALESCE(s.business_category, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) " +
                    "  )) " +
+                   "  AND (CAST(:openNow AS boolean) IS NULL OR CAST(:openNow AS boolean) = false OR EXISTS (" +
+                   "      SELECT 1 FROM shop_business_hours bh " +
+                   "      WHERE bh.shop_id = s.id AND bh.is_open = true AND (" +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "         AND bh.open_time < bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "        OR " +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "         AND bh.open_time > bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time) " +
+                   "        OR " +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) - INTERVAL '1 day', 'DAY'))) " +
+                   "         AND bh.open_time > bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "      )" +
+                   "  )) " +
+                   "  AND ( " +
+                   "    (CAST(:requireEggless AS boolean) = false AND CAST(:requireVegan AS boolean) = false AND CAST(:requireGlutenFree AS boolean) = false) " +
+                   "    OR EXISTS ( " +
+                   "      SELECT 1 FROM products p " +
+                   "      WHERE p.shop_id = s.id " +
+                   "        AND p.is_deleted = false " +
+                   "        AND p.status = 'ACTIVE' " +
+                   "        AND p.availability = true " +
+                   "        AND (CAST(:requireEggless AS boolean) = false OR p.is_eggless = true) " +
+                   "        AND (CAST(:requireVegan AS boolean) = false OR p.is_vegan = true) " +
+                   "        AND (CAST(:requireGlutenFree AS boolean) = false OR p.is_gluten_free = true) " +
+                   "    ) " +
+                   "  ) " +
                    "GROUP BY s.id " +
                    "HAVING (6371 * acos(LEAST(1.0, GREATEST(-1.0, " +
                    "  cos(radians(:lat)) * cos(radians(s.latitude)) * " +
@@ -132,7 +163,11 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
             @Param("minLng") double minLng, @Param("maxLng") double maxLng, @Param("radiusKm") double radiusKm,
             @Param("city") String city, @Param("state") String state, @Param("district") String district,
             @Param("area") String area, @Param("pincode") String pincode, @Param("businessType") String businessType,
-            @Param("search") String search, @Param("limit") int limit, @Param("offset") int offset
+            @Param("search") String search, @Param("openNow") Boolean openNow,
+            @Param("requireEggless") Boolean requireEggless,
+            @Param("requireVegan") Boolean requireVegan,
+            @Param("requireGlutenFree") Boolean requireGlutenFree,
+            @Param("limit") int limit, @Param("offset") int offset
     );
 
     @Query(value = "SELECT " +
@@ -140,7 +175,8 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "s.city AS city, s.state AS state, s.district AS district, s.area AS area, " +
                    "s.address AS address, s.pincode AS pincode, s.latitude AS latitude, s.longitude AS longitude, " +
                    "s.business_type AS business_type, s.business_category AS business_category, s.status AS status, " +
-                   "s.verification_status AS verification_status, ROUND(CAST(AVG(f.rating) AS numeric), 1) AS avg_rating, " +
+                   "s.verification_status AS verification_status, s.timezone AS timezone, " +
+                   "ROUND(CAST(AVG(f.rating) AS numeric), 1) AS avg_rating, " +
                    "COUNT(f.id) AS total_reviews, " +
                    "(6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(:lat)) * cos(radians(s.latitude)) * cos(radians(s.longitude) - radians(:lng)) + sin(radians(:lat)) * sin(radians(s.latitude)))))) AS distance_km " +
                    "FROM shops s LEFT JOIN feedback f ON f.shop_id = s.id AND f.is_approved = true " +
@@ -156,6 +192,36 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "  AND (CAST(:pincode AS text) IS NULL OR s.pincode = CAST(:pincode AS text)) " +
                    "  AND (CAST(:businessType AS text) IS NULL OR s.business_type = CAST(:businessType AS text)) " +
                    "  AND (CAST(:search AS text) IS NULL OR ( LOWER(s.business_name) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR LOWER(COALESCE(s.description, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR LOWER(COALESCE(s.business_category, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) )) " +
+                   "  AND (CAST(:openNow AS boolean) IS NULL OR CAST(:openNow AS boolean) = false OR EXISTS (" +
+                   "      SELECT 1 FROM shop_business_hours bh " +
+                   "      WHERE bh.shop_id = s.id AND bh.is_open = true AND (" +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "         AND bh.open_time < bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "        OR " +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "         AND bh.open_time > bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time) " +
+                   "        OR " +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) - INTERVAL '1 day', 'DAY'))) " +
+                   "         AND bh.open_time > bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "      )" +
+                   "  )) " +
+                   "  AND ( " +
+                   "    (CAST(:requireEggless AS boolean) = false AND CAST(:requireVegan AS boolean) = false AND CAST(:requireGlutenFree AS boolean) = false) " +
+                   "    OR EXISTS ( " +
+                   "      SELECT 1 FROM products p " +
+                   "      WHERE p.shop_id = s.id " +
+                   "        AND p.is_deleted = false " +
+                   "        AND p.status = 'ACTIVE' " +
+                   "        AND p.availability = true " +
+                   "        AND (CAST(:requireEggless AS boolean) = false OR p.is_eggless = true) " +
+                   "        AND (CAST(:requireVegan AS boolean) = false OR p.is_vegan = true) " +
+                   "        AND (CAST(:requireGlutenFree AS boolean) = false OR p.is_gluten_free = true) " +
+                   "    ) " +
+                   "  ) " +
                    "GROUP BY s.id " +
                    "HAVING (6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(:lat)) * cos(radians(s.latitude)) * cos(radians(s.longitude) - radians(:lng)) + sin(radians(:lat)) * sin(radians(s.latitude)))))) <= :radiusKm " +
                    "ORDER BY AVG(f.rating) DESC NULLS LAST, COUNT(f.id) DESC NULLS LAST, distance_km ASC " +
@@ -166,7 +232,11 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
             @Param("minLng") double minLng, @Param("maxLng") double maxLng, @Param("radiusKm") double radiusKm,
             @Param("city") String city, @Param("state") String state, @Param("district") String district,
             @Param("area") String area, @Param("pincode") String pincode, @Param("businessType") String businessType,
-            @Param("search") String search, @Param("limit") int limit, @Param("offset") int offset
+            @Param("search") String search, @Param("openNow") Boolean openNow,
+            @Param("requireEggless") Boolean requireEggless,
+            @Param("requireVegan") Boolean requireVegan,
+            @Param("requireGlutenFree") Boolean requireGlutenFree,
+            @Param("limit") int limit, @Param("offset") int offset
     );
 
     @Query(value = "SELECT " +
@@ -174,7 +244,8 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "s.city AS city, s.state AS state, s.district AS district, s.area AS area, " +
                    "s.address AS address, s.pincode AS pincode, s.latitude AS latitude, s.longitude AS longitude, " +
                    "s.business_type AS business_type, s.business_category AS business_category, s.status AS status, " +
-                   "s.verification_status AS verification_status, ROUND(CAST(AVG(f.rating) AS numeric), 1) AS avg_rating, " +
+                   "s.verification_status AS verification_status, s.timezone AS timezone, " +
+                   "ROUND(CAST(AVG(f.rating) AS numeric), 1) AS avg_rating, " +
                    "COUNT(f.id) AS total_reviews, " +
                    "(6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(:lat)) * cos(radians(s.latitude)) * cos(radians(s.longitude) - radians(:lng)) + sin(radians(:lat)) * sin(radians(s.latitude)))))) AS distance_km " +
                    "FROM shops s LEFT JOIN feedback f ON f.shop_id = s.id AND f.is_approved = true " +
@@ -190,6 +261,36 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "  AND (CAST(:pincode AS text) IS NULL OR s.pincode = CAST(:pincode AS text)) " +
                    "  AND (CAST(:businessType AS text) IS NULL OR s.business_type = CAST(:businessType AS text)) " +
                    "  AND (CAST(:search AS text) IS NULL OR ( LOWER(s.business_name) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR LOWER(COALESCE(s.description, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR LOWER(COALESCE(s.business_category, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) )) " +
+                   "  AND (CAST(:openNow AS boolean) IS NULL OR CAST(:openNow AS boolean) = false OR EXISTS (" +
+                   "      SELECT 1 FROM shop_business_hours bh " +
+                   "      WHERE bh.shop_id = s.id AND bh.is_open = true AND (" +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "         AND bh.open_time < bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "        OR " +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "         AND bh.open_time > bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time) " +
+                   "        OR " +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) - INTERVAL '1 day', 'DAY'))) " +
+                   "         AND bh.open_time > bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "      )" +
+                   "  )) " +
+                   "  AND ( " +
+                   "    (CAST(:requireEggless AS boolean) = false AND CAST(:requireVegan AS boolean) = false AND CAST(:requireGlutenFree AS boolean) = false) " +
+                   "    OR EXISTS ( " +
+                   "      SELECT 1 FROM products p " +
+                   "      WHERE p.shop_id = s.id " +
+                   "        AND p.is_deleted = false " +
+                   "        AND p.status = 'ACTIVE' " +
+                   "        AND p.availability = true " +
+                   "        AND (CAST(:requireEggless AS boolean) = false OR p.is_eggless = true) " +
+                   "        AND (CAST(:requireVegan AS boolean) = false OR p.is_vegan = true) " +
+                   "        AND (CAST(:requireGlutenFree AS boolean) = false OR p.is_gluten_free = true) " +
+                   "    ) " +
+                   "  ) " +
                    "GROUP BY s.id " +
                    "HAVING (6371 * acos(LEAST(1.0, GREATEST(-1.0, cos(radians(:lat)) * cos(radians(s.latitude)) * cos(radians(s.longitude) - radians(:lng)) + sin(radians(:lat)) * sin(radians(s.latitude)))))) <= :radiusKm " +
                    "ORDER BY s.created_at DESC NULLS LAST, distance_km ASC " +
@@ -200,7 +301,11 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
             @Param("minLng") double minLng, @Param("maxLng") double maxLng, @Param("radiusKm") double radiusKm,
             @Param("city") String city, @Param("state") String state, @Param("district") String district,
             @Param("area") String area, @Param("pincode") String pincode, @Param("businessType") String businessType,
-            @Param("search") String search, @Param("limit") int limit, @Param("offset") int offset
+            @Param("search") String search, @Param("openNow") Boolean openNow,
+            @Param("requireEggless") Boolean requireEggless,
+            @Param("requireVegan") Boolean requireVegan,
+            @Param("requireGlutenFree") Boolean requireGlutenFree,
+            @Param("limit") int limit, @Param("offset") int offset
     );
 
     @Query(value = "SELECT COUNT(*) FROM ( " +
@@ -224,6 +329,36 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "        LOWER(COALESCE(s.description, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR " +
                    "        LOWER(COALESCE(s.business_category, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) " +
                    "    )) " +
+                   "    AND (CAST(:openNow AS boolean) IS NULL OR CAST(:openNow AS boolean) = false OR EXISTS (" +
+                   "        SELECT 1 FROM shop_business_hours bh " +
+                   "        WHERE bh.shop_id = s.id AND bh.is_open = true AND (" +
+                   "          (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "           AND bh.open_time < bh.close_time " +
+                   "           AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time " +
+                   "           AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "          OR " +
+                   "          (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "           AND bh.open_time > bh.close_time " +
+                   "           AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time) " +
+                   "          OR " +
+                   "          (bh.day_of_week = UPPER(TRIM(TO_CHAR((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) - INTERVAL '1 day', 'DAY'))) " +
+                   "           AND bh.open_time > bh.close_time " +
+                   "           AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "        )" +
+                   "    )) " +
+                   "    AND ( " +
+                   "      (CAST(:requireEggless AS boolean) = false AND CAST(:requireVegan AS boolean) = false AND CAST(:requireGlutenFree AS boolean) = false) " +
+                   "      OR EXISTS ( " +
+                   "        SELECT 1 FROM products p " +
+                   "        WHERE p.shop_id = s.id " +
+                   "          AND p.is_deleted = false " +
+                   "          AND p.status = 'ACTIVE' " +
+                   "          AND p.availability = true " +
+                   "          AND (CAST(:requireEggless AS boolean) = false OR p.is_eggless = true) " +
+                   "          AND (CAST(:requireVegan AS boolean) = false OR p.is_vegan = true) " +
+                   "          AND (CAST(:requireGlutenFree AS boolean) = false OR p.is_gluten_free = true) " +
+                   "      ) " +
+                   "    ) " +
                    "    AND (6371 * acos(LEAST(1.0, GREATEST(-1.0, " +
                    "      cos(radians(:lat)) * cos(radians(s.latitude)) * " +
                    "      cos(radians(s.longitude) - radians(:lng)) + " +
@@ -245,7 +380,11 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
             @Param("area") String area,
             @Param("pincode") String pincode,
             @Param("businessType") String businessType,
-            @Param("search") String search
+            @Param("search") String search,
+            @Param("openNow") Boolean openNow,
+            @Param("requireEggless") Boolean requireEggless,
+            @Param("requireVegan") Boolean requireVegan,
+            @Param("requireGlutenFree") Boolean requireGlutenFree
     );
 
     @Query(value = "SELECT " +
@@ -268,6 +407,7 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "s.longitude AS longitude, " +
                    "s.status AS status, " +
                    "s.verification_status AS verification_status, " +
+                   "s.timezone AS timezone, " +
                    "ROUND(CAST(AVG(f.rating) AS numeric), 1) AS avg_rating, " +
                    "COUNT(f.id) AS total_reviews, " +
                    "CAST(NULL AS double precision) AS distance_km " +
@@ -297,6 +437,36 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "      LOWER(COALESCE(s.area, '')) LIKE LOWER(CONCAT('%', CAST(:location AS text), '%')) OR " +
                    "      LOWER(COALESCE(s.address, '')) LIKE LOWER(CONCAT('%', CAST(:location AS text), '%')) " +
                    "  )) " +
+                   "  AND (CAST(:openNow AS boolean) IS NULL OR CAST(:openNow AS boolean) = false OR EXISTS (" +
+                   "      SELECT 1 FROM shop_business_hours bh " +
+                   "      WHERE bh.shop_id = s.id AND bh.is_open = true AND (" +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "         AND bh.open_time < bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "        OR " +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "         AND bh.open_time > bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time) " +
+                   "        OR " +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) - INTERVAL '1 day', 'DAY'))) " +
+                   "         AND bh.open_time > bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "      )" +
+                   "  )) " +
+                   "  AND ( " +
+                   "    (CAST(:requireEggless AS boolean) = false AND CAST(:requireVegan AS boolean) = false AND CAST(:requireGlutenFree AS boolean) = false) " +
+                   "    OR EXISTS ( " +
+                   "      SELECT 1 FROM products p " +
+                   "      WHERE p.shop_id = s.id " +
+                   "        AND p.is_deleted = false " +
+                   "        AND p.status = 'ACTIVE' " +
+                   "        AND p.availability = true " +
+                   "        AND (CAST(:requireEggless AS boolean) = false OR p.is_eggless = true) " +
+                   "        AND (CAST(:requireVegan AS boolean) = false OR p.is_vegan = true) " +
+                   "        AND (CAST(:requireGlutenFree AS boolean) = false OR p.is_gluten_free = true) " +
+                   "    ) " +
+                   "  ) " +
                    "GROUP BY s.id " +
                    "ORDER BY AVG(f.rating) DESC NULLS LAST, COUNT(f.id) DESC NULLS LAST, s.id DESC " +
                    "LIMIT :limit OFFSET :offset",
@@ -305,6 +475,10 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
             @Param("city") String city, @Param("state") String state, @Param("district") String district,
             @Param("area") String area, @Param("pincode") String pincode, @Param("businessType") String businessType,
             @Param("search") String search, @Param("location") String location,
+            @Param("openNow") Boolean openNow,
+            @Param("requireEggless") Boolean requireEggless,
+            @Param("requireVegan") Boolean requireVegan,
+            @Param("requireGlutenFree") Boolean requireGlutenFree,
             @Param("limit") int limit, @Param("offset") int offset
     );
 
@@ -313,7 +487,8 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "s.city AS city, s.state AS state, s.district AS district, s.area AS area, " +
                    "s.address AS address, s.pincode AS pincode, s.latitude AS latitude, s.longitude AS longitude, " +
                    "s.business_type AS business_type, s.business_category AS business_category, s.status AS status, " +
-                   "s.verification_status AS verification_status, ROUND(CAST(AVG(f.rating) AS numeric), 1) AS avg_rating, " +
+                   "s.verification_status AS verification_status, s.timezone AS timezone, " +
+                   "ROUND(CAST(AVG(f.rating) AS numeric), 1) AS avg_rating, " +
                    "COUNT(f.id) AS total_reviews, CAST(NULL AS double precision) AS distance_km " +
                    "FROM shops s LEFT JOIN feedback f ON f.shop_id = s.id AND f.is_approved = true " +
                    "WHERE s.status = 'ACTIVE' AND s.is_deleted = false " +
@@ -325,8 +500,38 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "  AND (CAST(:area AS text) IS NULL OR LOWER(TRIM(s.area)) = LOWER(TRIM(CAST(:area AS text)))) " +
                    "  AND (CAST(:pincode AS text) IS NULL OR s.pincode = CAST(:pincode AS text)) " +
                    "  AND (CAST(:businessType AS text) IS NULL OR s.business_type = CAST(:businessType AS text)) " +
-                   "  AND (CAST(:search AS text) IS NULL OR ( LOWER(s.business_name) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR LOWER(COALESCE(s.description, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR LOWER(COALESCE(s.business_category, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR LOWER(COALESCE(s.city, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR LOWER(COALESCE(s.area, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) )) " +
+                   "  AND (CAST(:search AS text) IS NULL OR ( LOWER(s.business_name) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR LOWER(COALESCE(s.description, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) OR LOWER(COALESCE(s.business_category, '')) LIKE LOWER(CONCAT('%', CAST(:search AS text), '%')) )) " +
                    "  AND (CAST(:location AS text) IS NULL OR ( LOWER(COALESCE(s.city, '')) LIKE LOWER(CONCAT('%', CAST(:location AS text), '%')) OR LOWER(COALESCE(s.district, '')) LIKE LOWER(CONCAT('%', CAST(:location AS text), '%')) OR LOWER(COALESCE(s.state, '')) LIKE LOWER(CONCAT('%', CAST(:location AS text), '%')) OR s.pincode = CAST(:location AS text) OR LOWER(COALESCE(s.area, '')) LIKE LOWER(CONCAT('%', CAST(:location AS text), '%')) OR LOWER(COALESCE(s.address, '')) LIKE LOWER(CONCAT('%', CAST(:location AS text), '%')) )) " +
+                   "  AND (CAST(:openNow AS boolean) IS NULL OR CAST(:openNow AS boolean) = false OR EXISTS (" +
+                   "      SELECT 1 FROM shop_business_hours bh " +
+                   "      WHERE bh.shop_id = s.id AND bh.is_open = true AND (" +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "         AND bh.open_time < bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "        OR " +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "         AND bh.open_time > bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time) " +
+                   "        OR " +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) - INTERVAL '1 day', 'DAY'))) " +
+                   "         AND bh.open_time > bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "      )" +
+                   "  )) " +
+                   "  AND ( " +
+                   "    (CAST(:requireEggless AS boolean) = false AND CAST(:requireVegan AS boolean) = false AND CAST(:requireGlutenFree AS boolean) = false) " +
+                   "    OR EXISTS ( " +
+                   "      SELECT 1 FROM products p " +
+                   "      WHERE p.shop_id = s.id " +
+                   "        AND p.is_deleted = false " +
+                   "        AND p.status = 'ACTIVE' " +
+                   "        AND p.availability = true " +
+                   "        AND (CAST(:requireEggless AS boolean) = false OR p.is_eggless = true) " +
+                   "        AND (CAST(:requireVegan AS boolean) = false OR p.is_vegan = true) " +
+                   "        AND (CAST(:requireGlutenFree AS boolean) = false OR p.is_gluten_free = true) " +
+                   "    ) " +
+                   "  ) " +
                    "GROUP BY s.id " +
                    "ORDER BY s.created_at DESC NULLS LAST, s.id DESC " +
                    "LIMIT :limit OFFSET :offset",
@@ -335,6 +540,10 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
             @Param("city") String city, @Param("state") String state, @Param("district") String district,
             @Param("area") String area, @Param("pincode") String pincode, @Param("businessType") String businessType,
             @Param("search") String search, @Param("location") String location,
+            @Param("openNow") Boolean openNow,
+            @Param("requireEggless") Boolean requireEggless,
+            @Param("requireVegan") Boolean requireVegan,
+            @Param("requireGlutenFree") Boolean requireGlutenFree,
             @Param("limit") int limit, @Param("offset") int offset
     );
 
@@ -363,7 +572,37 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
                    "      s.pincode = CAST(:location AS text) OR " +
                    "      LOWER(COALESCE(s.area, '')) LIKE LOWER(CONCAT('%', CAST(:location AS text), '%')) OR " +
                    "      LOWER(COALESCE(s.address, '')) LIKE LOWER(CONCAT('%', CAST(:location AS text), '%')) " +
-                   "  ))",
+                   "  )) " +
+                   "  AND (CAST(:openNow AS boolean) IS NULL OR CAST(:openNow AS boolean) = false OR EXISTS (" +
+                   "      SELECT 1 FROM shop_business_hours bh " +
+                   "      WHERE bh.shop_id = s.id AND bh.is_open = true AND (" +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "         AND bh.open_time < bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "        OR " +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR(NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata'), 'DAY'))) " +
+                   "         AND bh.open_time > bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) >= bh.open_time) " +
+                   "        OR " +
+                   "        (bh.day_of_week = UPPER(TRIM(TO_CHAR((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) - INTERVAL '1 day', 'DAY'))) " +
+                   "         AND bh.open_time > bh.close_time " +
+                   "         AND CAST((NOW() AT TIME ZONE COALESCE(s.timezone, 'Asia/Kolkata')) AS time) < bh.close_time) " +
+                   "      )" +
+                   "  )) " +
+                   "  AND ( " +
+                   "    (CAST(:requireEggless AS boolean) = false AND CAST(:requireVegan AS boolean) = false AND CAST(:requireGlutenFree AS boolean) = false) " +
+                   "    OR EXISTS ( " +
+                   "      SELECT 1 FROM products p " +
+                   "      WHERE p.shop_id = s.id " +
+                   "        AND p.is_deleted = false " +
+                   "        AND p.status = 'ACTIVE' " +
+                   "        AND p.availability = true " +
+                   "        AND (CAST(:requireEggless AS boolean) = false OR p.is_eggless = true) " +
+                   "        AND (CAST(:requireVegan AS boolean) = false OR p.is_vegan = true) " +
+                   "        AND (CAST(:requireGlutenFree AS boolean) = false OR p.is_gluten_free = true) " +
+                   "    ) " +
+                   "  )",
            nativeQuery = true)
     long countActiveShops(
             @Param("city") String city,
@@ -373,6 +612,88 @@ public interface ShopRepository extends JpaRepository<Shop, Long>, JpaSpecificat
             @Param("pincode") String pincode,
             @Param("businessType") String businessType,
             @Param("search") String search,
-            @Param("location") String location
+            @Param("location") String location,
+            @Param("openNow") Boolean openNow,
+            @Param("requireEggless") Boolean requireEggless,
+            @Param("requireVegan") Boolean requireVegan,
+            @Param("requireGlutenFree") Boolean requireGlutenFree
     );
+
+    default List<com.cakeplatform.api.modules.storefront.dto.ShopSummaryProjection> findActiveShopsWithSummaryOrderByRating(
+            String city, String state, String district, String area, String pincode, String businessType, String search, String location, Boolean openNow, int limit, int offset) {
+        return findActiveShopsWithSummaryOrderByRating(city, state, district, area, pincode, businessType, search, location, openNow, false, false, false, limit, offset);
+    }
+
+    default List<com.cakeplatform.api.modules.storefront.dto.ShopSummaryProjection> findActiveShopsWithSummaryOrderByRating(
+            String city, String state, String district, String area, String pincode, String businessType, String search, String location, int limit, int offset) {
+        return findActiveShopsWithSummaryOrderByRating(city, state, district, area, pincode, businessType, search, location, false, false, false, false, limit, offset);
+    }
+
+    default List<com.cakeplatform.api.modules.storefront.dto.ShopSummaryProjection> findActiveShopsWithSummaryOrderByNewest(
+            String city, String state, String district, String area, String pincode, String businessType, String search, String location, Boolean openNow, int limit, int offset) {
+        return findActiveShopsWithSummaryOrderByNewest(city, state, district, area, pincode, businessType, search, location, openNow, false, false, false, limit, offset);
+    }
+
+    default List<com.cakeplatform.api.modules.storefront.dto.ShopSummaryProjection> findActiveShopsWithSummaryOrderByNewest(
+            String city, String state, String district, String area, String pincode, String businessType, String search, String location, int limit, int offset) {
+        return findActiveShopsWithSummaryOrderByNewest(city, state, district, area, pincode, businessType, search, location, false, false, false, false, limit, offset);
+    }
+
+    default List<com.cakeplatform.api.modules.storefront.dto.ShopSummaryProjection> findNearbyActiveShopsOrderByDistance(
+            double lat, double lng, double minLat, double maxLat, double minLng, double maxLng, double radiusKm,
+            String city, String state, String district, String area, String pincode, String businessType, String search, Boolean openNow, int limit, int offset) {
+        return findNearbyActiveShopsOrderByDistance(lat, lng, minLat, maxLat, minLng, maxLng, radiusKm, city, state, district, area, pincode, businessType, search, openNow, false, false, false, limit, offset);
+    }
+
+    default List<com.cakeplatform.api.modules.storefront.dto.ShopSummaryProjection> findNearbyActiveShopsOrderByDistance(
+            double lat, double lng, double minLat, double maxLat, double minLng, double maxLng, double radiusKm,
+            String city, String state, String district, String area, String pincode, String businessType, String search, int limit, int offset) {
+        return findNearbyActiveShopsOrderByDistance(lat, lng, minLat, maxLat, minLng, maxLng, radiusKm, city, state, district, area, pincode, businessType, search, false, false, false, false, limit, offset);
+    }
+
+    default List<com.cakeplatform.api.modules.storefront.dto.ShopSummaryProjection> findNearbyActiveShopsOrderByRating(
+            double lat, double lng, double minLat, double maxLat, double minLng, double maxLng, double radiusKm,
+            String city, String state, String district, String area, String pincode, String businessType, String search, Boolean openNow, int limit, int offset) {
+        return findNearbyActiveShopsOrderByRating(lat, lng, minLat, maxLat, minLng, maxLng, radiusKm, city, state, district, area, pincode, businessType, search, openNow, false, false, false, limit, offset);
+    }
+
+    default List<com.cakeplatform.api.modules.storefront.dto.ShopSummaryProjection> findNearbyActiveShopsOrderByRating(
+            double lat, double lng, double minLat, double maxLat, double minLng, double maxLng, double radiusKm,
+            String city, String state, String district, String area, String pincode, String businessType, String search, int limit, int offset) {
+        return findNearbyActiveShopsOrderByRating(lat, lng, minLat, maxLat, minLng, maxLng, radiusKm, city, state, district, area, pincode, businessType, search, false, false, false, false, limit, offset);
+    }
+
+    default List<com.cakeplatform.api.modules.storefront.dto.ShopSummaryProjection> findNearbyActiveShopsOrderByNewest(
+            double lat, double lng, double minLat, double maxLat, double minLng, double maxLng, double radiusKm,
+            String city, String state, String district, String area, String pincode, String businessType, String search, Boolean openNow, int limit, int offset) {
+        return findNearbyActiveShopsOrderByNewest(lat, lng, minLat, maxLat, minLng, maxLng, radiusKm, city, state, district, area, pincode, businessType, search, openNow, false, false, false, limit, offset);
+    }
+
+    default List<com.cakeplatform.api.modules.storefront.dto.ShopSummaryProjection> findNearbyActiveShopsOrderByNewest(
+            double lat, double lng, double minLat, double maxLat, double minLng, double maxLng, double radiusKm,
+            String city, String state, String district, String area, String pincode, String businessType, String search, int limit, int offset) {
+        return findNearbyActiveShopsOrderByNewest(lat, lng, minLat, maxLat, minLng, maxLng, radiusKm, city, state, district, area, pincode, businessType, search, false, false, false, false, limit, offset);
+    }
+
+    default long countNearbyActiveShops(
+            double lat, double lng, double minLat, double maxLat, double minLng, double maxLng, double radiusKm,
+            String city, String state, String district, String area, String pincode, String businessType, String search, Boolean openNow) {
+        return countNearbyActiveShops(lat, lng, minLat, maxLat, minLng, maxLng, radiusKm, city, state, district, area, pincode, businessType, search, openNow, false, false, false);
+    }
+
+    default long countNearbyActiveShops(
+            double lat, double lng, double minLat, double maxLat, double minLng, double maxLng, double radiusKm,
+            String city, String state, String district, String area, String pincode, String businessType, String search) {
+        return countNearbyActiveShops(lat, lng, minLat, maxLat, minLng, maxLng, radiusKm, city, state, district, area, pincode, businessType, search, false, false, false, false);
+    }
+
+    default long countActiveShops(
+            String city, String state, String district, String area, String pincode, String businessType, String search, String location, Boolean openNow) {
+        return countActiveShops(city, state, district, area, pincode, businessType, search, location, openNow, false, false, false);
+    }
+
+    default long countActiveShops(
+            String city, String state, String district, String area, String pincode, String businessType, String search, String location) {
+        return countActiveShops(city, state, district, area, pincode, businessType, search, location, false, false, false, false);
+    }
 }

@@ -81,6 +81,8 @@ export function ProductModal({
   const [allowEggChoice, setAllowEggChoice] = useState(false);
   const [eggPreferenceDefault, setEggPreferenceDefault] = useState<'EGGLESS' | 'REGULAR'>('EGGLESS');
   const [egglessPriceDiff, setEgglessPriceDiff] = useState('0');
+  const [isVegan, setIsVegan] = useState(false);
+  const [isGlutenFree, setIsGlutenFree] = useState(false);
   const [inStock, setInStock] = useState(true);
   const [imageUrl, setImageUrl] = useState(PRESET_IMAGES[0].url);
   const [ingredients, setIngredients] = useState('');
@@ -123,7 +125,7 @@ export function ProductModal({
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
   const currentSnapshot = JSON.stringify({
     name, description, price, originalPrice, selectedCategoryId,
-    isEggless, allowEggChoice, eggPreferenceDefault, egglessPriceDiff,
+    isEggless, allowEggChoice, eggPreferenceDefault, egglessPriceDiff, isVegan, isGlutenFree,
     inStock, imageUrl, ingredients, allergens, highlights, variants, altImages
   });
 
@@ -180,6 +182,8 @@ export function ProductModal({
         setAllowEggChoice(Boolean(p.allowEggChoice));
         setEggPreferenceDefault(p.eggPreferenceDefault === 'REGULAR' ? 'REGULAR' : 'EGGLESS');
         setEgglessPriceDiff(p.egglessPriceDiff != null ? String(p.egglessPriceDiff) : '0');
+        setIsVegan(Boolean(p.isVegan));
+        setIsGlutenFree(Boolean(p.isGlutenFree));
         setInStock(p.inStock !== false);
         setImageUrl(p.imageUrl || FALLBACK_CAKE);
         setImageTab('url');
@@ -212,6 +216,8 @@ export function ProductModal({
         setAllowEggChoice(false);
         setEggPreferenceDefault('EGGLESS');
         setEgglessPriceDiff('0');
+        setIsVegan(false);
+        setIsGlutenFree(false);
         setInStock(true);
         setImageUrl(PRESET_IMAGES[0].url);
         setImageTab('url');
@@ -657,6 +663,27 @@ export function ProductModal({
                   />
                 </div>
               )}
+              <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-brand-border/40">
+                <label className="flex items-center gap-2 text-xs text-owner-heading font-medium cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isVegan}
+                    onChange={(e) => setIsVegan(e.target.checked)}
+                    className="rounded text-brand-plum focus:ring-brand-plum"
+                  />
+                  <span>🌱 Vegan Cake (Plant-Based)</span>
+                </label>
+
+                <label className="flex items-center gap-2 text-xs text-owner-heading font-medium cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isGlutenFree}
+                    onChange={(e) => setIsGlutenFree(e.target.checked)}
+                    className="rounded text-brand-plum focus:ring-brand-plum"
+                  />
+                  <span>🌾 Gluten-Free Cake</span>
+                </label>
+              </div>
             </div>
 
             {/* Ingredients */}

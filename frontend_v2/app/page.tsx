@@ -12,6 +12,7 @@ import { BespokeCakeBridge } from '@/components/customer/marketplace/BespokeCake
 import { TrustBadges } from '@/components/customer/marketplace/TrustBadges';
 import { OwnerCTA } from '@/components/customer/marketplace/OwnerCTA';
 import { TopRatedSection } from '@/components/customer/marketplace/TopRatedSection';
+import { DietaryFilter } from '@/components/customer/marketplace/DietaryFilter';
 import { CategoryOption } from '@/components/customer/marketplace/CategoryPills';
 import { AdvancedLocationFilter, LocationFilterValues } from '@/components/customer/marketplace/AdvancedLocationFilter';
 
@@ -32,6 +33,7 @@ export default function HomePage() {
   const [locationFilters, setLocationFilters] = useState<Partial<LocationFilterValues>>({});
   const [geoParams, setGeoParams] = useState<{ latitude?: number; longitude?: number; radiusKm?: number }>({});
   const [sortBy, setSortBy] = useState<string>('default');
+  const [selectedDietary, setSelectedDietary] = useState<string[]>([]);
 
   const [topRatedShops, setTopRatedShops] = useState<Shop[]>([]);
   const [isTopRatedLoading, setIsTopRatedLoading] = useState(true);
@@ -57,6 +59,7 @@ export default function HomePage() {
         radiusKm: geoParams.radiusKm,
         businessType: activeBusinessType,
         sortBy: sortBy === 'default' ? undefined : sortBy,
+        dietary: selectedDietary.length > 0 ? selectedDietary : undefined,
         page: 0,
         size: HOMEPAGE_BAKERY_LIMIT,
       });
@@ -77,7 +80,7 @@ export default function HomePage() {
         setIsLoading(false);
       }
     }
-  }, [searchQuery, locationQuery, locationFilters, geoParams, activeBusinessType, sortBy]);
+  }, [searchQuery, locationQuery, locationFilters, geoParams, activeBusinessType, sortBy, selectedDietary]);
 
   const loadTopRatedShops = useCallback(async () => {
     setIsTopRatedLoading(true);
@@ -96,6 +99,7 @@ export default function HomePage() {
         radiusKm: geoParams.radiusKm,
         businessType: activeBusinessType,
         sortBy: 'rating',
+        dietary: selectedDietary.length > 0 ? selectedDietary : undefined,
         size: 4,
       });
       setTopRatedShops(data || []);
@@ -104,7 +108,7 @@ export default function HomePage() {
     } finally {
       setIsTopRatedLoading(false);
     }
-  }, [searchQuery, locationQuery, locationFilters, geoParams, activeBusinessType]);
+  }, [searchQuery, locationQuery, locationFilters, geoParams, activeBusinessType, selectedDietary]);
 
   useEffect(() => {
     loadShops();
@@ -168,6 +172,7 @@ export default function HomePage() {
     setGeoParams({});
     setLocationFilters({});
     setSortBy('default');
+    setSelectedDietary([]);
   };
 
   // Dynamic grid title based on city and category
@@ -219,9 +224,12 @@ export default function HomePage() {
     if (sortBy && sortBy !== 'default' && sortBy.trim()) {
       params.set('sortBy', sortBy.trim());
     }
+    if (selectedDietary.length > 0) {
+      params.set('dietary', selectedDietary.join(','));
+    }
     const query = params.toString();
     return query ? `/explore?${query}` : '/explore';
-  }, [searchQuery, locationQuery, locationFilters, geoParams, activeBusinessType, sortBy]);
+  }, [searchQuery, locationQuery, locationFilters, geoParams, activeBusinessType, sortBy, selectedDietary]);
 
   const getViewAllLabel = () => {
     if (typeof totalElements === 'number' && totalElements > shops.length) {
@@ -261,6 +269,14 @@ export default function HomePage() {
           isLoading={isTopRatedLoading}
           error={topRatedError}
         />
+
+        {/* Dietary Filters */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 mb-2 flex justify-center">
+          <DietaryFilter
+            selected={selectedDietary}
+            onChange={setSelectedDietary}
+          />
+        </div>
 
         {/* Featured Bakeries Grid */}
         <BakeryGrid

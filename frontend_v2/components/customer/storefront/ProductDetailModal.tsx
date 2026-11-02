@@ -744,12 +744,25 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                             ? (shop?.isPureVeg ? '🌱 100% Pure Veg (Eggless)' : '🌱 Eggless')
                             : 'Contains Egg'}
                       </span>
+                      {product.isVegan && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold border bg-green-50 text-green-700 border-green-200">
+                          🌱 Vegan Recipe
+                        </span>
+                      )}
+                      {product.isGlutenFree && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold border bg-amber-50 text-amber-800 border-amber-200">
+                          🌾 Gluten-Free Recipe
+                        </span>
+                      )}
                       {product.allowEggChoice && (
                         <span className="text-[10px] text-brand-muted bg-brand-cream/40 px-2 py-0.5 rounded-full border border-brand-border/40">
                           Choice Allowed (Default: {product.eggPreferenceDefault || 'EGGLESS'})
                         </span>
                       )}
                     </div>
+                    <p className="text-[10px] text-brand-muted italic mt-1">
+                      Note: Dietary tags reflect recipe formulation and do not guarantee allergen-free certification against cross-contamination.
+                    </p>
                   </div>
                 )}
               </div>

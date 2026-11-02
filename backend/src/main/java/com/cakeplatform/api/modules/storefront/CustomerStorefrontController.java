@@ -66,6 +66,8 @@ public class CustomerStorefrontController {
             @RequestParam(required = false) Double longitude,
             @RequestParam(required = false, defaultValue = "10.0") Double radiusKm,
             @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false, defaultValue = "false") Boolean openNow,
+            @RequestParam(required = false) List<String> dietary,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false, defaultValue = "20") Integer size
     ) {
@@ -107,14 +109,59 @@ public class CustomerStorefrontController {
         if (page != null) {
             return ResponseEntity.ok(storefrontService.discoverShopsPaged(
                     country, state, district, city, area, pincode, parsedType, search, location,
-                    latitude, longitude, radiusKm, sortBy, page, size
+                    latitude, longitude, radiusKm, sortBy, Boolean.TRUE.equals(openNow), dietary, page, size
             ));
         } else {
             return ResponseEntity.ok(storefrontService.discoverShops(
                     country, state, district, city, area, pincode, parsedType, search, location,
-                    latitude, longitude, radiusKm, sortBy, size
+                    latitude, longitude, radiusKm, sortBy, Boolean.TRUE.equals(openNow), dietary, size
             ));
         }
+    }
+
+    // Backward-compatible method overload without dietary for existing test suites
+    public ResponseEntity<?> searchShops(
+            String state,
+            String district,
+            String city,
+            String area,
+            String pincode,
+            String country,
+            String businessType,
+            String search,
+            String location,
+            Double latitude,
+            Double longitude,
+            Double radiusKm,
+            String sortBy,
+            Boolean openNow,
+            Integer page,
+            Integer size
+    ) {
+        return searchShops(state, district, city, area, pincode, country, businessType,
+                search, location, latitude, longitude, radiusKm, sortBy, openNow, null, page, size);
+    }
+
+    // Backward-compatible method overload without openNow for existing test suites
+    public ResponseEntity<?> searchShops(
+            String state,
+            String district,
+            String city,
+            String area,
+            String pincode,
+            String country,
+            String businessType,
+            String search,
+            String location,
+            Double latitude,
+            Double longitude,
+            Double radiusKm,
+            String sortBy,
+            Integer page,
+            Integer size
+    ) {
+        return searchShops(state, district, city, area, pincode, country, businessType,
+                search, location, latitude, longitude, radiusKm, sortBy, false, null, page, size);
     }
 
     // Backward-compatible method overload for legacy callers & unit tests
@@ -168,8 +215,36 @@ public class CustomerStorefrontController {
     @PostMapping("/{shopId}/orders")
     public ResponseEntity<Order> placeGuestOrder(
             @PathVariable Long shopId,
-            @Valid @RequestBody GuestOrderRequest request) {
-        return ResponseEntity.ok(storefrontService.placeGuestOrder(shopId, request));
+            @Valid @RequestBody GuestOrderRequest request,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal com.cakeplatform.api.security.CustomUserDetails userDetails) {
+        org.springframework.security.core.Authentication auth = 
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            boolean isCustomer = auth.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"));
+            if (!isCustomer) {
+                return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
+            }
+            if (userDetails == null && auth.getPrincipal() instanceof com.cakeplatform.api.security.CustomUserDetails cud) {
+                userDetails = cud;
+            }
+            if (userDetails != null && userDetails.getUser() != null) {
+                String authPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(userDetails.getUser().getMobile());
+                String reqPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(request.getCustomerPhone());
+                if (authPhone == null || !authPhone.equals(reqPhone)) {
+                    return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
+                }
+            } else {
+                return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
+            }
+        } else {
+            userDetails = null;
+        }
+        return ResponseEntity.ok(storefrontService.placeGuestOrder(shopId, request, userDetails));
+    }
+
+    public ResponseEntity<Order> placeGuestOrder(Long shopId, GuestOrderRequest request) {
+        return placeGuestOrder(shopId, request, null);
     }
 
     @PostMapping("/{shopId}/quote")
@@ -192,15 +267,28 @@ public class CustomerStorefrontController {
     }
 
     @GetMapping("/orders/{orderNumber}")
-    public ResponseEntity<Order> getGuestOrderDetails(
-            @PathVariable String orderNumber,
-            @RequestParam(required = false) String trackPhone
+    public ResponseEntity<com.cakeplatform.api.modules.storefront.dto.StorefrontOrderTrackingResponse> getGuestOrderDetails(
+            @PathVariable String orderNumber
     ) {
         org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        boolean isAuthenticated = auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal());
-        
-        if (!isAuthenticated && (trackPhone == null || trackPhone.isBlank())) {
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
             return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED).build();
+        }
+
+        boolean isCustomer = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"));
+        if (!isCustomer) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
+        }
+
+        if (!(auth.getPrincipal() instanceof com.cakeplatform.api.security.CustomUserDetails userDetails)) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
+        }
+
+        String userPhone = userDetails.getUser() != null ? userDetails.getUser().getMobile() : null;
+        String normalizedUserPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(userPhone);
+        if (normalizedUserPhone == null) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
         }
 
         Order order;
@@ -212,42 +300,38 @@ public class CustomerStorefrontController {
             }
             throw e;
         }
-        
+
         String normalizedOrderPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(order.getCustomerPhone());
-
-        if (isAuthenticated) {
-            Object principal = auth.getPrincipal();
-            if (!(principal instanceof com.cakeplatform.api.security.CustomUserDetails)) {
-                return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
-            }
-            com.cakeplatform.api.security.CustomUserDetails userDetails = (com.cakeplatform.api.security.CustomUserDetails) principal;
-            String userPhone = userDetails.getUser().getMobile();
-            
-            String normalizedUserPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(userPhone);
-
-            if (normalizedUserPhone == null || !normalizedUserPhone.equals(normalizedOrderPhone)) {
-                return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
-            }
-        } else {
-            String normalizedTrackPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(trackPhone);
-            if (normalizedTrackPhone == null || !normalizedTrackPhone.equals(normalizedOrderPhone)) {
-                return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND).build();
-            }
+        if (!normalizedUserPhone.equals(normalizedOrderPhone)) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
         }
 
-        return ResponseEntity.ok(order);
+        return ResponseEntity.ok(com.cakeplatform.api.modules.storefront.dto.StorefrontOrderTrackingResponse.from(order));
     }
 
     @GetMapping("/orders/{orderNumber}/invoice")
     public ResponseEntity<byte[]> downloadInvoice(
-            @PathVariable String orderNumber,
-            @RequestParam(required = false) String trackPhone
+            @PathVariable String orderNumber
     ) throws Exception {
         org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        boolean isAuthenticated = auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal());
-        
-        if (!isAuthenticated && (trackPhone == null || trackPhone.isBlank())) {
+        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) {
             return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED).build();
+        }
+
+        boolean isCustomer = auth.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"));
+        if (!isCustomer) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
+        }
+
+        if (!(auth.getPrincipal() instanceof com.cakeplatform.api.security.CustomUserDetails userDetails)) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
+        }
+
+        String userPhone = userDetails.getUser() != null ? userDetails.getUser().getMobile() : null;
+        String normalizedUserPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(userPhone);
+        if (normalizedUserPhone == null) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
         }
 
         Order order;
@@ -261,25 +345,8 @@ public class CustomerStorefrontController {
         }
 
         String normalizedOrderPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(order.getCustomerPhone());
-
-        if (isAuthenticated) {
-            Object principal = auth.getPrincipal();
-            if (!(principal instanceof com.cakeplatform.api.security.CustomUserDetails)) {
-                return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
-            }
-            com.cakeplatform.api.security.CustomUserDetails userDetails = (com.cakeplatform.api.security.CustomUserDetails) principal;
-            String userPhone = userDetails.getUser().getMobile();
-            
-            String normalizedUserPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(userPhone);
-
-            if (normalizedUserPhone == null || !normalizedUserPhone.equals(normalizedOrderPhone)) {
-                return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
-            }
-        } else {
-            String normalizedTrackPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(trackPhone);
-            if (normalizedTrackPhone == null || !normalizedTrackPhone.equals(normalizedOrderPhone)) {
-                return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND).build();
-            }
+        if (!normalizedUserPhone.equals(normalizedOrderPhone)) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
         }
 
         if (invoiceService == null) {

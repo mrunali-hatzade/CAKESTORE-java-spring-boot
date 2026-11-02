@@ -1,7 +1,5 @@
 package com.cakeplatform.api.modules.user.service;
 
-import com.cakeplatform.api.modules.user.CustomerAddress;
-import com.cakeplatform.api.modules.user.CustomerAddressRepository;
 import com.cakeplatform.api.modules.user.User;
 import com.cakeplatform.api.modules.user.UserRepository;
 import com.cakeplatform.api.modules.user.dto.CustomerAddressRequest;
@@ -13,14 +11,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class CustomerProfileService {
 
     private final UserRepository userRepository;
-    private final CustomerAddressRepository addressRepository;
+    private final CustomerAddressService addressService;
 
     @Transactional(readOnly = true)
     public CustomerProfileResponse getProfile(Long customerId) {
@@ -55,94 +52,27 @@ public class CustomerProfileService {
 
     @Transactional(readOnly = true)
     public List<CustomerAddressResponse> getAddresses(Long customerId) {
-        return addressRepository.findByCustomerIdOrderByIsDefaultDescCreatedAtDesc(customerId)
-                .stream()
-                .map(this::mapToAddressResponse)
-                .collect(Collectors.toList());
+        return addressService.getAddresses(customerId);
     }
 
     @Transactional
     public CustomerAddressResponse addAddress(Long customerId, CustomerAddressRequest request) {
-        User customer = userRepository.findById(customerId)
-                .orElseThrow(() -> new IllegalArgumentException("Customer not found"));
-
-        if (request.isDefault()) {
-            clearDefaultAddress(customerId);
-        }
-
-        List<CustomerAddress> existing = addressRepository.findByCustomerIdOrderByIsDefaultDescCreatedAtDesc(customerId);
-        boolean isFirst = existing.isEmpty();
-
-        CustomerAddress address = new CustomerAddress();
-        address.setCustomer(customer);
-        address.setLabel(request.getLabel());
-        address.setRecipientName(request.getRecipientName());
-        address.setRecipientPhone(request.getRecipientPhone());
-        address.setDeliveryAddress(request.getDeliveryAddress());
-        address.setDefault(isFirst || request.isDefault());
-
-        return mapToAddressResponse(addressRepository.save(address));
+        return addressService.addAddress(customerId, request);
     }
 
     @Transactional
     public CustomerAddressResponse updateAddress(Long customerId, Long addressId, CustomerAddressRequest request) {
-        CustomerAddress address = addressRepository.findByIdAndCustomerId(addressId, customerId)
-                .orElseThrow(() -> new IllegalArgumentException("Address not found or does not belong to customer"));
-
-        if (request.isDefault() && !address.isDefault()) {
-            clearDefaultAddress(customerId);
-        }
-
-        address.setLabel(request.getLabel());
-        address.setRecipientName(request.getRecipientName());
-        address.setRecipientPhone(request.getRecipientPhone());
-        address.setDeliveryAddress(request.getDeliveryAddress());
-        
-        if (request.isDefault()) {
-            address.setDefault(true);
-        } // We don't unset default through normal update unless another is set as default
-
-        return mapToAddressResponse(addressRepository.save(address));
+        return addressService.updateAddress(customerId, addressId, request);
     }
 
     @Transactional
     public void deleteAddress(Long customerId, Long addressId) {
-        CustomerAddress address = addressRepository.findByIdAndCustomerId(addressId, customerId)
-                .orElseThrow(() -> new IllegalArgumentException("Address not found or does not belong to customer"));
-        
-        boolean wasDefault = address.isDefault();
-        addressRepository.delete(address);
-        
-        if (wasDefault) {
-            List<CustomerAddress> remaining = addressRepository.findByCustomerIdOrderByIsDefaultDescCreatedAtDesc(customerId);
-            if (!remaining.isEmpty()) {
-                CustomerAddress newDefault = remaining.get(0);
-                newDefault.setDefault(true);
-                addressRepository.save(newDefault);
-            }
-        }
+        addressService.deleteAddress(customerId, addressId);
     }
 
     @Transactional
     public void setDefaultAddress(Long customerId, Long addressId) {
-        CustomerAddress address = addressRepository.findByIdAndCustomerId(addressId, customerId)
-                .orElseThrow(() -> new IllegalArgumentException("Address not found or does not belong to customer"));
-
-        if (!address.isDefault()) {
-            clearDefaultAddress(customerId);
-            address.setDefault(true);
-            addressRepository.save(address);
-        }
-    }
-
-    private void clearDefaultAddress(Long customerId) {
-        List<CustomerAddress> addresses = addressRepository.findByCustomerIdOrderByIsDefaultDescCreatedAtDesc(customerId);
-        for (CustomerAddress addr : addresses) {
-            if (addr.isDefault()) {
-                addr.setDefault(false);
-                addressRepository.save(addr);
-            }
-        }
+        addressService.setDefaultAddress(customerId, addressId);
     }
 
     private CustomerProfileResponse mapToProfileResponse(User user) {
@@ -151,17 +81,6 @@ public class CustomerProfileService {
         res.setFullName(user.getFullName());
         res.setEmail(user.getEmail());
         res.setMobile(user.getMobile());
-        return res;
-    }
-
-    private CustomerAddressResponse mapToAddressResponse(CustomerAddress address) {
-        CustomerAddressResponse res = new CustomerAddressResponse();
-        res.setId(address.getId());
-        res.setLabel(address.getLabel());
-        res.setRecipientName(address.getRecipientName());
-        res.setRecipientPhone(address.getRecipientPhone());
-        res.setDeliveryAddress(address.getDeliveryAddress());
-        res.setDefault(address.isDefault());
         return res;
     }
 }

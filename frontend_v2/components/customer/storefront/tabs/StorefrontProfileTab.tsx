@@ -11,7 +11,10 @@ import {
   Phone,
   ArrowLeft,
   KeyRound,
-  Check
+  Check,
+  Home,
+  Briefcase,
+  Building2,
 } from 'lucide-react';
 import { Shop } from '@/types/shop';
 import { Button } from '@/components/ui/Button';
@@ -54,11 +57,18 @@ export const StorefrontProfileTab: React.FC<StorefrontProfileTabProps> = ({ shop
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<number | null>(null);
   const [addressForm, setAddressForm] = useState({
+    addressType: 'HOME' as 'HOME' | 'WORK' | 'OTHER',
     label: 'Home',
     recipientName: '',
     recipientPhone: '',
+    addressLine1: '',
+    addressLine2: '',
+    landmark: '',
+    city: '',
+    state: '',
+    pincode: '',
     deliveryAddress: '',
-    default: false
+    default: false,
   });
 
   const loadProfileData = useCallback(async (token: string) => {
@@ -171,21 +181,36 @@ export const StorefrontProfileTab: React.FC<StorefrontProfileTabProps> = ({ shop
   const handleOpenAddressModal = (address?: CustomerAddress) => {
     if (address) {
       setEditingAddressId(address.id);
+      const addrType = address.addressType || (address.label?.toUpperCase() as any) || 'HOME';
       setAddressForm({
-        label: address.label,
-        recipientName: address.recipientName,
-        recipientPhone: address.recipientPhone,
-        deliveryAddress: address.deliveryAddress,
-        default: address.default
+        addressType: addrType === 'WORK' ? 'WORK' : addrType === 'OTHER' ? 'OTHER' : 'HOME',
+        label: address.label || (addrType === 'WORK' ? 'Work' : addrType === 'OTHER' ? 'Other' : 'Home'),
+        recipientName: address.recipientName || address.fullName || '',
+        recipientPhone: address.recipientPhone || address.mobileNumber || '',
+        addressLine1: address.addressLine1 || '',
+        addressLine2: address.addressLine2 || '',
+        landmark: address.landmark || '',
+        city: address.city || '',
+        state: address.state || '',
+        pincode: address.pincode || '',
+        deliveryAddress: address.formattedAddress || address.deliveryAddress || '',
+        default: address.default || address.isDefault || false,
       });
     } else {
       setEditingAddressId(null);
       setAddressForm({
+        addressType: 'HOME',
         label: 'Home',
         recipientName: profile?.fullName || '',
         recipientPhone: profile?.mobile || '',
+        addressLine1: '',
+        addressLine2: '',
+        landmark: '',
+        city: shop.city || '',
+        state: '',
+        pincode: '',
         deliveryAddress: '',
-        default: addresses.length === 0
+        default: addresses.length === 0,
       });
     }
     setIsAddressModalOpen(true);
@@ -195,24 +220,68 @@ export const StorefrontProfileTab: React.FC<StorefrontProfileTabProps> = ({ shop
     e.preventDefault();
     if (!customerAuth.token) return;
     
-    if (!addressForm.recipientName.trim() || !addressForm.recipientPhone.trim() || !addressForm.deliveryAddress.trim()) {
-      toast.error('Please fill in all required fields');
+    if (
+      !addressForm.recipientName.trim() ||
+      !addressForm.recipientPhone.trim() ||
+      !addressForm.addressLine1.trim() ||
+      !addressForm.city.trim() ||
+      !addressForm.pincode.trim()
+    ) {
+      toast.error('Please fill in recipient name, phone, address line 1, city, and PIN code.');
       return;
     }
+
+    if (!/^[1-9][0-9]{5}$/.test(addressForm.pincode.trim())) {
+      toast.error('Please enter a valid 6-digit Indian PIN code (e.g. 560001).');
+      return;
+    }
+
+    const cleanRecipientPhone = addressForm.recipientPhone.trim().replace(/^0+/, '');
+    if (!cleanRecipientPhone || !/^\+?[1-9]\d{9,14}$/.test(cleanRecipientPhone)) {
+      toast.error('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    const composedAddress = [
+      addressForm.addressLine1.trim(),
+      addressForm.addressLine2.trim() || null,
+      addressForm.landmark.trim() ? `Near ${addressForm.landmark.trim()}` : null,
+      addressForm.city.trim(),
+      addressForm.state.trim() || null,
+      addressForm.pincode.trim(),
+    ].filter(Boolean).join(', ');
+
+    const payload = {
+      fullName: addressForm.recipientName.trim(),
+      recipientName: addressForm.recipientName.trim(),
+      mobileNumber: cleanRecipientPhone,
+      recipientPhone: cleanRecipientPhone,
+      addressLine1: addressForm.addressLine1.trim(),
+      addressLine2: addressForm.addressLine2.trim() || undefined,
+      landmark: addressForm.landmark.trim() || undefined,
+      city: addressForm.city.trim(),
+      state: addressForm.state.trim() || undefined,
+      pincode: addressForm.pincode.trim(),
+      addressType: addressForm.addressType,
+      label: addressForm.label || (addressForm.addressType === 'HOME' ? 'Home' : addressForm.addressType === 'WORK' ? 'Work' : 'Other'),
+      deliveryAddress: composedAddress,
+      default: addressForm.default,
+      isDefault: addressForm.default,
+    };
     
     setIsLoading(true);
     try {
       if (editingAddressId) {
-        await customerProfileApi.updateAddress(editingAddressId, addressForm, customerAuth.token);
+        await customerProfileApi.updateAddress(editingAddressId, payload, customerAuth.token);
         toast.success('Address updated successfully!');
       } else {
-        await customerProfileApi.addAddress(addressForm, customerAuth.token);
+        await customerProfileApi.addAddress(payload, customerAuth.token);
         toast.success('Address added successfully!');
       }
       setIsAddressModalOpen(false);
       loadProfileData(customerAuth.token);
     } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to save address');
+      toast.error(err.response?.data?.message || err.response?.data?.error || 'Failed to save address');
     } finally {
       setIsLoading(false);
     }
@@ -417,42 +486,54 @@ export const StorefrontProfileTab: React.FC<StorefrontProfileTabProps> = ({ shop
             </Card>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {addresses.map((address) => (
-                <Card key={address.id} className={`p-5 border transition-all duration-200 ${address.default ? 'border-brand-primary shadow-md' : 'border-brand-border/60 shadow-soft'}`}>
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex items-center space-x-2">
-                      <Badge variant={address.default ? 'info' : 'default'} className="uppercase text-[10px]">
-                        {address.label}
-                      </Badge>
-                      {address.default && (
-                        <span className="flex items-center text-xs text-brand-primary font-medium">
-                          <CheckCircle2 className="w-3 h-3 mr-1" /> Default
-                        </span>
+              {addresses.map((address) => {
+                const isDef = address.default || address.isDefault;
+                const addrType = address.addressType || (address.label?.toUpperCase() as any) || 'HOME';
+                return (
+                  <Card key={address.id} className={`p-5 border transition-all duration-200 ${isDef ? 'border-brand-primary shadow-md' : 'border-brand-border/60 shadow-soft'}`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center space-x-2">
+                        <Badge variant={isDef ? 'info' : 'default'} className="uppercase text-[10px] flex items-center gap-1">
+                          {addrType === 'WORK' && <Briefcase className="w-3 h-3" />}
+                          {addrType === 'OTHER' && <Building2 className="w-3 h-3" />}
+                          {addrType === 'HOME' && <Home className="w-3 h-3" />}
+                          <span>{address.label || addrType}</span>
+                        </Badge>
+                        {isDef && (
+                          <span className="flex items-center text-xs text-brand-primary font-medium">
+                            <CheckCircle2 className="w-3 h-3 mr-1" /> Default
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex space-x-1">
+                        <button onClick={() => handleOpenAddressModal(address)} className="p-1.5 text-brand-muted hover:text-brand-primary hover:bg-brand-cream rounded-md transition-colors">
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => handleDeleteAddress(address.id)} className="p-1.5 text-brand-muted hover:text-red-500 hover:bg-red-50 rounded-md transition-colors">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-1 mb-4 text-xs">
+                      <p className="font-bold text-brand-text text-sm">{address.recipientName || address.fullName}</p>
+                      <p className="text-brand-muted">{address.recipientPhone || address.mobileNumber}</p>
+                      <p className="text-brand-text mt-1.5 line-clamp-3 leading-relaxed">{address.formattedAddress || address.deliveryAddress}</p>
+                      {address.pincode && (
+                        <p className="text-[11px] text-brand-muted">
+                          PIN: <span className="font-medium text-brand-text">{address.pincode}</span>
+                        </p>
                       )}
                     </div>
-                    <div className="flex space-x-1">
-                      <button onClick={() => handleOpenAddressModal(address)} className="p-1.5 text-brand-muted hover:text-brand-primary hover:bg-brand-cream rounded-md transition-colors">
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => handleDeleteAddress(address.id)} className="p-1.5 text-brand-muted hover:text-red-500 hover:bg-red-50 rounded-md transition-colors">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-1 mb-4">
-                    <p className="font-bold text-brand-text text-sm">{address.recipientName}</p>
-                    <p className="text-brand-muted text-xs">{address.recipientPhone}</p>
-                    <p className="text-brand-text text-sm mt-2 line-clamp-3">{address.deliveryAddress}</p>
-                  </div>
 
-                  {!address.default && (
-                    <Button variant="outline" size="sm" className="w-full text-xs h-8" onClick={() => handleSetDefaultAddress(address.id)}>
-                      Set as Default
-                    </Button>
-                  )}
-                </Card>
-              ))}
+                    {!isDef && (
+                      <Button variant="outline" size="sm" className="w-full text-xs h-8" onClick={() => handleSetDefaultAddress(address.id)}>
+                        Set as Default
+                      </Button>
+                    )}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
@@ -466,23 +547,32 @@ export const StorefrontProfileTab: React.FC<StorefrontProfileTabProps> = ({ shop
       >
         <form onSubmit={handleSaveAddress} className="space-y-4">
           <div className="grid grid-cols-3 gap-2">
-            {['Home', 'Work', 'Other'].map((lbl) => (
+            {(['HOME', 'WORK', 'OTHER'] as const).map((type) => (
               <button
-                key={lbl}
+                key={type}
                 type="button"
-                className={`py-2 px-3 text-sm font-medium rounded-lg border transition-all ${
-                  addressForm.label === lbl 
-                    ? 'border-brand-primary bg-brand-primary/5 text-brand-primary' 
+                className={`py-2 px-3 text-xs font-bold rounded-lg border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  addressForm.addressType === type
+                    ? 'border-brand-primary bg-brand-primary/10 text-brand-primary' 
                     : 'border-brand-border/60 text-brand-muted hover:border-brand-border'
                 }`}
-                onClick={() => setAddressForm({ ...addressForm, label: lbl })}
+                onClick={() =>
+                  setAddressForm({
+                    ...addressForm,
+                    addressType: type,
+                    label: type === 'HOME' ? 'Home' : type === 'WORK' ? 'Work' : 'Other',
+                  })
+                }
               >
-                {lbl}
+                {type === 'HOME' && <Home className="w-3.5 h-3.5" />}
+                {type === 'WORK' && <Briefcase className="w-3.5 h-3.5" />}
+                {type === 'OTHER' && <Building2 className="w-3.5 h-3.5" />}
+                <span>{type === 'HOME' ? 'Home' : type === 'WORK' ? 'Work' : 'Other'}</span>
               </button>
             ))}
           </div>
           
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Recipient Name"
               required
@@ -498,18 +588,54 @@ export const StorefrontProfileTab: React.FC<StorefrontProfileTabProps> = ({ shop
           </div>
           
           <Input
-            label="Full Delivery Address"
+            label="House / Flat / Building / Street (Line 1)"
             required
-            placeholder="Flat/House No, Building, Street, Area, City, PIN"
-            value={addressForm.deliveryAddress}
-            onChange={(e) => setAddressForm({ ...addressForm, deliveryAddress: e.target.value })}
+            placeholder="Flat 302, Palm Heights, 5th Cross"
+            value={addressForm.addressLine1}
+            onChange={(e) => setAddressForm({ ...addressForm, addressLine1: e.target.value })}
           />
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              label="Area / Locality (Line 2)"
+              placeholder="Indiranagar (optional)"
+              value={addressForm.addressLine2}
+              onChange={(e) => setAddressForm({ ...addressForm, addressLine2: e.target.value })}
+            />
+            <Input
+              label="Landmark"
+              placeholder="Near Metro Station (optional)"
+              value={addressForm.landmark}
+              onChange={(e) => setAddressForm({ ...addressForm, landmark: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Input
+              label="City"
+              required
+              value={addressForm.city}
+              onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })}
+            />
+            <Input
+              label="State"
+              value={addressForm.state}
+              onChange={(e) => setAddressForm({ ...addressForm, state: e.target.value })}
+            />
+            <Input
+              label="PIN Code"
+              required
+              maxLength={6}
+              value={addressForm.pincode}
+              onChange={(e) => setAddressForm({ ...addressForm, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+            />
+          </div>
+
           {!addressForm.default && (
-            <label className="flex items-center space-x-2 cursor-pointer">
+            <label className="flex items-center space-x-2 cursor-pointer pt-2">
               <input
                 type="checkbox"
-                className="w-4 h-4 text-brand-primary border-brand-border rounded focus:ring-brand-primary"
+                className="w-4 h-4 text-brand-primary border-brand-border rounded focus:ring-brand-primary cursor-pointer"
                 checked={addressForm.default}
                 onChange={(e) => setAddressForm({ ...addressForm, default: e.target.checked })}
               />

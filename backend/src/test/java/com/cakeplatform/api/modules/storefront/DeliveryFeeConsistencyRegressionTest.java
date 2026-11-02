@@ -276,7 +276,7 @@ class DeliveryFeeConsistencyRegressionTest {
                 customerStorefrontService.placeGuestOrder(17L, request)
         );
 
-        assertTrue(ex.getMessage().contains("Home delivery is currently disabled"));
+        assertTrue(ex.getMessage().contains("Home delivery is currently unavailable"));
     }
 
     @Test
@@ -300,6 +300,7 @@ class DeliveryFeeConsistencyRegressionTest {
         StorefrontQuoteRequest quoteRequest = StorefrontQuoteRequest.builder()
                 .items(List.of(item))
                 .fulfillmentMethod("HOME_DELIVERY")
+                .deliveryAddress("Sector 4")
                 .build();
 
         StorefrontQuoteResponse quote = customerStorefrontService.calculateQuote(17L, quoteRequest);
@@ -308,7 +309,7 @@ class DeliveryFeeConsistencyRegressionTest {
         assertFalse(quote.getCanDeliver());
         assertFalse(quote.getDeliveryEnabled());
         assertNotNull(quote.getRejectionReason());
-        assertTrue(quote.getRejectionReason().contains("choose self-pickup"));
+        assertTrue(quote.getRejectionReason().contains("store pickup"));
     }
 
     @Test
@@ -407,6 +408,7 @@ class DeliveryFeeConsistencyRegressionTest {
         StorefrontQuoteRequest quoteRequest = StorefrontQuoteRequest.builder()
                 .items(List.of(item))
                 .fulfillmentMethod("HOME_DELIVERY")
+                .deliveryAddress("Sector 4")
                 .build();
 
         StorefrontQuoteResponse quote = customerStorefrontService.calculateQuote(17L, quoteRequest);

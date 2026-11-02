@@ -47,6 +47,12 @@ public class ShopDeliveryConfig {
     @Column(name = "delivery_notes", columnDefinition = "TEXT")
     private String deliveryNotes;
 
+    @Column(name = "max_delivery_radius_km")
+    private Double maxDeliveryRadiusKm;
+
+    @Column(name = "serviceable_pincodes", columnDefinition = "TEXT")
+    private String serviceablePincodes;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

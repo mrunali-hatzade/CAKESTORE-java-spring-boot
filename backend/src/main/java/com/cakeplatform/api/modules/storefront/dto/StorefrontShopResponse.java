@@ -36,6 +36,7 @@ public class StorefrontShopResponse {
     private String fssaiRegistration;
     private String verificationStatus;
     private String inactiveReason;
+    private String timezone;
 
     // About & Social
     private String aboutStory;
@@ -48,6 +49,10 @@ public class StorefrontShopResponse {
     private Double averageRating;
     private Long totalReviews;
 
+    // Operating hours & open status
+    private Boolean isOpenNow;
+    private String openStatusText;
+
     // Storefront Configuration & Components
     private List<ShopBanner> banners;
     private List<ShopBusinessHours> businessHours;
@@ -56,4 +61,3 @@ public class StorefrontShopResponse {
     private List<ShopCustomFormField> customCakeFormFields;
     private List<com.cakeplatform.api.modules.shop.dto.ShopSocialLinkResponse> socialLinks;
 }
-

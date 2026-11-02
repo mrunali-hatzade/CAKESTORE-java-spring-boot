@@ -156,7 +156,11 @@ public class NominatimGeocodingService implements GeocodingService {
                         double lat = Double.parseDouble(latObj.toString());
                         double lon = Double.parseDouble(lonObj.toString());
                         if (isValidCoordinates(lat, lon)) {
-                            log.info("Geocoded address '{}' to [{}, {}]", fullAddressQuery, lat, lon);
+                            log.debug("Geocoded address query to [{}, {}]", lat, lon);
+                            log.info("Geocoded location successfully via NOMINATIM for city='{}', pincode='{}' -> [{}, {}]",
+                                    city != null ? city.trim() : "unspecified",
+                                    pincode != null ? pincode.trim() : "unspecified",
+                                    lat, lon);
                             return Optional.of(new Coordinates(lat, lon));
                         }
                     }
@@ -164,7 +168,10 @@ public class NominatimGeocodingService implements GeocodingService {
             }
         } catch (Exception e) {
             // Geocoding failure should never crash the application or fall back to fake/Akurdi coordinates
-            log.warn("External geocoding failed for '{}': {}", fullAddressQuery, e.getMessage());
+            log.warn("External geocoding failed for city='{}', pincode='{}': {}",
+                    city != null ? city.trim() : "unspecified",
+                    pincode != null ? pincode.trim() : "unspecified",
+                    e.getMessage());
         }
 
         return Optional.empty();
@@ -249,7 +256,7 @@ public class NominatimGeocodingService implements GeocodingService {
                         }
                     }
                 } catch (Exception e) {
-                    log.warn("Nominatim query failed for '{}': {}", cleanQuery, e.getMessage());
+                    log.warn("Nominatim search request failed (query length {}): {}", cleanQuery.length(), e.getMessage());
                 }
             }
         }

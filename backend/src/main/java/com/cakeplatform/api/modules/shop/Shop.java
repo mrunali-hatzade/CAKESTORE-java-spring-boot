@@ -92,6 +92,9 @@ public class Shop {
     @Column(name = "map_location_url", length = 1000)
     private String mapLocationUrl;
 
+    @Column(name = "timezone", length = 50)
+    private String timezone = "Asia/Kolkata";
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ShopStatus status = ShopStatus.PENDING;

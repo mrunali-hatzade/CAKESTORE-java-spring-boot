@@ -3,8 +3,9 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Cake, Menu, X, ShoppingBag, PackageCheck } from 'lucide-react';
+import { Cake, Menu, X, ShoppingBag, PackageCheck, UserCheck, LogOut } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
+import { useCustomerAuth } from '@/lib/auth/CustomerAuthContext';
 import { useCart } from '@/context/CartContext';
 import { Button } from '@/components/ui/Button';
 import { CustomerOrderLookupModal } from '@/components/customer/common/CustomerOrderLookupModal';
@@ -13,9 +14,16 @@ import { CartDrawer } from '@/components/customer/storefront/CartDrawer';
 export const Navbar: React.FC = () => {
   const pathname = usePathname();
   const { user, isAuthenticated } = useAuth();
-  const { totalItems, totalPrice, setIsCartOpen } = useCart();
+  const customerAuth = useCustomerAuth();
+  const { totalItems, setIsCartOpen } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [orderLookupOpen, setOrderLookupOpen] = useState(false);
+  const [lookupInitialTab, setLookupInitialTab] = useState<'PHONE' | 'ORDER_NUMBER'>('PHONE');
+
+  const openOrderLookup = (tab: 'PHONE' | 'ORDER_NUMBER' = 'PHONE') => {
+    setLookupInitialTab(tab);
+    setOrderLookupOpen(true);
+  };
 
   const navLinks = [
     { label: 'Home', href: '/' },
@@ -73,15 +81,48 @@ export const Navbar: React.FC = () => {
 
           {/* Desktop Customer & Seller Actions */}
           <div className="hidden lg:flex items-center gap-2.5 shrink-0">
-            {/* Live Order Tracking Lookup */}
-            <button
-              onClick={() => setOrderLookupOpen(true)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-espresso/80 hover:text-brand-plum px-2.5 py-1.5 rounded-xl hover:bg-brand-blush/60 transition-colors"
-              title="Track live cake order status"
-            >
-              <PackageCheck className="w-4 h-4 text-brand-plum" />
-              <span className="hidden xl:inline">Track Order</span>
-            </button>
+            {/* Customer Auth Indicator & My Orders */}
+            {customerAuth.isAuthenticated ? (
+              <div className="flex items-center gap-1.5 bg-brand-cream-light/80 border border-brand-border/80 px-2 py-1 rounded-2xl">
+                <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-xl border border-emerald-200/80">
+                  <UserCheck className="w-3 h-3 text-emerald-600" />
+                  <span>+91 {customerAuth.phone}</span>
+                </div>
+                <button
+                  onClick={() => openOrderLookup('PHONE')}
+                  className="inline-flex items-center gap-1 text-xs font-bold text-brand-plum hover:text-brand-plum-hover px-2 py-1 rounded-xl hover:bg-brand-blush/50 transition-colors"
+                  title="View your orders across all bakeries"
+                >
+                  <PackageCheck className="w-3.5 h-3.5" />
+                  <span>My Orders</span>
+                </button>
+                <button
+                  onClick={() => customerAuth.logout()}
+                  className="p-1 text-brand-muted hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
+                  title="Log out customer session"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => openOrderLookup('ORDER_NUMBER')}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-espresso/80 hover:text-brand-plum px-2.5 py-1.5 rounded-xl hover:bg-brand-blush/60 transition-colors"
+                  title="Track live cake order status by ID"
+                >
+                  <PackageCheck className="w-4 h-4 text-brand-plum" />
+                  <span className="hidden xl:inline">Track Order</span>
+                </button>
+                <button
+                  onClick={() => openOrderLookup('PHONE')}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-brand-espresso/80 hover:text-brand-plum px-2.5 py-1.5 rounded-xl hover:bg-brand-blush/60 transition-colors"
+                  title="View past orders with phone OTP"
+                >
+                  <span>My Orders</span>
+                </button>
+              </>
+            )}
 
             {/* Live Store Basket Trigger (visible when items are in cart) */}
             {totalItems > 0 && (
@@ -100,11 +141,20 @@ export const Navbar: React.FC = () => {
 
             <div className="h-4 w-px bg-brand-border/80 mx-1" />
 
-            <Link href="/login">
-              <Button variant="ghost" size="sm" className="text-brand-espresso hover:text-brand-plum font-semibold text-xs">
-                Owner Login
-              </Button>
-            </Link>
+            {/* Owner Portal Authentication & Onboarding */}
+            {isAuthenticated ? (
+              <Link href={user?.role === 'ROLE_ADMIN' || (user?.role as string) === 'ADMIN' ? '/admin' : '/dashboard/owner'}>
+                <Button variant="ghost" size="sm" className="text-brand-espresso hover:text-brand-plum font-semibold text-xs">
+                  {user?.role === 'ROLE_ADMIN' || (user?.role as string) === 'ADMIN' ? 'Admin Portal' : 'Owner Dashboard'}
+                </Button>
+              </Link>
+            ) : (
+              <Link href="/login">
+                <Button variant="ghost" size="sm" className="text-brand-espresso hover:text-brand-plum font-semibold text-xs">
+                  Owner Login
+                </Button>
+              </Link>
+            )}
             <Link href="/onboarding">
               <Button variant="primary" size="sm" className="shadow-xs font-bold text-xs">
                 Register Bakery
@@ -140,20 +190,68 @@ export const Navbar: React.FC = () => {
         {/* Mobile Drawer */}
         {mobileMenuOpen && (
           <div className="lg:hidden border-t border-brand-border/60 bg-white px-4 pt-3 pb-6 space-y-1 shadow-elevated">
-            {/* Mobile Track Order Button */}
-            <button
-              onClick={() => {
-                setMobileMenuOpen(false);
-                setOrderLookupOpen(true);
-              }}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-brand-blush/60 text-brand-plum text-xs font-bold mb-2"
-            >
-              <div className="flex items-center gap-2">
-                <PackageCheck className="w-4 h-4" />
-                <span>Track Your Cake Order</span>
+            {/* Customer Session Status or Order Lookup */}
+            {customerAuth.isAuthenticated ? (
+              <div className="space-y-1.5 mb-2">
+                <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200/80">
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs font-bold text-emerald-800">+91 {customerAuth.phone}</span>
+                  </div>
+                  <button
+                    onClick={() => {
+                      customerAuth.logout();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="text-xs font-semibold text-rose-600 hover:underline"
+                  >
+                    Logout
+                  </button>
+                </div>
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    openOrderLookup('PHONE');
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-brand-plum text-white text-xs font-bold shadow-xs"
+                >
+                  <div className="flex items-center gap-2">
+                    <PackageCheck className="w-4 h-4" />
+                    <span>My Orders (View All)</span>
+                  </div>
+                  <span className="text-[10px] uppercase tracking-wider font-semibold opacity-80">Open →</span>
+                </button>
               </div>
-              <span className="text-[10px] uppercase tracking-wider font-semibold">Enter ID →</span>
-            </button>
+            ) : (
+              <div className="space-y-1.5 mb-2">
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    openOrderLookup('PHONE');
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-brand-blush/60 text-brand-plum text-xs font-bold"
+                >
+                  <div className="flex items-center gap-2">
+                    <PackageCheck className="w-4 h-4" />
+                    <span>My Orders (Phone OTP)</span>
+                  </div>
+                  <span className="text-[10px] uppercase tracking-wider font-semibold">View →</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    openOrderLookup('ORDER_NUMBER');
+                  }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-white border border-brand-border text-brand-espresso text-xs font-medium"
+                >
+                  <div className="flex items-center gap-2">
+                    <PackageCheck className="w-4 h-4 text-brand-muted" />
+                    <span>Track by Order ID</span>
+                  </div>
+                  <span className="text-[10px] uppercase tracking-wider font-semibold text-brand-muted">Enter ID →</span>
+                </button>
+              </div>
+            )}
 
             {navLinks.map((item) => {
               const isActive =
@@ -177,25 +275,39 @@ export const Navbar: React.FC = () => {
             })}
 
             <div className="pt-3 border-t border-brand-border/60 flex flex-col gap-2 mt-2">
-              <Link href="/onboarding" onClick={() => setMobileMenuOpen(false)}>
-                <Button variant="primary" className="w-full font-bold" size="sm">
-                  Register Bakery
-                </Button>
-              </Link>
-              <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
-                <Button variant="outline" className="w-full font-semibold" size="sm">
-                  Owner Login
-                </Button>
-              </Link>
+              {isAuthenticated ? (
+                <Link
+                  href={user?.role === 'ROLE_ADMIN' || (user?.role as string) === 'ADMIN' ? '/admin' : '/dashboard/owner'}
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <Button variant="outline" className="w-full font-semibold" size="sm">
+                    {user?.role === 'ROLE_ADMIN' || (user?.role as string) === 'ADMIN' ? 'Admin Portal' : 'Owner Dashboard'}
+                  </Button>
+                </Link>
+              ) : (
+                <>
+                  <Link href="/onboarding" onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant="primary" className="w-full font-bold" size="sm">
+                      Register Bakery
+                    </Button>
+                  </Link>
+                  <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant="outline" className="w-full font-semibold" size="sm">
+                      Owner Login
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         )}
       </header>
 
-      {/* Customer Order Tracking Lookup Modal */}
+      {/* Customer Order Tracking & History Lookup Modal */}
       <CustomerOrderLookupModal
         isOpen={orderLookupOpen}
         onClose={() => setOrderLookupOpen(false)}
+        initialTab={lookupInitialTab}
       />
 
       {/* Slide-out Cart/Basket Drawer */}

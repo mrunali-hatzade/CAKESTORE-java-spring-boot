@@ -29,6 +29,9 @@ public class ProductRequest {
     private Boolean allowEggChoice = false;
     private String eggPreferenceDefault = "EGGLESS";
     private BigDecimal egglessPriceDiff = BigDecimal.ZERO;
+    private Boolean isEggless;
+    private Boolean isVegan;
+    private Boolean isGlutenFree;
     
     private List<ImageDto> images;
     private List<HighlightDto> highlights;

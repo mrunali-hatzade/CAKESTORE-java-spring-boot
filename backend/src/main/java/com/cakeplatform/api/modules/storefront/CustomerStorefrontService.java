@@ -74,6 +74,34 @@ public class CustomerStorefrontService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.cakeplatform.api.modules.shop.ShopSocialLinkRepository shopSocialLinkRepository;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.shop.service.DeliveryEligibilityService deliveryEligibilityService;
+
+    public void setDeliveryEligibilityService(com.cakeplatform.api.modules.shop.service.DeliveryEligibilityService deliveryEligibilityService) {
+        this.deliveryEligibilityService = deliveryEligibilityService;
+    }
+
+    private com.cakeplatform.api.modules.shop.service.DeliveryEligibilityService getDeliveryEligibilityService() {
+        if (this.deliveryEligibilityService == null) {
+            this.deliveryEligibilityService = new com.cakeplatform.api.modules.shop.service.DeliveryEligibilityService(null);
+        }
+        return this.deliveryEligibilityService;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.cakeplatform.api.modules.shop.service.OperatingHoursService operatingHoursService;
+
+    public void setOperatingHoursService(com.cakeplatform.api.modules.shop.service.OperatingHoursService operatingHoursService) {
+        this.operatingHoursService = operatingHoursService;
+    }
+
+    private com.cakeplatform.api.modules.shop.service.OperatingHoursService getOperatingHoursService() {
+        if (this.operatingHoursService == null) {
+            this.operatingHoursService = new com.cakeplatform.api.modules.shop.service.OperatingHoursService();
+        }
+        return this.operatingHoursService;
+    }
+
 
     @org.springframework.beans.factory.annotation.Autowired
     public CustomerStorefrontService(
@@ -294,6 +322,8 @@ public class CustomerStorefrontService {
             Double longitude,
             Double radiusKm,
             String sortBy,
+            Boolean openNow,
+            List<String> dietary,
             int page,
             int size
     ) {
@@ -309,6 +339,22 @@ public class CustomerStorefrontService {
         String cleanSearch = cleanParam(search);
         String cleanLocation = cleanParam(location);
         String businessTypeStr = businessType != null ? businessType.name() : null;
+
+        boolean requireEggless = false;
+        boolean requireVegan = false;
+        boolean requireGlutenFree = false;
+        if (dietary != null && !dietary.isEmpty()) {
+            for (String d : dietary) {
+                if (d == null) continue;
+                String[] parts = d.split(",");
+                for (String part : parts) {
+                    String clean = part.trim().toUpperCase().replace("-", "_");
+                    if ("EGGLESS".equals(clean)) requireEggless = true;
+                    else if ("VEGAN".equals(clean)) requireVegan = true;
+                    else if ("GLUTEN_FREE".equals(clean)) requireGlutenFree = true;
+                }
+            }
+        }
 
         if (latitude != null && longitude != null) {
             double effectiveRadius = (radiusKm != null && radiusKm > 0) ? Math.min(radiusKm, 100.0) : 10.0;
@@ -328,31 +374,39 @@ public class CustomerStorefrontService {
                 projections = shopRepository.findNearbyActiveShopsOrderByNewest(
                         latitude, longitude, minLat, maxLat, minLng, maxLng, effectiveRadius,
                         cleanCity, cleanState, cleanDistrict, cleanArea, cleanPincode,
-                        businessTypeStr, cleanSearch, effectiveSize, offset
+                        businessTypeStr, cleanSearch, openNow,
+                        requireEggless, requireVegan, requireGlutenFree,
+                        effectiveSize, offset
                 );
             } else if ("rating".equals(cleanSortBy)) {
                 projections = shopRepository.findNearbyActiveShopsOrderByRating(
                         latitude, longitude, minLat, maxLat, minLng, maxLng, effectiveRadius,
                         cleanCity, cleanState, cleanDistrict, cleanArea, cleanPincode,
-                        businessTypeStr, cleanSearch, effectiveSize, offset
+                        businessTypeStr, cleanSearch, openNow,
+                        requireEggless, requireVegan, requireGlutenFree,
+                        effectiveSize, offset
                 );
             } else {
                 projections = shopRepository.findNearbyActiveShopsOrderByDistance(
                         latitude, longitude, minLat, maxLat, minLng, maxLng, effectiveRadius,
                         cleanCity, cleanState, cleanDistrict, cleanArea, cleanPincode,
-                        businessTypeStr, cleanSearch, effectiveSize, offset
+                        businessTypeStr, cleanSearch, openNow,
+                        requireEggless, requireVegan, requireGlutenFree,
+                        effectiveSize, offset
                 );
             }
 
             long total = shopRepository.countNearbyActiveShops(
                     latitude, longitude, minLat, maxLat, minLng, maxLng, effectiveRadius,
                     cleanCity, cleanState, cleanDistrict, cleanArea, cleanPincode,
-                    businessTypeStr, cleanSearch
+                    businessTypeStr, cleanSearch, openNow,
+                    requireEggless, requireVegan, requireGlutenFree
             );
 
             List<StorefrontShopSummaryDTO> content = projections.stream()
                     .map(this::mapProjectionToSummaryDTO)
                     .collect(Collectors.toList());
+            enrichOpenStatus(content);
             return new PageImpl<>(content, PageRequest.of(effectivePage, effectiveSize), total);
         } else {
             String cleanSortBy = (sortBy != null && !sortBy.isBlank()) ? sortBy.trim().toLowerCase() : "rating";
@@ -361,25 +415,74 @@ public class CustomerStorefrontService {
             if ("newest".equals(cleanSortBy)) {
                 projections = shopRepository.findActiveShopsWithSummaryOrderByNewest(
                         cleanCity, cleanState, cleanDistrict, cleanArea, cleanPincode,
-                        businessTypeStr, cleanSearch, cleanLocation, effectiveSize, offset
+                        businessTypeStr, cleanSearch, cleanLocation, openNow,
+                        requireEggless, requireVegan, requireGlutenFree,
+                        effectiveSize, offset
                 );
             } else {
                 projections = shopRepository.findActiveShopsWithSummaryOrderByRating(
                         cleanCity, cleanState, cleanDistrict, cleanArea, cleanPincode,
-                        businessTypeStr, cleanSearch, cleanLocation, effectiveSize, offset
+                        businessTypeStr, cleanSearch, cleanLocation, openNow,
+                        requireEggless, requireVegan, requireGlutenFree,
+                        effectiveSize, offset
                 );
             }
             
             long total = shopRepository.countActiveShops(
                     cleanCity, cleanState, cleanDistrict, cleanArea, cleanPincode,
-                    businessTypeStr, cleanSearch, cleanLocation
+                    businessTypeStr, cleanSearch, cleanLocation, openNow,
+                    requireEggless, requireVegan, requireGlutenFree
             );
 
             List<StorefrontShopSummaryDTO> content = projections.stream()
                     .map(this::mapProjectionToSummaryDTO)
                     .collect(Collectors.toList());
+            enrichOpenStatus(content);
             return new PageImpl<>(content, PageRequest.of(effectivePage, effectiveSize), total);
         }
+    }
+
+    public Page<StorefrontShopSummaryDTO> discoverShopsPaged(
+            String country,
+            String state,
+            String district,
+            String city,
+            String area,
+            String pincode,
+            BusinessType businessType,
+            String search,
+            String location,
+            Double latitude,
+            Double longitude,
+            Double radiusKm,
+            String sortBy,
+            Boolean openNow,
+            int page,
+            int size
+    ) {
+        return discoverShopsPaged(country, state, district, city, area, pincode, businessType,
+                search, location, latitude, longitude, radiusKm, sortBy, openNow, null, page, size);
+    }
+
+    public Page<StorefrontShopSummaryDTO> discoverShopsPaged(
+            String country,
+            String state,
+            String district,
+            String city,
+            String area,
+            String pincode,
+            BusinessType businessType,
+            String search,
+            String location,
+            Double latitude,
+            Double longitude,
+            Double radiusKm,
+            String sortBy,
+            int page,
+            int size
+    ) {
+        return discoverShopsPaged(country, state, district, city, area, pincode, businessType,
+                search, location, latitude, longitude, radiusKm, sortBy, false, page, size);
     }
 
     public List<StorefrontShopSummaryDTO> discoverShops(
@@ -395,10 +498,38 @@ public class CustomerStorefrontService {
             Double latitude,
             Double longitude,
             Double radiusKm,
-            String sortBy
+            String sortBy,
+            Boolean openNow,
+            List<String> dietary,
+            Integer size
+    ) {
+        int effectiveSize = (size != null && size > 0) ? Math.min(size, 100) : 100;
+        Page<StorefrontShopSummaryDTO> page = discoverShopsPaged(
+                country, state, district, city, area, pincode, businessType,
+                search, location, latitude, longitude, radiusKm, sortBy, openNow, dietary, 0, effectiveSize
+        );
+        return page.getContent();
+    }
+
+    public List<StorefrontShopSummaryDTO> discoverShops(
+            String country,
+            String state,
+            String district,
+            String city,
+            String area,
+            String pincode,
+            BusinessType businessType,
+            String search,
+            String location,
+            Double latitude,
+            Double longitude,
+            Double radiusKm,
+            String sortBy,
+            Boolean openNow,
+            Integer size
     ) {
         return discoverShops(country, state, district, city, area, pincode, businessType,
-                search, location, latitude, longitude, radiusKm, sortBy, null);
+                search, location, latitude, longitude, radiusKm, sortBy, openNow, null, size);
     }
 
     public List<StorefrontShopSummaryDTO> discoverShops(
@@ -417,12 +548,52 @@ public class CustomerStorefrontService {
             String sortBy,
             Integer size
     ) {
-        int effectiveSize = (size != null && size > 0) ? Math.min(size, 100) : 100;
-        Page<StorefrontShopSummaryDTO> page = discoverShopsPaged(
-                country, state, district, city, area, pincode, businessType,
-                search, location, latitude, longitude, radiusKm, sortBy, 0, effectiveSize
-        );
-        return page.getContent();
+        return discoverShops(country, state, district, city, area, pincode, businessType,
+                search, location, latitude, longitude, radiusKm, sortBy, false, size);
+    }
+
+    public List<StorefrontShopSummaryDTO> discoverShops(
+            String country,
+            String state,
+            String district,
+            String city,
+            String area,
+            String pincode,
+            BusinessType businessType,
+            String search,
+            String location,
+            Double latitude,
+            Double longitude,
+            Double radiusKm,
+            String sortBy
+    ) {
+        return discoverShops(country, state, district, city, area, pincode, businessType,
+                search, location, latitude, longitude, radiusKm, sortBy, false, null);
+    }
+
+    private void enrichOpenStatus(List<StorefrontShopSummaryDTO> content) {
+        if (content == null || content.isEmpty()) {
+            return;
+        }
+        List<Long> shopIds = content.stream().map(StorefrontShopSummaryDTO::getId).collect(Collectors.toList());
+        java.util.Map<Long, List<com.cakeplatform.api.modules.shop.ShopBusinessHours>> hoursByShop = new java.util.HashMap<>();
+        if (shopBusinessHoursRepository != null) {
+            try {
+                hoursByShop = shopBusinessHoursRepository.findByShopIdIn(shopIds).stream()
+                        .filter(h -> h.getShop() != null && h.getShop().getId() != null)
+                        .collect(Collectors.groupingBy(h -> h.getShop().getId()));
+            } catch (Exception e) {
+                log.warn("Could not batch-fetch business hours: {}", e.getMessage());
+            }
+        }
+        com.cakeplatform.api.modules.shop.service.OperatingHoursService ops = getOperatingHoursService();
+        java.time.Instant now = clock.instant();
+        for (StorefrontShopSummaryDTO dto : content) {
+            List<com.cakeplatform.api.modules.shop.ShopBusinessHours> hours = hoursByShop.getOrDefault(dto.getId(), java.util.Collections.emptyList());
+            boolean open = ops.isShopOpen(hours, dto.getTimezone(), now);
+            dto.setIsOpenNow(open);
+            dto.setOpenStatusText(ops.getOpenStatusText(hours, dto.getTimezone(), now));
+        }
     }
 
     private StorefrontShopSummaryDTO mapProjectionToSummaryDTO(ShopSummaryProjection p) {
@@ -477,14 +648,15 @@ public class CustomerStorefrontService {
                 .state(p.getState())
                 .pincode(p.getPincode())
                 .country("India")
-                .latitude(hideStreet ? null : p.getLatitude())
-                .longitude(hideStreet ? null : p.getLongitude())
+                .latitude(p.getLatitude())
+                .longitude(p.getLongitude())
                 .distanceKm(distanceKm)
                 .status(p.getStatus())
                 .verificationStatus(vStatus)
                 .averageRating(avgRating)
                 .totalReviews(p.getTotalReviews() != null ? p.getTotalReviews() : 0L)
                 .isPureVeg(false)
+                .timezone(p.getTimezone() != null ? p.getTimezone() : "Asia/Kolkata")
                 .build();
 
     }
@@ -576,6 +748,14 @@ public class CustomerStorefrontService {
         }
         if (shopBusinessHoursRepository != null) {
             response.setBusinessHours(shopBusinessHoursRepository.findByShopId(shop.getId()));
+        }
+        response.setTimezone(shop.getTimezone() != null ? shop.getTimezone() : "Asia/Kolkata");
+        if (response.getBusinessHours() != null) {
+            com.cakeplatform.api.modules.shop.service.OperatingHoursService ops = getOperatingHoursService();
+            java.time.Instant now = clock.instant();
+            boolean open = ops.isShopOpen(response.getBusinessHours(), response.getTimezone(), now);
+            response.setIsOpenNow(open);
+            response.setOpenStatusText(ops.getOpenStatusText(response.getBusinessHours(), response.getTimezone(), now));
         }
         response.setDeliveryConfig(getAuthoritativeDeliveryConfig(shop));
         com.cakeplatform.api.modules.shop.ShopStorefrontSettings ss = null;
@@ -758,8 +938,18 @@ public class CustomerStorefrontService {
         ShopDeliveryConfig deliveryConfig = getAuthoritativeDeliveryConfig(shop);
         boolean deliveryEnabled = !Boolean.FALSE.equals(deliveryConfig.getDeliveryEnabled());
 
-        boolean canDeliver = true;
-        String rejectionReason = null;
+        var eligibility = getDeliveryEligibilityService().evaluateEligibility(
+                shop,
+                deliveryConfig,
+                request.getFulfillmentMethod(),
+                request.getDeliveryAddress(),
+                request.getDeliveryPincode(),
+                request.getDeliveryLatitude(),
+                request.getDeliveryLongitude()
+        );
+
+        boolean canDeliver = eligibility.eligible();
+        String rejectionReason = eligibility.rejectionReason();
         BigDecimal calculatedDeliveryCharge = BigDecimal.ZERO;
         boolean isFreeDelivery = false;
 
@@ -767,26 +957,22 @@ public class CustomerStorefrontService {
             calculatedDeliveryCharge = BigDecimal.ZERO;
             isFreeDelivery = true;
             canDeliver = true;
+        } else if (!canDeliver) {
+            calculatedDeliveryCharge = BigDecimal.ZERO;
+            isFreeDelivery = false;
         } else {
-            if (!deliveryEnabled) {
-                canDeliver = false;
-                rejectionReason = "Home delivery is not available for this bakery. Please choose self-pickup.";
+            if ("FREE".equalsIgnoreCase(deliveryConfig.getDeliveryChargeType())) {
                 calculatedDeliveryCharge = BigDecimal.ZERO;
-                isFreeDelivery = false;
-            } else {
-                if ("FREE".equalsIgnoreCase(deliveryConfig.getDeliveryChargeType())) {
+                isFreeDelivery = true;
+            } else if ("FIXED".equalsIgnoreCase(deliveryConfig.getDeliveryChargeType())) {
+                BigDecimal fixed = deliveryConfig.getFixedChargeAmount() != null ? deliveryConfig.getFixedChargeAmount() : BigDecimal.ZERO;
+                if (deliveryConfig.getMinOrderForFreeDelivery() != null
+                        && subtotal.compareTo(deliveryConfig.getMinOrderForFreeDelivery()) >= 0) {
                     calculatedDeliveryCharge = BigDecimal.ZERO;
                     isFreeDelivery = true;
-                } else if ("FIXED".equalsIgnoreCase(deliveryConfig.getDeliveryChargeType())) {
-                    BigDecimal fixed = deliveryConfig.getFixedChargeAmount() != null ? deliveryConfig.getFixedChargeAmount() : BigDecimal.ZERO;
-                    if (deliveryConfig.getMinOrderForFreeDelivery() != null
-                            && subtotal.compareTo(deliveryConfig.getMinOrderForFreeDelivery()) >= 0) {
-                        calculatedDeliveryCharge = BigDecimal.ZERO;
-                        isFreeDelivery = true;
-                    } else {
-                        calculatedDeliveryCharge = fixed;
-                        isFreeDelivery = (fixed.compareTo(BigDecimal.ZERO) == 0);
-                    }
+                } else {
+                    calculatedDeliveryCharge = fixed;
+                    isFreeDelivery = (fixed.compareTo(BigDecimal.ZERO) == 0);
                 }
             }
         }
@@ -837,6 +1023,11 @@ public class CustomerStorefrontService {
 
     @Transactional
     public Order placeGuestOrder(Long shopId, GuestOrderRequest request) {
+        return placeGuestOrder(shopId, request, null);
+    }
+
+    @Transactional
+    public Order placeGuestOrder(Long shopId, GuestOrderRequest request, com.cakeplatform.api.security.CustomUserDetails userDetails) {
         Shop shop = getActiveShop(shopId);
 
         if (request.getDeliveryDate() == null) {
@@ -897,10 +1088,19 @@ public class CustomerStorefrontService {
         String fulfillmentMethod = isSelfPickup ? "SELF_PICKUP" : "HOME_DELIVERY";
 
         ShopDeliveryConfig deliveryConfig = getAuthoritativeDeliveryConfig(shop);
-        boolean deliveryEnabled = !Boolean.FALSE.equals(deliveryConfig.getDeliveryEnabled());
 
-        if (!isSelfPickup && !deliveryEnabled) {
-            throw new IllegalArgumentException("Home delivery is currently disabled by this bakery. Please choose self-pickup.");
+        // Strict Server-Side Delivery Eligibility Evaluation
+        var eligibility = getDeliveryEligibilityService().evaluateEligibility(
+                shop,
+                deliveryConfig,
+                request.getFulfillmentMethod(),
+                request.getDeliveryAddress(),
+                request.getDeliveryPincode(),
+                request.getDeliveryLatitude(),
+                request.getDeliveryLongitude()
+        );
+        if (!eligibility.eligible()) {
+            throw new IllegalArgumentException(eligibility.rejectionReason());
         }
 
         boolean isOnlinePayment = "ONLINE_PAYMENT".equalsIgnoreCase(request.getPaymentMethod())
@@ -913,11 +1113,39 @@ public class CustomerStorefrontService {
         order.setCustomerPhone(request.getCustomerPhone());
 
         // Hydrate/Link Order to Customer Account
-        if (userRepository != null) {
-            String normalizedPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(request.getCustomerPhone());
-            if (normalizedPhone != null) {
-                userRepository.findByMobile(normalizedPhone).ifPresent(order::setCustomer);
+        if (userDetails != null && userDetails.getUser() != null) {
+            com.cakeplatform.api.modules.user.User authUser = userDetails.getUser();
+            boolean isCustomer = authUser.getRole() == com.cakeplatform.api.modules.user.UserRole.CUSTOMER
+                    || userDetails.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"));
+            if (!isCustomer) {
+                throw new org.springframework.security.access.AccessDeniedException("Only customers can place customer orders with their identity");
             }
+            String authPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(authUser.getMobile());
+            String reqPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(request.getCustomerPhone());
+            if (authPhone == null || !authPhone.equals(reqPhone)) {
+                throw new org.springframework.security.access.AccessDeniedException("Authenticated customer phone does not match checkout phone");
+            }
+            order.setCustomer(authUser);
+            boolean profileUpdated = false;
+            if ((authUser.getFullName() == null || authUser.getFullName().trim().isEmpty())
+                    && request.getCustomerName() != null && !request.getCustomerName().trim().isEmpty()) {
+                authUser.setFullName(request.getCustomerName().trim());
+                profileUpdated = true;
+            }
+            if ((authUser.getEmail() == null || authUser.getEmail().trim().isEmpty())
+                    && request.getCustomerEmail() != null && !request.getCustomerEmail().trim().isEmpty()) {
+                String candidateEmail = request.getCustomerEmail().trim().toLowerCase();
+                if (userRepository != null && !userRepository.existsByEmailIgnoreCase(candidateEmail)) {
+                    authUser.setEmail(candidateEmail);
+                    profileUpdated = true;
+                }
+            }
+            if (profileUpdated && userRepository != null) {
+                userRepository.save(authUser);
+            }
+        } else {
+            // Unauthenticated guest order: never link customer based solely on unverified phone number
+            order.setCustomer(null);
         }
 
         if (isSelfPickup) {

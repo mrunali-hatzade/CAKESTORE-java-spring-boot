@@ -29,6 +29,12 @@ public class GuestOrderRequest {
 
     private String deliveryAddress;
 
+    private String deliveryPincode;
+
+    private Double deliveryLatitude;
+
+    private Double deliveryLongitude;
+
     private String specialInstructions;
 
     @NotEmpty(message = "Order must contain at least one item")

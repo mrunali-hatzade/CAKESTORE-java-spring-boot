@@ -27,6 +27,7 @@ import { useCustomerAuth } from '@/lib/auth/CustomerAuthContext';
 interface CustomerOrderLookupModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: 'PHONE' | 'ORDER_NUMBER';
 }
 
 type TabType = 'PHONE' | 'ORDER_NUMBER';
@@ -35,12 +36,13 @@ type PhoneFlowStep = 'INPUT_PHONE' | 'INPUT_OTP' | 'ORDER_LIST';
 export const CustomerOrderLookupModal: React.FC<CustomerOrderLookupModalProps> = ({
   isOpen,
   onClose,
+  initialTab = 'PHONE',
 }) => {
   const router = useRouter();
   const customerAuth = useCustomerAuth();
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<TabType>('PHONE');
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
 
   // Order Number Flow state
   const [orderNumber, setOrderNumber] = useState('');
@@ -99,6 +101,9 @@ export const CustomerOrderLookupModal: React.FC<CustomerOrderLookupModalProps> =
   // Check existing session on modal open
   useEffect(() => {
     if (isOpen) {
+      if (initialTab) {
+        setActiveTab(initialTab);
+      }
       if (customerAuth.phone) {
         setPhoneInput(customerAuth.phone);
       }
@@ -111,7 +116,7 @@ export const CustomerOrderLookupModal: React.FC<CustomerOrderLookupModalProps> =
       setError(null);
       setOrderNumberError(null);
     }
-  }, [isOpen, customerAuth.isAuthenticated, customerAuth.token, customerAuth.phone, fetchOrdersForToken]);
+  }, [isOpen, initialTab, customerAuth.isAuthenticated, customerAuth.token, customerAuth.phone, fetchOrdersForToken]);
 
   if (!isOpen) return null;
 
@@ -233,7 +238,7 @@ export const CustomerOrderLookupModal: React.FC<CustomerOrderLookupModalProps> =
             }`}
           >
             <Phone className="w-3.5 h-3.5" />
-            <span>By Mobile Number</span>
+            <span>My Orders (Phone OTP)</span>
           </button>
           <button
             type="button"
@@ -248,7 +253,7 @@ export const CustomerOrderLookupModal: React.FC<CustomerOrderLookupModalProps> =
             }`}
           >
             <Package className="w-3.5 h-3.5" />
-            <span>By Order Number</span>
+            <span>Track by Order ID</span>
           </button>
         </div>
 
@@ -446,19 +451,26 @@ export const CustomerOrderLookupModal: React.FC<CustomerOrderLookupModalProps> =
                         onClick={() => handleSelectOrder(ord.orderNumber)}
                         className="p-3.5 rounded-2xl bg-white border border-brand-border/80 hover:border-brand-plum hover:shadow-soft transition-all cursor-pointer group flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                       >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
+                        <div className="space-y-1 flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs font-bold text-brand-espresso group-hover:text-brand-plum transition-colors">
                               #{ord.orderNumber}
                             </span>
                             {getStatusBadge(ord.status)}
                           </div>
-                          <div className="text-[11px] text-brand-muted flex items-center gap-2">
+                          {ord.shopName && (
+                            <p className="text-xs font-semibold text-brand-espresso truncate">
+                              🏪 {ord.shopName}
+                            </p>
+                          )}
+                          <div className="text-[11px] text-brand-muted flex items-center gap-2 flex-wrap">
                             <span>
                               {new Date(ord.createdAt).toLocaleDateString('en-IN', {
                                 day: 'numeric',
                                 month: 'short',
                                 year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
                               })}
                             </span>
                             {ord.totalAmount != null && (
@@ -470,10 +482,15 @@ export const CustomerOrderLookupModal: React.FC<CustomerOrderLookupModalProps> =
                               </>
                             )}
                           </div>
+                          {ord.items && ord.items.length > 0 && (
+                            <p className="text-[11px] text-brand-muted line-clamp-1 italic">
+                              {ord.items.map((it) => `${it.quantity}x ${it.productNameSnapshot || it.productName || 'Item'}`).join(', ')}
+                            </p>
+                          )}
                         </div>
 
-                        <div className="flex items-center justify-end gap-1.5 text-xs font-bold text-brand-plum group-hover:translate-x-0.5 transition-transform">
-                          <span>Live Track</span>
+                        <div className="flex items-center justify-end gap-1.5 text-xs font-bold text-brand-plum group-hover:translate-x-0.5 transition-transform shrink-0">
+                          <span>View Details</span>
                           <ArrowRight className="w-3.5 h-3.5" />
                         </div>
                       </div>

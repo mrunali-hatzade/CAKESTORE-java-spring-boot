@@ -8,15 +8,24 @@ import { MapPin, Store, Star, ArrowRight, Clock, ShieldCheck, Navigation } from 
 import { Shop } from '@/types/shop';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { StatusBadge } from '@/components/common/StatusBadge';
 
 import { getSafeImageUrl, FALLBACK_BAKERY_COVER } from '@/lib/utils/image';
 
 interface BakeryCardProps {
   shop: Shop;
+  isSelected?: boolean;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+  onSelect?: () => void;
 }
 
-export const BakeryCard: React.FC<BakeryCardProps> = ({ shop }) => {
+export const BakeryCard: React.FC<BakeryCardProps> = ({
+  shop,
+  isSelected = false,
+  onMouseEnter,
+  onMouseLeave,
+  onSelect,
+}) => {
   const [coverSrc, setCoverSrc] = useState(() =>
     getSafeImageUrl(shop.coverImageUrl || shop.imageUrl, FALLBACK_BAKERY_COVER)
   );
@@ -35,7 +44,15 @@ export const BakeryCard: React.FC<BakeryCardProps> = ({ shop }) => {
   }, [shop.latitude, shop.longitude, shop.addressLine1, shop.address, shop.area, shop.city, shop.state, shop.pincode]);
 
   return (
-    <Card hoverEffect className="h-full flex flex-col overflow-hidden border border-brand-border/80 bg-white group p-0 rounded-3xl transition-all duration-300 hover:shadow-elevated hover:-translate-y-1">
+    <Card
+      hoverEffect
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onClick={onSelect}
+      className={`h-full flex flex-col overflow-hidden border border-brand-border/80 bg-white group p-0 rounded-3xl transition-all duration-300 hover:shadow-elevated hover:-translate-y-1 ${
+        isSelected ? 'ring-2 ring-brand-plum shadow-elevated scale-[1.01]' : ''
+      }`}
+    >
       {/* Bakery Cover Image Container */}
       <div className="relative aspect-[16/9] w-full overflow-hidden bg-brand-cream">
         <Image
@@ -59,6 +76,18 @@ export const BakeryCard: React.FC<BakeryCardProps> = ({ shop }) => {
             {shop.isPureVeg && (
               <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-700 text-white shadow-xs backdrop-blur-xs">
                 🌱 Pure Veg
+              </span>
+            )}
+            {shop.isOpenNow !== undefined && (
+              <span
+                className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-xs backdrop-blur-xs ${
+                  shop.isOpenNow
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-stone-800/80 text-stone-200'
+                }`}
+              >
+                <Clock className="w-2.5 h-2.5" />
+                {shop.isOpenNow ? 'Open Now' : 'Closed'}
               </span>
             )}
           </div>
@@ -98,25 +127,19 @@ export const BakeryCard: React.FC<BakeryCardProps> = ({ shop }) => {
 
         {/* Location & Distance */}
         <div className="flex items-center justify-between text-xs text-brand-muted mt-1 gap-1">
-          <div className="flex items-center gap-1 min-w-0">
-            <MapPin className="w-3.5 h-3.5 text-brand-plum shrink-0" />
-            <span className="line-clamp-1">
-              {shop.area ? `${shop.area}, ` : ''}{shop.city}, {shop.state}
-            </span>
+          <div className="flex items-center truncate">
+            <MapPin className="w-3.5 h-3.5 mr-1 text-brand-plum shrink-0" />
+            <span className="truncate">{[shop.area, shop.city].filter(Boolean).join(', ') || shop.city}</span>
           </div>
-          {shop.distanceKm != null && !isNaN(shop.distanceKm) && (
-            <span
-              title="Calculated straight-line (aerial) distance. Driving distance may vary."
-              className="shrink-0 font-semibold text-brand-plum bg-brand-blush/80 px-2 py-0.5 rounded-full text-[11px] border border-brand-plum/20 cursor-help flex items-center gap-1"
-            >
-              <span>{shop.distanceKm < 1 ? `${Math.round(shop.distanceKm * 1000)} m away` : `${shop.distanceKm.toFixed(1)} km away`}</span>
-              <span className="text-[9px] opacity-75 font-normal">(direct)</span>
+          {shop.distanceKm != null && (
+            <span className="font-medium text-brand-plum text-[11px] shrink-0 bg-brand-blush/60 px-2 py-0.5 rounded-full">
+              {shop.distanceKm.toFixed(1)} km
             </span>
           )}
         </div>
 
-        {/* Description */}
-        <p className="text-xs text-brand-muted mt-2.5 line-clamp-2 flex-1 leading-relaxed">
+        {/* Short Bio / Description */}
+        <p className="text-xs text-brand-espresso/70 mt-3 line-clamp-2 leading-relaxed flex-1">
           {shop.businessDescription || shop.description || 'Artisanal cakes, cupcakes, and bespoke desserts crafted fresh with premium ingredients.'}
         </p>
 

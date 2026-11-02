@@ -1,5 +1,5 @@
-import React from 'react';
-import { Truck } from 'lucide-react';
+import React, { useState } from 'react';
+import { Truck, MapPin, AlertCircle, Compass } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { ShopDeliveryConfig } from '@/types/storefrontManagement';
@@ -15,6 +15,7 @@ export const DeliverySettingsSection: React.FC<DeliverySettingsSectionProps> = (
 }) => {
   const isFree = config.deliveryChargeType === 'FREE';
   const deliveryEnabled = config.deliveryEnabled ?? true;
+  const [pincodeError, setPincodeError] = useState<string | null>(null);
 
   const handleDeliveryEnabledToggle = (enabled: boolean) => {
     onChange({
@@ -46,17 +47,45 @@ export const DeliverySettingsSection: React.FC<DeliverySettingsSectionProps> = (
     });
   };
 
+  const handleRadiusChange = (val: string) => {
+    const num = val === '' ? null : Math.max(0.1, Math.min(100, Number(val) || 0));
+    onChange({
+      ...config,
+      maxDeliveryRadiusKm: num,
+    });
+  };
+
+  const handlePincodesChange = (val: string) => {
+    onChange({
+      ...config,
+      serviceablePincodes: val,
+    });
+
+    // Validate tokens in real time
+    if (!val || !val.trim()) {
+      setPincodeError(null);
+      return;
+    }
+    const tokens = val.split(/[,;\s\n]+/).map((t) => t.trim()).filter(Boolean);
+    const invalidToken = tokens.find((t) => !/^[1-9][0-9]{5}$/.test(t));
+    if (invalidToken) {
+      setPincodeError(`"${invalidToken}" is not a valid 6-digit Indian PIN code.`);
+    } else {
+      setPincodeError(null);
+    }
+  };
+
   return (
-    <Card className="p-6 space-y-4">
+    <Card className="p-6 space-y-5">
       <div className="flex items-center justify-between pb-3 border-b border-brand-border/40">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-brand-blush text-brand-plum flex items-center justify-center">
             <Truck className="w-4 h-4" />
           </div>
           <div>
-            <h2 className="font-serif font-bold text-base text-owner-heading">Delivery Fee Settings</h2>
+            <h2 className="font-serif font-bold text-base text-owner-heading">Delivery Fee &amp; Zones</h2>
             <p className="text-[11px] text-owner-muted">
-              Configure home delivery availability and fee calculation for checkout.
+              Configure home delivery availability, operational service radius, and fee calculation.
             </p>
           </div>
         </div>
@@ -93,7 +122,59 @@ export const DeliverySettingsSection: React.FC<DeliverySettingsSectionProps> = (
         </div>
       )}
 
-      <div className={`space-y-3 pt-1 ${!deliveryEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+      <div className={`space-y-4 pt-1 ${!deliveryEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+        {/* Service Area Geofencing Section */}
+        <div className="p-4 rounded-2xl bg-brand-blush/20 border border-brand-plum/20 space-y-3">
+          <div className="flex items-center gap-2 text-brand-plum">
+            <Compass className="w-4 h-4" />
+            <h3 className="font-bold text-xs uppercase tracking-wider">Delivery Zone Geofencing</h3>
+          </div>
+          <p className="text-[11px] text-owner-muted">
+            Restrict doorstep delivery to customers within your operational range. Customers outside this area can still choose Store Pickup.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            <div>
+              <Input
+                label="Maximum Delivery Radius (km)"
+                type="number"
+                min="0.1"
+                max="100"
+                step="0.5"
+                placeholder="e.g. 10 (Leave blank for unrestricted)"
+                value={config.maxDeliveryRadiusKm ?? ''}
+                onChange={(e) => handleRadiusChange(e.target.value)}
+                helperText="Maximum aerial distance covered from your bakery. Orders beyond this radius cannot choose home delivery."
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-owner-heading block">
+                Serviceable PIN Codes <span className="text-[11px] text-owner-muted font-normal">(Optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. 411035, 411033, 411019"
+                value={config.serviceablePincodes || ''}
+                onChange={(e) => handlePincodesChange(e.target.value)}
+                className={`w-full px-3.5 py-2.5 bg-white rounded-xl border text-owner-heading text-xs placeholder:text-owner-muted focus:outline-none focus:ring-2 focus:ring-brand-plum/20 transition-all ${
+                  pincodeError ? 'border-red-500 focus:border-red-500' : 'border-brand-border focus:border-brand-plum'
+                }`}
+              />
+              {pincodeError ? (
+                <p className="text-[10px] text-red-600 flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{pincodeError}</span>
+                </p>
+              ) : (
+                <p className="text-[10px] text-owner-muted">
+                  Comma-separated list of 6-digit PIN codes. Leave empty to deliver to all PIN codes within your radius.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Mode Radio Toggles */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label
@@ -112,7 +193,7 @@ export const DeliverySettingsSection: React.FC<DeliverySettingsSectionProps> = (
             />
             <div>
               <span className="text-sm font-bold text-owner-heading block">Free Delivery</span>
-              <span className="text-xs text-owner-muted">All orders receive complimentary free delivery.</span>
+              <span className="text-xs text-owner-muted">All eligible orders receive complimentary free delivery.</span>
             </div>
           </label>
 
@@ -148,7 +229,7 @@ export const DeliverySettingsSection: React.FC<DeliverySettingsSectionProps> = (
               placeholder="50"
               value={config.fixedChargeAmount || ''}
               onChange={(e) => handleFixedAmountChange(e.target.value)}
-              helperText="Applied to all delivery orders."
+              helperText="Applied to all eligible delivery orders."
             />
 
             <Input

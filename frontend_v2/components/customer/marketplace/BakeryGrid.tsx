@@ -26,6 +26,11 @@ interface BakeryGridProps {
   onPageSizeChange?: (size: number) => void;
   viewAllHref?: string;
   viewAllLabel?: string;
+  columns?: 2 | 3 | 'auto';
+  selectedShopId?: number | null;
+  onSelectShop?: (shop: Shop | null) => void;
+  hoveredShopId?: number | null;
+  onHoverShop?: (shopId: number | null) => void;
 }
 
 const BakeryCardSkeleton = () => (
@@ -68,8 +73,16 @@ export const BakeryGrid: React.FC<BakeryGridProps> = ({
   onPageSizeChange,
   viewAllHref,
   viewAllLabel,
+  columns = 3,
+  selectedShopId,
+  onSelectShop,
+  hoveredShopId,
+  onHoverShop,
 }) => {
   const sectionRef = useRef<HTMLElement>(null);
+  const gridClass = columns === 2
+    ? 'grid grid-cols-1 sm:grid-cols-2 gap-5'
+    : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6';
 
   const total = typeof totalElements === 'number' ? totalElements : shops.length;
   const startRecord = total === 0 || shops.length === 0 ? 0 : currentPage * pageSize + 1;
@@ -98,73 +111,68 @@ export const BakeryGrid: React.FC<BakeryGridProps> = ({
 
   return (
     <section ref={sectionRef} id="bakery-grid" className="py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
-      {/* Grid Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between pb-6 border-b border-brand-border/60 gap-4 mb-8">
+      {/* Header and Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-serif font-bold text-brand-espresso tracking-tight">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2.5 h-2.5 rounded-full bg-brand-burgundy inline-block" />
+            <span className="text-xs font-semibold tracking-wider uppercase text-brand-muted">
+              Artisanal Network
+            </span>
+          </div>
+          <h2 className="font-serif font-bold text-2xl sm:text-3xl text-brand-espresso">
             {title}
           </h2>
-          <p className="text-xs sm:text-sm text-brand-muted mt-1">{subtitle}</p>
+          <p className="text-xs sm:text-sm text-brand-muted mt-1 max-w-xl">
+            {subtitle}
+          </p>
         </div>
 
-        {/* Controls & Result Counter */}
-        <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
-          {isLoading ? (
-            <span className="text-xs font-medium text-brand-muted">
-              Searching kitchens...
-            </span>
-          ) : total > 0 ? (
-            <span className="text-xs font-semibold text-brand-espresso/80">
-              {totalElements && totalElements > shops.length
-                ? `Showing ${shops.length} of ${totalElements} ${totalElements === 1 ? 'bakery' : 'bakeries'}`
-                : `${total} ${total === 1 ? 'bakery' : 'bakeries'} found`}
-            </span>
-          ) : null}
+        {/* Sort & Filter Controls */}
+        <div className="flex items-center gap-3">
+          {onSortChange && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-brand-muted hidden sm:inline">Sort:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => onSortChange(e.target.value)}
+                className="text-xs font-semibold text-brand-espresso bg-white border border-brand-border rounded-xl px-3 py-2 shadow-xs focus:outline-none focus:ring-2 focus:ring-brand-plum/20 cursor-pointer"
+              >
+                <option value="default">Featured</option>
+                <option value="rating">Highest Rated</option>
+                <option value="distance">Nearest to Me</option>
+                <option value="newest">Recently Joined</option>
+                <option value="name">Alphabetical</option>
+              </select>
+            </div>
+          )}
 
           {viewAllHref && !isLoading && shops.length > 0 && (
             <Link
               href={viewAllHref}
               id="header-view-all-bakeries"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-brand-border text-xs font-semibold text-brand-plum bg-white shadow-2xs hover:bg-brand-cream/60 hover:border-brand-plum/40 transition-all"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-plum hover:text-brand-burgundy transition-colors px-3 py-2 rounded-xl hover:bg-brand-blush/40"
             >
-              <span>View All Bakeries</span>
+              <span>{viewAllLabel || 'View All'}</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
-          )}
-
-          {shops.length > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-brand-espresso border border-brand-border rounded-xl px-2.5 py-1.5 bg-white shadow-2xs">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-brand-plum shrink-0" />
-              <select
-                value={sortBy}
-                onChange={(e) => onSortChange?.(e.target.value)}
-                className="bg-transparent focus:outline-none text-xs text-brand-espresso cursor-pointer"
-              >
-                <option value="default">Default Order</option>
-                <option value="distance">Nearest First</option>
-                <option value="rating">Top Rated</option>
-                <option value="newest">Newest Bakeries</option>
-                <option value="name">Name (A-Z)</option>
-                <option value="city">City</option>
-              </select>
-            </div>
           )}
         </div>
       </div>
 
-      {/* Loading Skeletons */}
+      {/* Skeletons while Loading */}
       {isLoading && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {Array.from({ length: 6 }).map((_, idx) => (
-            <BakeryCardSkeleton key={idx} />
+        <div className={gridClass}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <BakeryCardSkeleton key={i} />
           ))}
         </div>
       )}
 
       {/* Error State */}
       {!isLoading && error && (
-        <div className="text-center py-16 px-4 bg-white rounded-3xl border border-brand-border shadow-soft max-w-lg mx-auto">
-          <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4">
+        <div className="text-center py-16 px-4 bg-white rounded-3xl border border-rose-100 shadow-soft max-w-lg mx-auto">
+          <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center mx-auto mb-4">
             <AlertCircle className="w-7 h-7" />
           </div>
           <h3 className="font-serif font-bold text-xl text-brand-espresso">
@@ -213,9 +221,16 @@ export const BakeryGrid: React.FC<BakeryGridProps> = ({
 
       {/* Real Bakery Cards */}
       {!isLoading && !error && shops.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className={gridClass}>
           {sortedShops.map((shop) => (
-            <BakeryCard key={shop.id} shop={shop} />
+            <BakeryCard
+              key={shop.id}
+              shop={shop}
+              isSelected={shop.id === selectedShopId}
+              onSelect={() => onSelectShop?.(shop)}
+              onMouseEnter={() => onHoverShop?.(shop.id)}
+              onMouseLeave={() => onHoverShop?.(null)}
+            />
           ))}
         </div>
       )}
@@ -223,28 +238,23 @@ export const BakeryGrid: React.FC<BakeryGridProps> = ({
       {/* Pagination Controls on /explore */}
       {onPageChange && !isLoading && !error && shops.length > 0 && (totalPages > 1 || (onPageSizeChange && total > 12)) && (
         <div className="mt-12 pt-6 border-t border-brand-border/60 flex flex-col sm:flex-row items-center justify-between gap-4">
-          {/* Record Counter */}
-          <div className="text-xs sm:text-sm text-brand-muted font-medium text-center sm:text-left">
-            Showing <span className="font-semibold text-brand-espresso">{startRecord}</span> to{' '}
-            <span className="font-semibold text-brand-espresso">{endRecord}</span> of{' '}
-            <span className="font-semibold text-brand-espresso">{total}</span>{' '}
-            {total === 1 ? 'bakery' : 'bakeries'}
+          {/* Record range */}
+          <div className="text-xs text-brand-muted order-2 sm:order-1">
+            Showing <span className="font-bold text-brand-espresso">{startRecord}</span>-
+            <span className="font-bold text-brand-espresso">{endRecord}</span> of{' '}
+            <span className="font-bold text-brand-espresso">{total}</span> bakeries
           </div>
 
-          {/* Controls: Page Size Selector + Prev/Next Buttons */}
-          <div className="flex flex-wrap items-center justify-center gap-3">
+          {/* Page Buttons and Page-Size Selector */}
+          <div className="flex items-center gap-3 order-1 sm:order-2">
             {onPageSizeChange && (
-              <div className="flex items-center gap-1.5 text-xs text-brand-muted font-medium mr-2">
-                <span className="hidden sm:inline">Per page:</span>
+              <div className="flex items-center gap-1.5 mr-2">
+                <span className="text-[11px] text-brand-muted">Show:</span>
                 <select
                   value={pageSize}
-                  onChange={(e) => onPageSizeChange(Number(e.target.value))}
-                  aria-label="Bakeries per page"
-                  className="bg-white border border-brand-border rounded-xl px-2.5 py-1.5 text-xs font-semibold text-brand-espresso shadow-2xs focus:outline-none cursor-pointer hover:border-brand-plum/40 transition-colors"
+                  onChange={(e) => onPageSizeChange(parseInt(e.target.value, 10))}
+                  className="text-xs font-semibold text-brand-espresso bg-white border border-brand-border rounded-lg px-2 py-1 shadow-xs focus:outline-none focus:ring-1 focus:ring-brand-plum cursor-pointer"
                 >
-                  {![12, 24, 48].includes(pageSize) && (
-                    <option value={pageSize}>{pageSize}</option>
-                  )}
                   <option value={12}>12</option>
                   <option value={24}>24</option>
                   <option value={48}>48</option>
@@ -252,39 +262,31 @@ export const BakeryGrid: React.FC<BakeryGridProps> = ({
               </div>
             )}
 
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage <= 0}
-                  aria-label="Previous page"
-                  className="gap-1 px-3 py-1.5 text-xs font-semibold rounded-xl border-brand-border hover:bg-brand-cream/60 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  <span className="hidden sm:inline">Previous</span>
-                </Button>
-
-                <span className="px-3 py-1.5 text-xs font-semibold text-brand-espresso bg-white border border-brand-border rounded-xl shadow-2xs">
-                  Page {currentPage + 1} of {Math.max(1, totalPages)}
-                </span>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage >= totalPages - 1}
-                  aria-label="Next page"
-                  className="gap-1 px-3 py-1.5 text-xs font-semibold rounded-xl border-brand-border hover:bg-brand-cream/60 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <span className="hidden sm:inline">Next</span>
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 0}
+                className="px-2.5 py-1 text-xs rounded-xl border-brand-border disabled:opacity-40"
+              >
+                <ChevronLeft className="w-3.5 h-3.5 mr-0.5" />
+                Previous
+              </Button>
+              <span className="text-xs font-bold text-brand-espresso px-2">
+                Page {currentPage + 1} of {Math.max(1, totalPages)}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage >= totalPages - 1}
+                className="px-2.5 py-1 text-xs rounded-xl border-brand-border disabled:opacity-40"
+              >
+                Next
+                <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
+              </Button>
+            </div>
           </div>
         </div>
       )}

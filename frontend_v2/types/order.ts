@@ -77,6 +77,9 @@ export interface GuestOrderRequest {
   customerPhone: string;
   paymentMethod: 'COD' | 'ONLINE_PAYMENT';
   deliveryAddress?: string;
+  deliveryPincode?: string;
+  deliveryLatitude?: number;
+  deliveryLongitude?: number;
   deliveryDate?: string;
   deliverySlotId?: number;
   specialInstructions?: string;

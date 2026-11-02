@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, Clock } from 'lucide-react';
+import { Calendar, Clock, Moon } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { ShopBusinessHour, ShopBusinessHoursRequest } from '@/types/storefrontManagement';
 import { ownerStorefrontApi } from '@/lib/api/ownerStorefront';
@@ -38,8 +38,8 @@ export const BusinessHoursSection: React.FC<BusinessHoursSectionProps> = ({
   };
 
   const handleUpdate = async (day: string, isOpen: boolean, openTime: string, closeTime: string) => {
-    if (isOpen && openTime >= closeTime) {
-      setFeedback({ day, msg: 'Closing time must be after opening time', type: 'error' });
+    if (isOpen && openTime === closeTime) {
+      setFeedback({ day, msg: 'Opening and closing times cannot be identical', type: 'error' });
       return;
     }
 
@@ -75,7 +75,7 @@ export const BusinessHoursSection: React.FC<BusinessHoursSectionProps> = ({
         <div>
           <h2 className="font-serif font-bold text-base text-owner-heading">Operating & Baking Schedule</h2>
           <p className="text-[11px] text-owner-muted">
-            Manage your opening and closing times across all seven days of the week.
+            Manage your opening and closing times across all seven days of the week, including overnight baking shifts.
           </p>
         </div>
       </div>
@@ -86,6 +86,7 @@ export const BusinessHoursSection: React.FC<BusinessHoursSectionProps> = ({
           const isCurrentSaving = savingDay === day;
           const openShort = (entry.openTime || '09:00').substring(0, 5);
           const closeShort = (entry.closeTime || '21:00').substring(0, 5);
+          const isOvernight = entry.isOpen && openShort > closeShort;
 
           return (
             <div
@@ -117,7 +118,7 @@ export const BusinessHoursSection: React.FC<BusinessHoursSectionProps> = ({
 
               {/* Time Pickers */}
               {entry.isOpen ? (
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
                   <div className="flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-brand-muted" />
                     <input
@@ -136,6 +137,11 @@ export const BusinessHoursSection: React.FC<BusinessHoursSectionProps> = ({
                       className="px-2.5 py-1 text-xs rounded-lg border border-owner-border bg-white text-owner-heading focus:outline-none focus:ring-1 focus:ring-brand-plum"
                     />
                   </div>
+                  {isOvernight && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                      <Moon className="w-2.5 h-2.5" /> Overnight (+1 day)
+                    </span>
+                  )}
                 </div>
               ) : (
                 <span className="text-xs text-owner-muted italic">Bakery closed to customers</span>

@@ -62,6 +62,15 @@ public class Product {
     @Column(name = "eggless_price_diff")
     private BigDecimal egglessPriceDiff = BigDecimal.ZERO;
 
+    @Column(name = "is_eggless", nullable = false)
+    private Boolean isEggless = false;
+
+    @Column(name = "is_vegan", nullable = false)
+    private Boolean isVegan = false;
+
+    @Column(name = "is_gluten_free", nullable = false)
+    private Boolean isGlutenFree = false;
+
     @Column(name = "image_url")
     private String imageUrl;
 

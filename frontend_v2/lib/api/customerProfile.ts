@@ -12,22 +12,75 @@ export interface CustomerProfileUpdateRequest {
   email: string | null;
 }
 
+export type AddressType = 'HOME' | 'WORK' | 'OTHER';
+
 export interface CustomerAddress {
   id: number;
-  label: string;
+  label?: string;
   recipientName: string;
+  fullName?: string;
   recipientPhone: string;
+  mobileNumber?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  landmark?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  addressType?: AddressType;
   deliveryAddress: string;
+  formattedAddress?: string;
   default: boolean;
+  isDefault?: boolean;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface CustomerAddressRequest {
-  label: string;
+  label?: string;
   recipientName: string;
+  fullName?: string;
   recipientPhone: string;
-  deliveryAddress: string;
-  default: boolean;
+  mobileNumber?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  landmark?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  addressType?: AddressType;
+  deliveryAddress?: string;
+  default?: boolean;
+  isDefault?: boolean;
+  latitude?: number;
+  longitude?: number;
 }
+
+export const customerAddressApi = {
+  getAddresses: async (token: string): Promise<CustomerAddress[]> => {
+    return apiClient.get<CustomerAddress[]>('/api/customer/addresses', { token });
+  },
+
+  getAddressById: async (id: number, token: string): Promise<CustomerAddress> => {
+    return apiClient.get<CustomerAddress>(`/api/customer/addresses/${id}`, { token });
+  },
+
+  addAddress: async (data: CustomerAddressRequest, token: string): Promise<CustomerAddress> => {
+    return apiClient.post<CustomerAddress>('/api/customer/addresses', data, { token });
+  },
+
+  updateAddress: async (id: number, data: CustomerAddressRequest, token: string): Promise<CustomerAddress> => {
+    return apiClient.put<CustomerAddress>(`/api/customer/addresses/${id}`, data, { token });
+  },
+
+  deleteAddress: async (id: number, token: string): Promise<void> => {
+    return apiClient.delete(`/api/customer/addresses/${id}`, { token });
+  },
+
+  setDefaultAddress: async (id: number, token: string): Promise<{ success: boolean }> => {
+    return apiClient.patch<{ success: boolean }>(`/api/customer/addresses/${id}/default`, {}, { token });
+  }
+};
 
 export const customerProfileApi = {
   getProfile: async (token: string): Promise<CustomerProfile> => {
@@ -39,22 +92,22 @@ export const customerProfileApi = {
   },
 
   getAddresses: async (token: string): Promise<CustomerAddress[]> => {
-    return apiClient.get<CustomerAddress[]>('/api/customer/profile/addresses', { token });
+    return customerAddressApi.getAddresses(token);
   },
 
   addAddress: async (data: CustomerAddressRequest, token: string): Promise<CustomerAddress> => {
-    return apiClient.post<CustomerAddress>('/api/customer/profile/addresses', data, { token });
+    return customerAddressApi.addAddress(data, token);
   },
 
   updateAddress: async (id: number, data: CustomerAddressRequest, token: string): Promise<CustomerAddress> => {
-    return apiClient.put<CustomerAddress>(`/api/customer/profile/addresses/${id}`, data, { token });
+    return customerAddressApi.updateAddress(id, data, token);
   },
 
   deleteAddress: async (id: number, token: string): Promise<void> => {
-    return apiClient.delete(`/api/customer/profile/addresses/${id}`, { token });
+    return customerAddressApi.deleteAddress(id, token);
   },
 
   setDefaultAddress: async (id: number, token: string): Promise<{ success: boolean }> => {
-    return apiClient.put<{ success: boolean }>(`/api/customer/profile/addresses/${id}/default`, {}, { token });
+    return customerAddressApi.setDefaultAddress(id, token);
   }
 };
