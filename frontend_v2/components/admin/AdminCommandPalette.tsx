@@ -6,7 +6,7 @@ import {
   Search, LayoutDashboard, Store, CreditCard, ShoppingBag, Receipt,
   MessageSquare, MessageCircle, Mail, Bell, X, ArrowRight, Loader2,
   ShieldAlert,
-  KeyRound
+  KeyRound, Star
 } from 'lucide-react';
 import { getAllShops } from '@/lib/api/admin';
 import { communicationApi } from '@/lib/api/communication';
@@ -31,6 +31,7 @@ const STATIC_NAV_SHORTCUTS: NavShortcut[] = [
   { id: 'nav-shops', type: 'shortcut', label: 'Bakery Management', description: 'Approve KYC and manage shops', href: '/admin/shops', icon: Store },
   { id: 'nav-orders', type: 'shortcut', label: 'Orders Ledger', description: 'Cross-shop retail orders and status', href: '/admin/orders', icon: ShoppingBag },
   { id: 'nav-payments', type: 'shortcut', label: 'Payments Ledger', description: 'Cross-shop gateway transactions and GMV', href: '/admin/payments', icon: Receipt },
+  { id: 'nav-reviews', type: 'shortcut', label: 'Product Reviews', description: 'Moderate verified cake product reviews', href: '/admin/reviews', icon: Star },
   { id: 'nav-plans', type: 'shortcut', label: 'Plans & Subscriptions', description: 'Manage pricing and billing', href: '/admin/plans', icon: CreditCard },
   { id: 'nav-feedback', type: 'shortcut', label: 'Platform Feedback', description: 'Read reviews from owners', href: '/admin/feedback', icon: MessageSquare },
   { id: 'nav-enquiries', type: 'shortcut', label: 'Contact Enquiries', description: 'Read messages from public users', href: '/admin/enquiries', icon: MessageCircle },

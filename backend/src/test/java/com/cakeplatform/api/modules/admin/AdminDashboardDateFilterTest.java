@@ -29,6 +29,7 @@ import com.cakeplatform.api.modules.user.UserStatus;
 import com.cakeplatform.api.security.CustomUserDetails;
 import com.cakeplatform.api.security.JwtService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,9 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -93,6 +97,9 @@ public class AdminDashboardDateFilterTest {
 
     private String adminToken;
     private String customerToken;
+    private User adminUser;
+    private User ownerUser;
+    private User customerUser;
     private Shop testShop;
     private SubscriptionPlan testPlan;
     private Subscription testSubscription;
@@ -103,6 +110,68 @@ public class AdminDashboardDateFilterTest {
     private Payment todayOrderPayment;
     private Order pastOrder;
     private Order todayOrder;
+
+    private final List<Throwable> teardownErrors = new ArrayList<>();
+
+    @AfterEach
+    void tearDown() {
+        teardownErrors.clear();
+        try {
+            if (testShop != null && testShop.getId() != null) {
+                executeCleanup("DELETE FROM activity_logs WHERE shop_id = ?", testShop.getId());
+                executeCleanup("DELETE FROM business_documents WHERE shop_id = ?", testShop.getId());
+                executeCleanup("DELETE FROM payments WHERE shop_id = ?", testShop.getId());
+                executeCleanup("DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE shop_id = ?)", testShop.getId());
+                executeCleanup("DELETE FROM orders WHERE shop_id = ?", testShop.getId());
+                executeCleanup("DELETE FROM subscriptions WHERE shop_id = ?", testShop.getId());
+                executeCleanup("DELETE FROM shops WHERE id = ?", testShop.getId());
+            }
+            if (testPlan != null && testPlan.getId() != null) {
+                executeCleanup("DELETE FROM payments WHERE plan_id = ?", testPlan.getId());
+                executeCleanup("DELETE FROM subscriptions WHERE plan_id = ?", testPlan.getId());
+                executeCleanup("DELETE FROM subscription_plans WHERE id = ?", testPlan.getId());
+            }
+            if (adminUser != null && adminUser.getId() != null) {
+                executeCleanup("DELETE FROM activity_logs WHERE actor_user_id = ?", adminUser.getId());
+                executeCleanup("DELETE FROM admin_notifications WHERE recipient_id = ?", adminUser.getId());
+                executeCleanup("DELETE FROM notifications WHERE recipient_id = ?", adminUser.getId());
+                executeCleanup("DELETE FROM users WHERE id = ?", adminUser.getId());
+            }
+            if (ownerUser != null && ownerUser.getId() != null) {
+                executeCleanup("DELETE FROM activity_logs WHERE actor_user_id = ?", ownerUser.getId());
+                executeCleanup("DELETE FROM notifications WHERE recipient_id = ?", ownerUser.getId());
+                executeCleanup("DELETE FROM users WHERE id = ?", ownerUser.getId());
+            }
+            if (customerUser != null && customerUser.getId() != null) {
+                executeCleanup("DELETE FROM activity_logs WHERE actor_user_id = ?", customerUser.getId());
+                executeCleanup("DELETE FROM notifications WHERE recipient_id = ?", customerUser.getId());
+                executeCleanup("DELETE FROM users WHERE id = ?", customerUser.getId());
+            }
+        } finally {
+            if (!teardownErrors.isEmpty()) {
+                StringBuilder msg = new StringBuilder("Teardown cleanup failed with ")
+                        .append(teardownErrors.size()).append(" SQL error(s):\n");
+                for (Throwable t : teardownErrors) {
+                    msg.append(" - ").append(t.getMessage()).append("\n");
+                }
+                AssertionError failure = new AssertionError(msg.toString());
+                for (Throwable t : teardownErrors) {
+                    failure.addSuppressed(t);
+                }
+                throw failure;
+            }
+        }
+    }
+
+    private void executeCleanup(String sql, Object... args) {
+        try {
+            jdbcTemplate.update(sql, args);
+        } catch (Exception e) {
+            String errorMsg = "Cleanup query failed [" + sql + "] args=" + Arrays.toString(args) + ": " + e.getMessage();
+            System.err.println(errorMsg);
+            teardownErrors.add(new RuntimeException(errorMsg, e));
+        }
+    }
 
     @BeforeEach
     void setUp() {
@@ -115,8 +184,8 @@ public class AdminDashboardDateFilterTest {
         admin.setRole(UserRole.ADMIN);
         admin.setStatus(UserStatus.ACTIVE);
         admin.setFullName("Date Filter Admin");
-        admin = userRepository.save(admin);
-        adminToken = jwtService.generateToken(new CustomUserDetails(admin));
+        adminUser = userRepository.save(admin);
+        adminToken = jwtService.generateToken(new CustomUserDetails(adminUser));
 
         // 2. Create Owner and Shop
         User owner = new User();
@@ -125,10 +194,10 @@ public class AdminDashboardDateFilterTest {
         owner.setRole(UserRole.SHOP_OWNER);
         owner.setStatus(UserStatus.ACTIVE);
         owner.setFullName("Filter Bakery Owner");
-        owner = userRepository.save(owner);
+        ownerUser = userRepository.save(owner);
 
         testShop = new Shop();
-        testShop.setOwner(owner);
+        testShop.setOwner(ownerUser);
         testShop.setBusinessName("Date Filter Bakery " + uniq);
         testShop.setStatus(ShopStatus.ACTIVE);
         testShop.setVerificationStatus(VerificationStatus.VERIFIED);
@@ -141,8 +210,8 @@ public class AdminDashboardDateFilterTest {
         customer.setRole(UserRole.CUSTOMER);
         customer.setStatus(UserStatus.ACTIVE);
         customer.setFullName("Filter Cake Customer");
-        customer = userRepository.save(customer);
-        customerToken = jwtService.generateToken(new CustomUserDetails(customer));
+        customerUser = userRepository.save(customer);
+        customerToken = jwtService.generateToken(new CustomUserDetails(customerUser));
 
         // 3. Plan & Subscription
         testPlan = new SubscriptionPlan();

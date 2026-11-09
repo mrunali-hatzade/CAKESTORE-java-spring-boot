@@ -1037,8 +1037,20 @@ public class CustomerStorefrontService {
             throw new IllegalArgumentException("Delivery date cannot be in the past");
         }
         
+        // Determine fulfillment method and authoritative delivery configuration
+        String rawFulfillment = request.getFulfillmentMethod();
+        boolean isSelfPickup = rawFulfillment != null && (
+                "SELF_PICKUP".equalsIgnoreCase(rawFulfillment)
+                || "STORE_PICKUP".equalsIgnoreCase(rawFulfillment)
+                || "PICKUP".equalsIgnoreCase(rawFulfillment)
+        );
+        String fulfillmentMethod = isSelfPickup ? "SELF_PICKUP" : "HOME_DELIVERY";
+
         com.cakeplatform.api.modules.shop.ShopDeliverySlot slot = null;
-        if (request.getDeliverySlotId() != null) {
+        if (!isSelfPickup) {
+            if (request.getDeliverySlotId() == null) {
+                throw new IllegalArgumentException("Delivery slot is required for home delivery");
+            }
             // Pessimistic Row Lock with strict tenant isolation: locks slot row for (slotId, shopId)
             if (deliverySlotRepository != null) {
                 slot = deliverySlotRepository.findByIdAndShopIdWithLock(request.getDeliverySlotId(), shopId).orElse(null);
@@ -1077,15 +1089,6 @@ public class CustomerStorefrontService {
                 );
             }
         }
-
-        // Determine fulfillment method and authoritative delivery configuration
-        String rawFulfillment = request.getFulfillmentMethod();
-        boolean isSelfPickup = rawFulfillment != null && (
-                "SELF_PICKUP".equalsIgnoreCase(rawFulfillment)
-                || "STORE_PICKUP".equalsIgnoreCase(rawFulfillment)
-                || "PICKUP".equalsIgnoreCase(rawFulfillment)
-        );
-        String fulfillmentMethod = isSelfPickup ? "SELF_PICKUP" : "HOME_DELIVERY";
 
         ShopDeliveryConfig deliveryConfig = getAuthoritativeDeliveryConfig(shop);
 

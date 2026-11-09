@@ -23,6 +23,7 @@ import {
   ShoppingBag,
   Receipt,
   KeyRound,
+  Star,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth/AuthContext';
 import AdminNotificationBell from '@/components/admin/AdminNotificationBell';
@@ -77,6 +78,7 @@ function AdminLayoutInner({ children }: { children: ReactNode }) {
     { label: 'Bakery Management', href: '/admin/shops', icon: Store },
     { label: 'Orders Ledger', href: '/admin/orders', icon: ShoppingBag },
     { label: 'Payments Ledger', href: '/admin/payments', icon: Receipt },
+    { label: 'Reviews', href: '/admin/reviews', icon: Star },
     { label: 'Plans & Subscriptions', href: '/admin/plans', icon: CreditCard },
   ];
 

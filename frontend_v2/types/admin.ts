@@ -304,3 +304,45 @@ export interface AdminPaymentDetail {
   orderDetails: AdminOrderSnapshot | null;
 }
 
+export type ReviewModerationStatus = 'PUBLISHED' | 'HIDDEN';
+
+export interface AdminProductReview {
+  id: number;
+  shopId: number;
+  shopName: string;
+  productId: number;
+  productName: string;
+  customerName: string;
+  rating: number;
+  reviewText: string | null;
+  cakeImageUrl: string | null;
+  cakeVideoUrl: string | null;
+  moderationStatus: ReviewModerationStatus;
+  moderationReason: string | null;
+  moderatedById: number | null;
+  moderatedByName: string | null;
+  moderatedByEmail: string | null;
+  moderatedAt: string | null;
+  createdAt: string;
+  ownerReply: string | null;
+  ownerRepliedAt: string | null;
+}
+
+export interface AdminReviewModerationPayload {
+  status: ReviewModerationStatus;
+  reason?: string | null;
+}
+
+export interface AdminReviewFilterParams {
+  page?: number;
+  size?: number;
+  sortField?: string;
+  sortDir?: 'asc' | 'desc';
+  status?: ReviewModerationStatus | '';
+  shopId?: number;
+  rating?: number;
+  search?: string;
+  query?: string;
+}
+
+

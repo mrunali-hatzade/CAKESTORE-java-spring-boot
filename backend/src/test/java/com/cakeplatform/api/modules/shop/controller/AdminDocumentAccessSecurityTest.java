@@ -7,6 +7,7 @@ import com.cakeplatform.api.modules.user.UserRole;
 import com.cakeplatform.api.modules.user.UserStatus;
 import com.cakeplatform.api.security.CustomUserDetails;
 import com.cakeplatform.api.security.JwtService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,8 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
@@ -45,6 +48,13 @@ public class AdminDocumentAccessSecurityTest {
     @Autowired
     private JwtService jwtService;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    private final List<Long> createdDocumentIds = new ArrayList<>();
+    private final List<Long> createdShopIds = new ArrayList<>();
+    private final List<Long> createdUserIds = new ArrayList<>();
+
     private String adminToken;
     private String ownerAToken;
     private String ownerBToken;
@@ -65,6 +75,7 @@ public class AdminDocumentAccessSecurityTest {
         admin.setRole(UserRole.ADMIN);
         admin.setStatus(UserStatus.ACTIVE);
         admin = userRepository.save(admin);
+        createdUserIds.add(admin.getId());
         adminToken = jwtService.generateToken(new CustomUserDetails(admin));
 
         // 2. Owner A & Shop A
@@ -74,6 +85,7 @@ public class AdminDocumentAccessSecurityTest {
         ownerA.setRole(UserRole.SHOP_OWNER);
         ownerA.setStatus(UserStatus.ACTIVE);
         ownerA = userRepository.save(ownerA);
+        createdUserIds.add(ownerA.getId());
         ownerAToken = jwtService.generateToken(new CustomUserDetails(ownerA));
 
         Shop shopA = new Shop();
@@ -81,6 +93,7 @@ public class AdminDocumentAccessSecurityTest {
         shopA.setBusinessName("Bakery Alpha " + uniq);
         shopA.setStatus(ShopStatus.ACTIVE);
         shopA = shopRepository.save(shopA);
+        createdShopIds.add(shopA.getId());
 
         // 3. Owner B & Shop B
         User ownerB = new User();
@@ -89,6 +102,7 @@ public class AdminDocumentAccessSecurityTest {
         ownerB.setRole(UserRole.SHOP_OWNER);
         ownerB.setStatus(UserStatus.ACTIVE);
         ownerB = userRepository.save(ownerB);
+        createdUserIds.add(ownerB.getId());
         ownerBToken = jwtService.generateToken(new CustomUserDetails(ownerB));
 
         Shop shopB = new Shop();
@@ -96,6 +110,7 @@ public class AdminDocumentAccessSecurityTest {
         shopB.setBusinessName("Bakery Beta " + uniq);
         shopB.setStatus(ShopStatus.ACTIVE);
         shopB = shopRepository.save(shopB);
+        createdShopIds.add(shopB.getId());
 
         // 4. Customer User
         User customer = new User();
@@ -104,6 +119,7 @@ public class AdminDocumentAccessSecurityTest {
         customer.setRole(UserRole.CUSTOMER);
         customer.setStatus(UserStatus.ACTIVE);
         customer = userRepository.save(customer);
+        createdUserIds.add(customer.getId());
         customerToken = jwtService.generateToken(new CustomUserDetails(customer));
 
         // 5. Documents
@@ -113,6 +129,7 @@ public class AdminDocumentAccessSecurityTest {
         docShopA.setFileUrl("https://cakeblobstorage.blob.core.windows.net/private-kyc/fssai_shop_a.pdf");
         docShopA.setStatus(VerificationStatus.PROCESSING);
         docShopA = businessDocumentRepository.save(docShopA);
+        createdDocumentIds.add(docShopA.getId());
 
         docShopB = new BusinessDocument();
         docShopB.setShop(shopB);
@@ -120,6 +137,7 @@ public class AdminDocumentAccessSecurityTest {
         docShopB.setFileUrl("https://cakeblobstorage.blob.core.windows.net/private-kyc/pan_shop_b.pdf");
         docShopB.setStatus(VerificationStatus.PROCESSING);
         docShopB = businessDocumentRepository.save(docShopB);
+        createdDocumentIds.add(docShopB.getId());
 
         emptyFileDoc = new BusinessDocument();
         emptyFileDoc.setShop(shopA);
@@ -127,6 +145,53 @@ public class AdminDocumentAccessSecurityTest {
         emptyFileDoc.setFileUrl("");
         emptyFileDoc.setStatus(VerificationStatus.PROCESSING);
         emptyFileDoc = businessDocumentRepository.save(emptyFileDoc);
+        createdDocumentIds.add(emptyFileDoc.getId());
+    }
+
+    @AfterEach
+    void tearDown() {
+        List<Throwable> errors = new ArrayList<>();
+
+        // 1. Delete created business documents
+        if (!createdDocumentIds.isEmpty()) {
+            for (Long docId : createdDocumentIds) {
+                try {
+                    jdbcTemplate.update("DELETE FROM business_documents WHERE id = ?", docId);
+                } catch (Throwable t) {
+                    errors.add(t);
+                }
+            }
+            createdDocumentIds.clear();
+        }
+
+        // 2. Delete created shops
+        if (!createdShopIds.isEmpty()) {
+            for (Long shopId : createdShopIds) {
+                try {
+                    jdbcTemplate.update("DELETE FROM business_documents WHERE shop_id = ?", shopId);
+                    jdbcTemplate.update("DELETE FROM shops WHERE id = ?", shopId);
+                } catch (Throwable t) {
+                    errors.add(t);
+                }
+            }
+            createdShopIds.clear();
+        }
+
+        // 3. Delete created users
+        if (!createdUserIds.isEmpty()) {
+            for (Long uid : createdUserIds) {
+                try {
+                    jdbcTemplate.update("DELETE FROM users WHERE id = ?", uid);
+                } catch (Throwable t) {
+                    errors.add(t);
+                }
+            }
+            createdUserIds.clear();
+        }
+
+        if (!errors.isEmpty()) {
+            org.junit.jupiter.api.Assertions.fail("Teardown failed with " + errors.size() + " errors: " + errors.get(0).getMessage());
+        }
     }
 
     @Test

@@ -8,6 +8,8 @@ import com.cakeplatform.api.modules.user.UserStatus;
 import com.cakeplatform.api.security.CustomUserDetails;
 import com.cakeplatform.api.security.JwtService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,7 +20,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.UUID;
+import java.util.*;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
@@ -51,6 +53,12 @@ public class AdminSettingsSecurityE2ETest {
     @Autowired
     private GlobalSettingsRepository globalSettingsRepository;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    private static Map<String, Object> baselineGlobalSettings = null;
+    private final List<Long> createdUserIds = new ArrayList<>();
+
     private String adminToken;
     private String ownerToken;
     private String customerToken;
@@ -60,6 +68,14 @@ public class AdminSettingsSecurityE2ETest {
 
     @BeforeEach
     void setUp() {
+        // Snapshot baseline global_settings before any test mutation (if not already captured)
+        if (baselineGlobalSettings == null) {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT * FROM global_settings WHERE id = 1");
+            if (!rows.isEmpty()) {
+                baselineGlobalSettings = new HashMap<>(rows.get(0));
+            }
+        }
+
         String uniq = UUID.randomUUID().toString().substring(0, 8);
 
         // 1. Admin User
@@ -69,6 +85,7 @@ public class AdminSettingsSecurityE2ETest {
         admin.setRole(UserRole.ADMIN);
         admin.setStatus(UserStatus.ACTIVE);
         admin = userRepository.save(admin);
+        createdUserIds.add(admin.getId());
         adminToken = jwtService.generateToken(new CustomUserDetails(admin));
 
         // 2. Shop Owner User
@@ -78,6 +95,7 @@ public class AdminSettingsSecurityE2ETest {
         owner.setRole(UserRole.SHOP_OWNER);
         owner.setStatus(UserStatus.ACTIVE);
         owner = userRepository.save(owner);
+        createdUserIds.add(owner.getId());
         ownerToken = jwtService.generateToken(new CustomUserDetails(owner));
 
         // 3. Customer User
@@ -87,6 +105,7 @@ public class AdminSettingsSecurityE2ETest {
         customer.setRole(UserRole.CUSTOMER);
         customer.setStatus(UserStatus.ACTIVE);
         customer = userRepository.save(customer);
+        createdUserIds.add(customer.getId());
         customerToken = jwtService.generateToken(new CustomUserDetails(customer));
 
         // Initialize Settings with test credentials
@@ -98,6 +117,50 @@ public class AdminSettingsSecurityE2ETest {
         initDTO.setRazorpayWebhookSecret(TEST_RAW_WEBHOOK_SECRET);
         initDTO.setPlatformCurrency("INR");
         globalSettingsService.updateSettings(initDTO);
+    }
+
+    @AfterEach
+    void tearDown() {
+        List<Throwable> errors = new ArrayList<>();
+
+        // 1. Clean up created test users
+        if (!createdUserIds.isEmpty()) {
+            for (Long uid : createdUserIds) {
+                try {
+                    jdbcTemplate.update("DELETE FROM users WHERE id = ?", uid);
+                } catch (Throwable t) {
+                    errors.add(t);
+                }
+            }
+            createdUserIds.clear();
+        }
+
+        // 2. Restore global settings to original baseline state
+        if (baselineGlobalSettings != null) {
+            try {
+                jdbcTemplate.update(
+                        "UPDATE global_settings SET platform_name = ?, support_email = ?, razorpay_key_id = ?, " +
+                        "razorpay_key_secret = ?, razorpay_webhook_secret = ?, platform_currency = ? WHERE id = ?",
+                        baselineGlobalSettings.get("platform_name"),
+                        baselineGlobalSettings.get("support_email"),
+                        baselineGlobalSettings.get("razorpay_key_id"),
+                        baselineGlobalSettings.get("razorpay_key_secret"),
+                        baselineGlobalSettings.get("razorpay_webhook_secret"),
+                        baselineGlobalSettings.get("platform_currency"),
+                        1L
+                );
+                // Clear cached settings in GlobalSettingsService via reflection
+                java.lang.reflect.Field f = GlobalSettingsService.class.getDeclaredField("cachedSettings");
+                f.setAccessible(true);
+                f.set(globalSettingsService, null);
+            } catch (Throwable t) {
+                errors.add(t);
+            }
+        }
+
+        if (!errors.isEmpty()) {
+            org.junit.jupiter.api.Assertions.fail("Teardown failed with " + errors.size() + " errors: " + errors.get(0).getMessage());
+        }
     }
 
     @Test

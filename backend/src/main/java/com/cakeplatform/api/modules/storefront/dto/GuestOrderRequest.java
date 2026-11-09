@@ -1,5 +1,6 @@
 package com.cakeplatform.api.modules.storefront.dto;
 
+import com.cakeplatform.api.modules.storefront.validation.ValidDeliverySlot;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -9,6 +10,7 @@ import lombok.Data;
 import java.util.List;
 
 @Data
+@ValidDeliverySlot
 public class GuestOrderRequest {
     @NotBlank(message = "Customer name is required")
     private String customerName;
@@ -43,7 +45,6 @@ public class GuestOrderRequest {
     @NotNull(message = "Delivery date is required")
     private java.time.LocalDate deliveryDate;
 
-    @NotNull(message = "Delivery slot is required")
     private Long deliverySlotId;
 
     private String couponCode;

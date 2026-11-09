@@ -134,7 +134,7 @@ class DeliveryFeeConsistencyRegressionTest {
     @DisplayName("1. Paid home delivery: Sweet Delight Bakery (Shop 17) default ₹50 fee applied for subtotal ₹10")
     void testPaidHomeDelivery_DefaultFeeApplied() {
         when(shopRepository.findById(17L)).thenReturn(Optional.of(shop17));
-        when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
+        lenient().when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
         when(productRepository.findByIdAndShopId(999L, 17L)).thenReturn(Optional.of(truffleCake));
         when(shopDeliveryConfigRepository.findByShopId(17L)).thenReturn(Optional.empty()); // No custom config row yet
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -163,7 +163,7 @@ class DeliveryFeeConsistencyRegressionTest {
                 .build();
 
         when(shopRepository.findById(17L)).thenReturn(Optional.of(shop17));
-        when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
+        lenient().when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
         when(productRepository.findByIdAndShopId(999L, 17L)).thenReturn(Optional.of(truffleCake));
         when(shopDeliveryConfigRepository.findByShopId(17L)).thenReturn(Optional.of(freeConfig));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -199,7 +199,7 @@ class DeliveryFeeConsistencyRegressionTest {
         premiumHamper.setStatus("ACTIVE");
 
         when(shopRepository.findById(17L)).thenReturn(Optional.of(shop17));
-        when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
+        lenient().when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
         when(productRepository.findByIdAndShopId(888L, 17L)).thenReturn(Optional.of(premiumHamper));
         when(shopDeliveryConfigRepository.findByShopId(17L)).thenReturn(Optional.of(thresholdConfig));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -236,7 +236,7 @@ class DeliveryFeeConsistencyRegressionTest {
                 .build();
 
         when(shopRepository.findById(17L)).thenReturn(Optional.of(shop17));
-        when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
+        lenient().when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
         when(productRepository.findByIdAndShopId(999L, 17L)).thenReturn(Optional.of(truffleCake));
         when(shopDeliveryConfigRepository.findByShopId(17L)).thenReturn(Optional.of(fixedConfig));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -266,7 +266,7 @@ class DeliveryFeeConsistencyRegressionTest {
                 .build();
 
         when(shopRepository.findById(17L)).thenReturn(Optional.of(shop17));
-        when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
+        lenient().when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
         when(shopDeliveryConfigRepository.findByShopId(17L)).thenReturn(Optional.of(disabledConfig));
 
         GuestOrderRequest request = createOrderRequest("HOME_DELIVERY", null, null);
@@ -323,7 +323,7 @@ class DeliveryFeeConsistencyRegressionTest {
                 .build();
 
         when(shopRepository.findById(17L)).thenReturn(Optional.of(shop17));
-        when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
+        lenient().when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
         when(productRepository.findByIdAndShopId(999L, 17L)).thenReturn(Optional.of(truffleCake));
         when(shopDeliveryConfigRepository.findByShopId(17L)).thenReturn(Optional.of(fixedConfig));
 
@@ -352,7 +352,7 @@ class DeliveryFeeConsistencyRegressionTest {
                 .build();
 
         when(shopRepository.findById(17L)).thenReturn(Optional.of(shop17));
-        when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
+        lenient().when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
         when(productRepository.findByIdAndShopId(999L, 17L)).thenReturn(Optional.of(truffleCake));
         when(shopDeliveryConfigRepository.findByShopId(17L)).thenReturn(Optional.of(fixedConfig));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -398,7 +398,7 @@ class DeliveryFeeConsistencyRegressionTest {
         when(shopRepository.findById(17L)).thenReturn(Optional.of(shop17));
         when(productRepository.findByIdAndShopId(999L, 17L)).thenReturn(Optional.of(truffleCake));
         when(shopDeliveryConfigRepository.findByShopId(17L)).thenReturn(Optional.of(fixedConfig));
-        when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
+        lenient().when(deliverySlotRepository.findByIdAndShopIdWithLock(646L, 17L)).thenReturn(Optional.of(slot));
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
         StorefrontOrderItem item = new StorefrontOrderItem();

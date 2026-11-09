@@ -12,6 +12,7 @@ import com.cakeplatform.api.modules.product.Product;
 import com.cakeplatform.api.modules.product.ProductRepository;
 import com.cakeplatform.api.modules.review.ProductReview;
 import com.cakeplatform.api.modules.review.ProductReviewRepository;
+import com.cakeplatform.api.modules.review.ReviewModerationStatus;
 import com.cakeplatform.api.modules.review.dto.*;
 import com.cakeplatform.api.modules.shop.Shop;
 import com.cakeplatform.api.modules.shop.ShopRepository;
@@ -184,7 +185,7 @@ public class ProductReviewService {
             throw new IllegalArgumentException("Product does not belong to this bakery");
         }
 
-        List<ProductReview> reviews = productReviewRepository.findByProductIdOrderByCreatedAtDesc(productId);
+        List<ProductReview> reviews = productReviewRepository.findByProductIdAndModerationStatusOrderByCreatedAtDesc(productId, ReviewModerationStatus.PUBLISHED);
 
         List<PublicProductReviewResponse> publicList = new ArrayList<>();
         for (ProductReview r : reviews) {

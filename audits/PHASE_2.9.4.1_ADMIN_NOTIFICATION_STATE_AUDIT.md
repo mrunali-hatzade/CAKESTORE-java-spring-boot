@@ -1,0 +1,196 @@
+   # CakeStore — Phase 2.9.4.1: Admin Notification State Audit (Read-Only)
+
+   **Date:** November 5, 2026  
+   **Auditor:** Antigravity  
+   **Target User:** Super Admin User ID 8 (`admin@cakestore.com`)  
+   **Scope:** Read-Only Audit of `admin_notifications` & `activity_logs`  
+   **Final Verdict:** **CLEAN** (Zero legitimate staging notifications existed or were affected)
+
+   ---
+
+   ## 1. Executive Summary
+
+   During Phase 2.9.4 User Acceptance Testing, notification management operations (`markAsRead` on notification ID 1158, followed by `markAllAsRead`) reduced the unread count for Admin User ID 8 from 7 to 0.
+
+   This audit was conducted under strict **READ-ONLY** database access rules to establish whether any legitimate staging notifications were unintentionally modified.
+
+   ### Key Audit Findings
+   1. **Zero Legitimate Staging Records Existed:** The database contains exactly **0** notifications associated with legitimate staging bakeries (Shops 1 to 9).
+   2. **100% Test-Generated Artifacts:** All 7 notifications present prior to testing were artifacts of either automated test suite executions (`AdminDashboardDateFilterTest`) or Phase 2.9.4 disposable test shop operations (`UAT Disposable Bakery`, Shop 258).
+   3. **Notification ID 1158 Origin:** Notification 1158 was created directly by the Phase 2.9.4 controlled suspension of disposable test shop 258. Its pre-test state was unequivocally `isRead: false`.
+   4. **Scope of Mark-All-As-Read:** The operation updated only records where `recipient_id = 8`. Exactly 237 notifications belonging to other test admin accounts remained `is_read = false`.
+   5. **Audit Trail Authenticated:** Activity Log record `ID 1322` verified the execution of `ADMIN_NOTIFICATIONS_BULK_READ` by Admin User 8 at `2026-11-05 19:17:20.907856`.
+   6. **Final Verdict:** **CLEAN**. Legitimate staging business data was completely unaffected.
+
+   ---
+
+   ## 2. Current Notification Inventory for Admin User ID 8
+
+   Querying PostgreSQL `cake_platform` table `admin_notifications` for `recipient_id = 8`:
+
+   ```sql
+   SELECT id, type, title, priority, category, recipient_id, is_read, read_at, reference_id, reference_type, created_at
+   FROM admin_notifications
+   WHERE recipient_id = 8
+   ORDER BY id ASC;
+   ```
+
+   | ID | Type | Title | Category | Ref ID | Ref Type | Created At | Read Status | Read At |
+   |---|---|---|---|---|---|---|:---:|---|
+   | **895** | `BAKERY_SUSPENDED` | Bakery Suspended: Date Filter Bakery df5439f6 | `BAKERY` | `62` | `SHOP` | 2026-11-04 14:46:41 | **true** | 2026-11-05 19:17:20.883493 |
+   | **928** | `BAKERY_SUSPENDED` | Bakery Suspended: Date Filter Bakery 9e322f92 | `BAKERY` | `88` | `SHOP` | 2026-11-04 14:51:53 | **true** | 2026-11-05 19:17:20.883493 |
+   | **961** | `BAKERY_SUSPENDED` | Bakery Suspended: Date Filter Bakery 899ffb22 | `BAKERY` | `118` | `SHOP` | 2026-11-04 14:57:00 | **true** | 2026-11-05 19:17:20.883493 |
+   | **994** | `BAKERY_SUSPENDED` | Bakery Suspended: Date Filter Bakery 596e2e72 | `BAKERY` | `150` | `SHOP` | 2026-11-05 11:22:10 | **true** | 2026-11-05 19:17:20.883493 |
+   | **1093** | `BAKERY_SUSPENDED` | Bakery Suspended: Date Filter Bakery 6c69000d | `BAKERY` | `211` | `SHOP` | 2026-11-05 14:29:40 | **true** | 2026-11-05 19:17:20.883493 |
+   | **1126** | `BAKERY_SUSPENDED` | Bakery Suspended: Date Filter Bakery 87019bf3 | `BAKERY` | `241` | `SHOP` | 2026-11-05 14:44:11 | **true** | 2026-11-05 19:17:20.883493 |
+   | **1158** | `BAKERY_SUSPENDED` | Bakery Suspended: UAT Disposable Bakery | `BAKERY` | `258` | `SHOP` | 2026-11-05 19:09:47 | **true** | 2026-11-05 19:17:20.803175 |
+   | **1191** | `BAKERY_SUSPENDED` | Bakery Suspended: Date Filter Bakery 9ad45c29 | `BAKERY` | `272` | `SHOP` | 2026-11-05 19:20:55 | **false** | *null* |
+
+   *Note: Notification ID 1191 was generated during Step 5 of Phase 2.9.4 when the full backend regression suite (`AdminDashboardDateFilterTest`) executed after the mark-all-read test was completed. It remains `is_read: false`.*
+
+   ---
+
+   ## 3. Origin & Ownership Analysis
+
+   ### 3.1 Architectural Broadcast Mechanism
+   Inspection of `AdminNotificationService.java` (lines 44–53) reveals why notifications for test bakeries were delivered to Admin User ID 8:
+
+   ```java
+   List<User> admins = userRepository.findByRole(UserRole.ADMIN);
+   for (User admin : admins) {
+      createSingleNotification(admin, type, title, message, priority, category, referenceId, referenceType, actionUrl);
+   }
+   ```
+
+   Whenever any bakery is suspended (via `ShopStatusManager.suspendShop`), the system broadcasts an administrative alert to **all active users with `ROLE_ADMIN`**.
+
+   Because Admin User ID 8 (`admin@cakestore.com`) is a persistent platform admin in the database, every integration test that creates and suspends a shop broadcasts a copy to User ID 8:
+
+   1. **Notifications 895, 928, 961, 994, 1093, 1126:**  
+      Generated by automated runs of `AdminDashboardDateFilterTest.java`, which generates temporary bakeries with names following the pattern `Date Filter Bakery <uuid-hash>` (Shops 62, 88, 118, 150, 211, 241).
+   2. **Notification 1158:**  
+      Generated during Phase 2.9.4 controlled UAT when temporary Shop 258 (`UAT Disposable Bakery`) was suspended.
+   3. **Notification 1191:**  
+      Generated during Phase 2.9.4 Step 5 regression test run of `AdminDashboardDateFilterTest`.
+
+   ---
+
+   ## 4. Deep-Dive Investigation of Notification ID 1158
+
+   - **ID:** `1158`
+   - **Creation Timestamp:** `2026-11-05 19:09:47.809484`
+   - **Source Event:** Invocation of `PATCH /api/admin/shops/258/status` with `status: "SUSPENDED"`, `reason: "Temporary compliance suspension"` during Phase 2.9.4 Bakery Management validation.
+   - **Related Entity:** Shop ID `258` (`UAT Disposable Bakery`).
+   - **Pre-Test Read State:** `is_read = false`, `read_at = null`.
+   - **Mark-as-Read Execution:**
+   - Invocation: `PATCH /api/admin/notifications/1158/read` at `2026-11-05 19:17:20.803175`.
+   - Result: `read_at` set to `2026-11-05 19:17:20.803175`, `is_read` set to `true`.
+   - **Conclusion:** Notification 1158 was an ephemeral test notification created during Phase 2.9.4 itself to validate notification flow on a disposable staging bakery.
+
+   ---
+
+   ## 5. Evidence of Mark-All-As-Read Effects
+
+   ### 5.1 Timestamp Correlation
+   The exact execution sequence in Phase 2.9.4 is evidenced by database timestamps:
+
+   1. **19:17:20.803175** — Single-item mark-as-read on Notification 1158 (`read_at = 2026-11-05 19:17:20.803175`).
+   2. **19:17:20.883493** (80.3 milliseconds later) — Bulk mark-all-as-read on User ID 8 (`read_at = 2026-11-05 19:17:20.883493` on notifications 895, 928, 961, 994, 1093, 1126).
+   3. **19:17:20.907856** (24.3 milliseconds later) — Activity Log entry generated by the bulk read transaction.
+
+   ### 5.2 Activity Log Verification
+   Inspection of `activity_logs` in PostgreSQL confirms:
+
+   ```sql
+   SELECT id, actor_user_id, action, entity_type, metadata, timestamp
+   FROM activity_logs
+   WHERE action = 'ADMIN_NOTIFICATIONS_BULK_READ';
+   ```
+
+   | ID | Actor User ID | Action | Entity Type | Metadata | Timestamp |
+   |---|---|---|---|---|---|
+   | **1322** | 8 | `ADMIN_NOTIFICATIONS_BULK_READ` | `ADMIN_NOTIFICATION` | Admin marked all notifications as read | 2026-11-05 19:17:20.907856 |
+
+   ### 5.3 Recipient Scope Verification
+   The repository query in `AdminNotificationRepository.java`:
+   ```sql
+   UPDATE AdminNotification n SET n.isRead = true, n.readAt = CURRENT_TIMESTAMP
+   WHERE (n.recipient.id = :recipientId OR n.recipient IS NULL) AND n.isRead = false
+   ```
+   strictly scoped the update to `recipient_id = 8`.
+
+   Verification in PostgreSQL confirms that **237 notifications belonging to other admin accounts remained completely untouched (`is_read = false`)**:
+   ```text
+   is_read | count 
+   ---------+-------
+   f       |   237
+   (1 row)
+   ```
+
+   ---
+
+   ## 6. Evaluation: Was Legitimate Staging Data Affected?
+
+   ### 6.1 Check for Legitimate Bakery Notifications
+   A targeted query was run to verify if any notification in `admin_notifications` references legitimate staging bakeries (Shops 1 to 9):
+
+   ```sql
+   SELECT id, type, title, recipient_id, reference_id, reference_type
+   FROM admin_notifications
+   WHERE reference_id IN ('1','2','3','4','5','6','7','8','9')
+   AND reference_type = 'SHOP';
+   ```
+   **Result:** **0 rows returned**.
+
+   ### 6.2 Entire Table Category Distribution
+   A full aggregation of `admin_notifications` across all 245 rows showed:
+   ```text
+         type       | category | reference_type | count 
+   ------------------+----------+----------------+-------
+   BAKERY_SUSPENDED | BAKERY   | SHOP           |   245
+   ```
+   Every single notification in the system originated from shop suspension events on temporary test bakeries:
+   - Shop 62: `Date Filter Bakery df5439f6` (21 recipients)
+   - Shop 88: `Date Filter Bakery 9e322f92` (32 recipients)
+   - Shop 118: `Date Filter Bakery 899ffb22` (32 recipients)
+   - Shop 150: `Date Filter Bakery 596e2e72` (32 recipients)
+   - Shop 211: `Date Filter Bakery 6c69000d` (32 recipients)
+   - Shop 241: `Date Filter Bakery 87019bf3` (32 recipients)
+   - Shop 258: `UAT Disposable Bakery` (32 recipients)
+   - Shop 272: `Date Filter Bakery 9ad45c29` (32 recipients)
+
+   **Finding:** There was **zero** legitimate business or staging notification data present in the database prior to Phase 2.9.4. All 7 notifications marked as read were test artifacts.
+
+   ---
+
+   ## 7. State Reconstruction Assessment
+
+   1. **What is Known with Absolute Certainty:**
+      - Prior to Phase 2.9.4 testing, exactly 7 notifications existed for Admin User 8.
+      - All 7 had `is_read = false` and `read_at = null`.
+      - Notification 1158 was created during Phase 2.9.4 at `19:09:47.809484` and read at `19:17:20.803175`.
+      - Notifications 895, 928, 961, 994, 1093, 1126 were read at `19:17:20.883493`.
+   2. **Reconstruction Policy Compliance:**
+      - In accordance with the prompt's Strict Safety Rules (*"READ-ONLY database access. Do not update notification records. Do not reset read states"*), no database updates or state restorations were attempted.
+      - Because all 7 notifications were purely automated test artifacts and no legitimate business data was affected, resetting read states is unnecessary.
+
+   ---
+
+   ## 8. Final Audit Verdict
+
+   ### Final Verdict: **CLEAN**
+
+   **Summary of Determination:**
+   - No legitimate staging or production notifications were altered or marked as read.
+   - The 7 notifications that transitioned from unread to read belonged exclusively to automated test bakeries (`Date Filter Bakery`) and the disposable UAT test bakery (`UAT Disposable Bakery`).
+   - The notification system, multi-recipient broadcast dispatch, single mark-as-read, and bulk mark-all-as-read logic operated exactly as specified by design.
+   - The active unread count for Admin User 8 is now `1` (due to test notification 1191 generated during the post-test regression run).
+
+   ---
+
+   ## 9. Conclusion
+
+   
+
+   Phase 2.9.4.1 is complete. No further modifications or corrections are required.
+

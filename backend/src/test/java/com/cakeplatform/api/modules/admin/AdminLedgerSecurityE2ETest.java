@@ -15,6 +15,7 @@ import com.cakeplatform.api.modules.user.UserRole;
 import com.cakeplatform.api.modules.user.UserStatus;
 import com.cakeplatform.api.security.CustomUserDetails;
 import com.cakeplatform.api.security.JwtService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
@@ -60,6 +63,14 @@ public class AdminLedgerSecurityE2ETest {
     @Autowired
     private JwtService jwtService;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    private final List<Long> createdPaymentIds = new ArrayList<>();
+    private final List<Long> createdOrderIds = new ArrayList<>();
+    private final List<Long> createdShopIds = new ArrayList<>();
+    private final List<Long> createdUserIds = new ArrayList<>();
+
     private String adminToken;
     private String ownerToken;
     private String customerToken;
@@ -79,6 +90,7 @@ public class AdminLedgerSecurityE2ETest {
         admin.setRole(UserRole.ADMIN);
         admin.setStatus(UserStatus.ACTIVE);
         admin = userRepository.save(admin);
+        createdUserIds.add(admin.getId());
         adminToken = jwtService.generateToken(new CustomUserDetails(admin));
 
         // 2. Shop Owner
@@ -88,6 +100,7 @@ public class AdminLedgerSecurityE2ETest {
         owner.setRole(UserRole.SHOP_OWNER);
         owner.setStatus(UserStatus.ACTIVE);
         owner = userRepository.save(owner);
+        createdUserIds.add(owner.getId());
         ownerToken = jwtService.generateToken(new CustomUserDetails(owner));
 
         // 3. Customer
@@ -97,6 +110,7 @@ public class AdminLedgerSecurityE2ETest {
         customer.setRole(UserRole.CUSTOMER);
         customer.setStatus(UserStatus.ACTIVE);
         customer = userRepository.save(customer);
+        createdUserIds.add(customer.getId());
         customerToken = jwtService.generateToken(new CustomUserDetails(customer));
 
         // 4. Shop
@@ -106,6 +120,7 @@ public class AdminLedgerSecurityE2ETest {
         testShop.setPhone("+91 9876543210");
         testShop.setEmail("sweet_" + uniq + "@test.com");
         testShop = shopRepository.save(testShop);
+        createdShopIds.add(testShop.getId());
 
         // 5. Order
         testOrder = new Order();
@@ -124,6 +139,7 @@ public class AdminLedgerSecurityE2ETest {
         testOrder.setDeliveryAddress("Flat 402, Royal Palms, Pune 411001");
         testOrder.setDeliveryDate(LocalDate.now().plusDays(2));
         testOrder = orderRepository.save(testOrder);
+        createdOrderIds.add(testOrder.getId());
 
         // 6. Payment linked to order
         testPayment = new Payment();
@@ -135,6 +151,65 @@ public class AdminLedgerSecurityE2ETest {
         testPayment.setStatus("COMPLETED");
         testPayment.setPaidAt(LocalDateTime.now());
         testPayment = paymentRepository.save(testPayment);
+        createdPaymentIds.add(testPayment.getId());
+    }
+
+    @AfterEach
+    void tearDown() {
+        List<Throwable> errors = new ArrayList<>();
+
+        // 1. Delete created payments
+        if (!createdPaymentIds.isEmpty()) {
+            for (Long paymentId : createdPaymentIds) {
+                try {
+                    jdbcTemplate.update("DELETE FROM payments WHERE id = ?", paymentId);
+                } catch (Throwable t) {
+                    errors.add(t);
+                }
+            }
+            createdPaymentIds.clear();
+        }
+
+        // 2. Delete created orders (and order_items if any)
+        if (!createdOrderIds.isEmpty()) {
+            for (Long orderId : createdOrderIds) {
+                try {
+                    jdbcTemplate.update("DELETE FROM order_items WHERE order_id = ?", orderId);
+                    jdbcTemplate.update("DELETE FROM orders WHERE id = ?", orderId);
+                } catch (Throwable t) {
+                    errors.add(t);
+                }
+            }
+            createdOrderIds.clear();
+        }
+
+        // 3. Delete created shops
+        if (!createdShopIds.isEmpty()) {
+            for (Long shopId : createdShopIds) {
+                try {
+                    jdbcTemplate.update("DELETE FROM shops WHERE id = ?", shopId);
+                } catch (Throwable t) {
+                    errors.add(t);
+                }
+            }
+            createdShopIds.clear();
+        }
+
+        // 4. Delete created users
+        if (!createdUserIds.isEmpty()) {
+            for (Long uid : createdUserIds) {
+                try {
+                    jdbcTemplate.update("DELETE FROM users WHERE id = ?", uid);
+                } catch (Throwable t) {
+                    errors.add(t);
+                }
+            }
+            createdUserIds.clear();
+        }
+
+        if (!errors.isEmpty()) {
+            org.junit.jupiter.api.Assertions.fail("Teardown failed with " + errors.size() + " errors: " + errors.get(0).getMessage());
+        }
     }
 
     @Test

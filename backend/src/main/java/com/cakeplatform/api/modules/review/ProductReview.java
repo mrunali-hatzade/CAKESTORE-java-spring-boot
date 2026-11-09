@@ -4,6 +4,7 @@ import com.cakeplatform.api.modules.order.Order;
 import com.cakeplatform.api.modules.order.OrderItem;
 import com.cakeplatform.api.modules.product.Product;
 import com.cakeplatform.api.modules.shop.Shop;
+import com.cakeplatform.api.modules.user.User;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -81,6 +82,22 @@ public class ProductReview {
     @Column(name = "edit_token", length = 100)
     private String editToken;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "moderation_status", nullable = false, length = 20)
+    @Builder.Default
+    private ReviewModerationStatus moderationStatus = ReviewModerationStatus.PUBLISHED;
+
+    @Column(name = "moderation_reason", length = 500)
+    private String moderationReason;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "moderated_by")
+    private User moderatedBy;
+
+    @Column(name = "moderated_at")
+    private LocalDateTime moderatedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -88,4 +105,14 @@ public class ProductReview {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    @PrePersist
+    public void prePersist() {
+        if (this.moderationStatus == null) {
+            this.moderationStatus = ReviewModerationStatus.PUBLISHED;
+        }
+        if (this.isVerifiedPurchase == null) {
+            this.isVerifiedPurchase = true;
+        }
+    }
 }

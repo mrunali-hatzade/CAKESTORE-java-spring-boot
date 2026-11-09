@@ -10,6 +10,9 @@ import {
   AdminOrderDetail,
   AdminPaymentSummary,
   AdminPaymentDetail,
+  AdminProductReview,
+  AdminReviewModerationPayload,
+  AdminReviewFilterParams,
 } from '@/types/admin';
 
 // ==========================================
@@ -255,3 +258,37 @@ export async function getAdminPaymentDetail(paymentId: number): Promise<AdminPay
   return apiClient.get<AdminPaymentDetail>(`/api/admin/payments/${paymentId}`);
 }
 
+
+/**
+ * Fetch product reviews across the platform for Super Admin moderation.
+ */
+export async function getAdminProductReviews(
+  params: AdminReviewFilterParams = {}
+): Promise<PaginatedResponse<AdminProductReview>> {
+  const queryParam = params.query || params.search;
+  return apiClient.get<PaginatedResponse<AdminProductReview>>('/api/admin/reviews', {
+    params: {
+      page: params.page ?? 0,
+      size: Math.min(params.size ?? 20, 100),
+      ...(params.sortField && { sortField: params.sortField }),
+      ...(params.sortDir && { sortDir: params.sortDir }),
+      ...(params.status && (params.status as string) !== 'ALL' && { status: params.status }),
+      ...(params.shopId && { shopId: params.shopId }),
+      ...(params.rating && { rating: params.rating }),
+      ...(queryParam && { query: queryParam }),
+    },
+  });
+}
+
+/**
+ * Update moderation status of a product review (HIDE with reason, or RESTORE).
+ */
+export async function moderateProductReview(
+  reviewId: number,
+  payload: AdminReviewModerationPayload
+): Promise<AdminProductReview> {
+  return apiClient.patch<AdminProductReview>(
+    `/api/admin/reviews/${reviewId}/moderation`,
+    payload
+  );
+}

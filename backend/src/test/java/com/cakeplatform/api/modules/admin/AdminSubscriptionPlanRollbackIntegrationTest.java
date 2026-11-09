@@ -50,11 +50,16 @@ public class AdminSubscriptionPlanRollbackIntegrationTest {
     @Autowired
     private EntityManager entityManager;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     private Map<Long, Integer> baselineOrders = new HashMap<>();
+    private final List<Long> createdPlanIds = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
         reset(planRepository);
+        createdPlanIds.clear();
 
         // Ensure at least 3 plans exist in database for meaningful permutation reordering
         List<SubscriptionPlan> existing = planRepository.findAll();
@@ -68,7 +73,8 @@ public class AdminSubscriptionPlanRollbackIntegrationTest {
             p.setDurationDays(30);
             p.setIsActive(true);
             p.setDisplayOrder(existing.size());
-            planRepository.save(p);
+            p = planRepository.save(p);
+            createdPlanIds.add(p.getId());
             existing = planRepository.findAll();
         }
 
@@ -89,6 +95,30 @@ public class AdminSubscriptionPlanRollbackIntegrationTest {
     @AfterEach
     void tearDown() {
         reset(planRepository);
+        List<Throwable> errors = new ArrayList<>();
+        try {
+            if (!createdPlanIds.isEmpty()) {
+                for (Long id : createdPlanIds) {
+                    try {
+                        jdbcTemplate.update("DELETE FROM subscription_plans WHERE id = ?", id);
+                    } catch (Exception e) {
+                        String errorMsg = "Failed to clean up temporary rollback test plan ID " + id + ": " + e.getMessage();
+                        System.err.println(errorMsg);
+                        errors.add(new RuntimeException(errorMsg, e));
+                    }
+                }
+            }
+        } finally {
+            createdPlanIds.clear();
+            if (!errors.isEmpty()) {
+                AssertionError failure = new AssertionError(
+                        "Teardown cleanup failed with " + errors.size() + " error(s) in AdminSubscriptionPlanRollbackIntegrationTest");
+                for (Throwable t : errors) {
+                    failure.addSuppressed(t);
+                }
+                throw failure;
+            }
+        }
     }
 
     @Test

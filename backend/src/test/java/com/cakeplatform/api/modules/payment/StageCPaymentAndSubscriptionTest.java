@@ -690,6 +690,54 @@ public class StageCPaymentAndSubscriptionTest {
         assertTrue(ex.getMessage().contains("Razorpay is not configured for production use"));
     }
 
+    @Test
+    @DisplayName("C3.10: Simulated signature is STRICTLY REJECTED in staging profile")
+    void testVerifySubscriptionPayment_SimulatedSignature_RejectedInStagingProfile() {
+        SubscriptionPlan plan = new SubscriptionPlan();
+        plan.setId(1L);
+        plan.setIsActive(true);
+        when(subscriptionPlanRepository.findById(1L)).thenReturn(Optional.of(plan));
+
+        doReturn(false).when(razorpayService).isConfigured();
+        org.springframework.mock.env.MockEnvironment stagingEnv = new org.springframework.mock.env.MockEnvironment();
+        stagingEnv.setActiveProfiles("staging");
+        ownerPaymentController.setEnvironment(stagingEnv);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
+                ownerPaymentController.verifySubscriptionPayment(
+                        ownerDetails, Map.of(
+                                "razorpayOrderId", "order_mock_sub_601",
+                                "razorpayPaymentId", "pay_mock_999",
+                                "razorpaySignature", "simulated_test_sig",
+                                "planId", 1L
+                        )));
+        assertTrue(ex.getMessage().contains("Razorpay is not configured for production use"));
+    }
+
+    @Test
+    @DisplayName("C3.11: Simulated signature is STRICTLY REJECTED when no explicit test/dev profile is active")
+    void testVerifySubscriptionPayment_SimulatedSignature_RejectedWhenNoExplicitProfile() {
+        SubscriptionPlan plan = new SubscriptionPlan();
+        plan.setId(1L);
+        plan.setIsActive(true);
+        when(subscriptionPlanRepository.findById(1L)).thenReturn(Optional.of(plan));
+
+        doReturn(false).when(razorpayService).isConfigured();
+        org.springframework.mock.env.MockEnvironment defaultEnv = new org.springframework.mock.env.MockEnvironment();
+        // No active profiles
+        ownerPaymentController.setEnvironment(defaultEnv);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
+                ownerPaymentController.verifySubscriptionPayment(
+                        ownerDetails, Map.of(
+                                "razorpayOrderId", "order_mock_sub_601",
+                                "razorpayPaymentId", "pay_mock_999",
+                                "razorpaySignature", "simulated_test_sig",
+                                "planId", 1L
+                        )));
+        assertTrue(ex.getMessage().contains("Razorpay is not configured for production use"));
+    }
+
     // =========================================================================
     // 4. C4 - Subscription Lifecycle & Administrative Invariants
     // =========================================================================

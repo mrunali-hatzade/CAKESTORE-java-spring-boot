@@ -162,6 +162,15 @@ public class CustomerPaymentController {
     }
 
     /**
+     * Overload for direct programmatic / testing invocation without explicit HTTP header.
+     */
+    public ResponseEntity<Map<String, Object>> verifyCustomerPayment(
+            String orderNumber,
+            Map<String, String> payload) {
+        return verifyCustomerPayment(orderNumber, null, payload);
+    }
+
+    /**
      * C1: Verify payment signature for customer order and update state idempotently.
      * Wrapped in a transaction boundary with pessimistic row locking to prevent race conditions.
      */
@@ -169,18 +178,33 @@ public class CustomerPaymentController {
     @PostMapping("/{orderNumber}/verify-payment")
     public ResponseEntity<Map<String, Object>> verifyCustomerPayment(
             @PathVariable String orderNumber,
+            @RequestHeader(value = "X-Checkout-Token", required = false) String checkoutTokenHeader,
             @RequestBody Map<String, String> payload) {
         Order order = orderRepository.findByOrderNumberWithLock(orderNumber)
                 .or(() -> orderRepository.findByOrderNumber(orderNumber))
                 .orElseThrow(() -> new IllegalArgumentException("Order not found: " + orderNumber));
 
+        // 1. Reject refunded orders immediately
         if ("REFUNDED".equalsIgnoreCase(order.getPaymentStatus())) {
             throw new IllegalStateException("Cannot verify payment for a refunded order");
         }
 
-        String razorpayOrderId = payload.get("razorpayOrderId");
-        String razorpayPaymentId = payload.get("razorpayPaymentId");
-        String razorpaySignature = payload.get("razorpaySignature");
+        // 2. Enforce server-side customer ownership authorization
+        validatePaymentVerificationAuthorization(order, checkoutTokenHeader, payload);
+
+        // 3. Reject completed or delivered orders
+        if ("COMPLETED".equalsIgnoreCase(order.getOrderStatus()) || "DELIVERED".equalsIgnoreCase(order.getOrderStatus())) {
+            throw new IllegalStateException("Cannot verify payment for an already completed or delivered order.");
+        }
+
+        // 4. Reject COD orders that were not initiated for online payment
+        if ("COD".equalsIgnoreCase(order.getPaymentMethod()) && order.getTransactionId() == null) {
+            throw new IllegalStateException("Cannot verify online payment for a Cash on Delivery order.");
+        }
+
+        String razorpayOrderId = payload != null ? payload.get("razorpayOrderId") : null;
+        String razorpayPaymentId = payload != null ? payload.get("razorpayPaymentId") : null;
+        String razorpaySignature = payload != null ? payload.get("razorpaySignature") : null;
 
         if (razorpayOrderId == null || razorpayOrderId.isBlank()
                 || razorpayPaymentId == null || razorpayPaymentId.isBlank()
@@ -188,11 +212,9 @@ public class CustomerPaymentController {
             throw new IllegalArgumentException("Missing required payment verification parameters");
         }
 
-        // Verify Razorpay order ID belongs to this local order/payment
-        if (order.getTransactionId() != null 
-                && !order.getTransactionId().equals(razorpayOrderId) 
-                && !order.getTransactionId().equals(razorpayPaymentId) 
-                && !"PAID".equalsIgnoreCase(order.getPaymentStatus())) {
+        // 5. Verify Razorpay order ID belongs to this local order
+        if (order.getTransactionId() == null 
+                || (!order.getTransactionId().equals(razorpayOrderId) && !order.getTransactionId().equals(razorpayPaymentId))) {
             log.warn("Razorpay order ID mismatch for order {}. Expected {}, got {}", 
                     orderNumber, order.getTransactionId(), razorpayOrderId);
             throw new IllegalArgumentException("Payment verification failed. Razorpay order ID does not match local order.");
@@ -200,7 +222,7 @@ public class CustomerPaymentController {
 
         boolean wasCancelled = "CANCELLED".equalsIgnoreCase(order.getOrderStatus());
 
-        // Idempotency: if already PAID, return success or reconciliation status without duplicate actions
+        // 6. Idempotency: if already PAID, return success or reconciliation status without duplicate actions
         if ("PAID".equalsIgnoreCase(order.getPaymentStatus())) {
             Payment existingPayment = paymentRepository.findByProviderPaymentId(razorpayPaymentId)
                     .or(() -> paymentRepository.findByProviderOrderId(razorpayOrderId))
@@ -213,22 +235,51 @@ public class CustomerPaymentController {
             ));
         }
 
-        // Signature check and authoritative order verification when credentials are configured
-        if (razorpayService.isConfigured()) {
-            boolean valid = razorpayService.verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature);
-            if (!valid) {
-                log.warn("Payment verification failed for customer order {}", orderNumber);
-                Payment failedPayment = paymentRepository.findByProviderOrderId(razorpayOrderId).orElse(null);
-                if (failedPayment != null && "PENDING".equalsIgnoreCase(failedPayment.getStatus())) {
-                    failedPayment.setStatus("FAILED");
-                    failedPayment.setFailureReason("Invalid signature");
-                    paymentRepository.save(failedPayment);
-                }
-                throw new IllegalArgumentException("Payment verification failed. Invalid signature.");
-            }
-            // Double check that Razorpay recorded the expected amount and currency
-            razorpayService.verifyOrderDetails(razorpayOrderId, order.getTotalAmount(), "INR");
+        // 7. Verify order is in a valid pending payment state
+        if (!"PENDING".equalsIgnoreCase(order.getPaymentStatus())) {
+            throw new IllegalStateException("Order is not in a pending payment state. Current payment status: " + order.getPaymentStatus());
         }
+
+        // 8. Validate payload amount & currency if provided (do not trust frontend-supplied values)
+        if (payload != null && payload.containsKey("amount") && payload.get("amount") != null && !payload.get("amount").isBlank()) {
+            try {
+                BigDecimal payloadAmount = new BigDecimal(payload.get("amount").trim());
+                if (payloadAmount.compareTo(order.getTotalAmount()) != 0) {
+                    log.warn("Payment verification rejected: Payload amount {} does not match order total {}",
+                            payloadAmount, order.getTotalAmount());
+                    throw new IllegalArgumentException("Payment verification failed. Amount mismatch.");
+                }
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Payment verification failed. Invalid amount format.");
+            }
+        }
+        if (payload != null && payload.containsKey("currency") && payload.get("currency") != null && !payload.get("currency").isBlank()) {
+            if (!"INR".equalsIgnoreCase(payload.get("currency").trim())) {
+                log.warn("Payment verification rejected: Unsupported currency {}", payload.get("currency"));
+                throw new IllegalArgumentException("Payment verification failed. Unsupported currency: " + payload.get("currency"));
+            }
+        }
+
+        // 9. Fail-closed Razorpay gateway configuration check
+        if (!razorpayService.isConfigured()) {
+            log.error("Payment verification rejected: Razorpay gateway credentials are not configured.");
+            throw new IllegalStateException("Payment verification failed. Payment gateway is not configured.");
+        }
+
+        // 10. Verify HMAC-SHA256 signature and authoritative order details via gateway
+        boolean valid = razorpayService.verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature);
+        if (!valid) {
+            log.warn("Payment verification failed for customer order {}: invalid signature", orderNumber);
+            Payment failedPayment = paymentRepository.findByProviderOrderId(razorpayOrderId).orElse(null);
+            if (failedPayment != null && "PENDING".equalsIgnoreCase(failedPayment.getStatus())) {
+                failedPayment.setStatus("FAILED");
+                failedPayment.setFailureReason("Invalid signature");
+                paymentRepository.save(failedPayment);
+            }
+            throw new IllegalArgumentException("Payment verification failed. Invalid signature.");
+        }
+        // Double check that Razorpay recorded the expected amount and currency
+        razorpayService.verifyOrderDetails(razorpayOrderId, order.getTotalAmount(), "INR");
 
         // Update Order
         order.setPaymentStatus("PAID");
@@ -350,6 +401,85 @@ public class CustomerPaymentController {
         ));
     }
 
+    private void validatePaymentVerificationAuthorization(Order order, String checkoutTokenHeader, Map<String, String> payload) {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+
+        boolean isAuthenticated = auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal());
+
+        if (isAuthenticated) {
+            // Principle of Least Privilege: Storefront customer payment verification is strictly for
+            // the customer who placed the order. Admin or Shop Owner roles do not participate in
+            // client-side checkout verification and cannot verify another customer's order.
+            String callerPhone = null;
+            if (auth.getPrincipal() instanceof com.cakeplatform.api.security.CustomUserDetails cud && cud.getUser() != null) {
+                callerPhone = cud.getUser().getMobile();
+            }
+            if ((callerPhone == null || callerPhone.isBlank()) && userRepository != null) {
+                String identifier = auth.getName();
+                com.cakeplatform.api.modules.user.User user = userRepository.findByEmailIgnoreCase(identifier)
+                        .orElseGet(() -> userRepository.findByMobile(identifier).orElse(null));
+                if (user != null) {
+                    callerPhone = user.getMobile();
+                }
+            }
+            if (callerPhone == null || callerPhone.isBlank()) {
+                callerPhone = auth.getName();
+            }
+
+            String normalizedCallerPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(callerPhone);
+            String normalizedOrderPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(order.getCustomerPhone());
+
+            if (normalizedCallerPhone == null || !normalizedCallerPhone.equals(normalizedOrderPhone)) {
+                // Request phone in payload must NOT override authenticated identity
+                throw new org.springframework.security.access.AccessDeniedException("Unauthorized: You do not have permission to verify payment for this order");
+            }
+            // Customer phone matches authenticated identity
+            return;
+        }
+
+        // Unauthenticated guest checkout: require trustworthy server-validated checkout session
+        String token = checkoutTokenHeader;
+        if ((token == null || token.isBlank()) && payload != null) {
+            token = payload.get("checkoutToken");
+        }
+
+        // 1. Validate signed server checkout session token
+        if (token != null && !token.isBlank() && jwtService != null) {
+            boolean valid = jwtService.validateCheckoutToken(token, order.getOrderNumber(), order.getCustomerPhone());
+            if (valid) {
+                return;
+            }
+        }
+
+        // 2. Validate server-generated payment transaction ID (razorpayOrderId or razorpayPaymentId)
+        String candidateOrderId = (payload != null) ? payload.get("razorpayOrderId") : null;
+        String candidatePaymentId = (payload != null) ? payload.get("razorpayPaymentId") : null;
+        if (candidateOrderId == null || candidateOrderId.isBlank()) {
+            candidateOrderId = token;
+        }
+
+        boolean matchesTx = order.getTransactionId() != null &&
+                (order.getTransactionId().equals(candidateOrderId) || order.getTransactionId().equals(candidatePaymentId));
+
+        if (matchesTx) {
+            // Verify caller provided matching customer phone if phone field was provided
+            String reqPhone = (payload != null) ? payload.get("phone") : null;
+            if (reqPhone != null && !reqPhone.isBlank()) {
+                String normReqPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(reqPhone);
+                String normOrderPhone = com.cakeplatform.api.modules.auth.service.AuthService.normalizeIndianMobile(order.getCustomerPhone());
+                if (normReqPhone != null && normReqPhone.equals(normOrderPhone)) {
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+
+        // If neither authenticated nor presenting a valid server-validated checkout session token:
+        throw new org.springframework.security.access.AccessDeniedException("Unauthorized: Valid checkout session token or customer authentication required to verify payment");
+    }
+
     private void validateCancellationAuthorization(Order order, String checkoutTokenHeader, Map<String, String> payload) {
         org.springframework.security.core.Authentication auth =
                 org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
@@ -414,14 +544,17 @@ public class CustomerPaymentController {
             }
         }
 
-        // 2. Validate server-generated payment transaction ID (razorpayOrderId)
+        // 2. Validate server-generated payment transaction ID (razorpayOrderId or razorpayPaymentId)
         String candidateOrderId = (payload != null) ? payload.get("razorpayOrderId") : null;
+        String candidatePaymentId = (payload != null) ? payload.get("razorpayPaymentId") : null;
         if (candidateOrderId == null || candidateOrderId.isBlank()) {
             candidateOrderId = token;
         }
 
-        if (candidateOrderId != null && !candidateOrderId.isBlank() && order.getTransactionId() != null
-                && candidateOrderId.equals(order.getTransactionId())) {
+        boolean matchesTx = order.getTransactionId() != null &&
+                (order.getTransactionId().equals(candidateOrderId) || order.getTransactionId().equals(candidatePaymentId));
+
+        if (matchesTx) {
             // Verify caller provided matching customer phone if phone field was provided
             String reqPhone = (payload != null) ? payload.get("phone") : null;
             if (reqPhone != null && !reqPhone.isBlank()) {

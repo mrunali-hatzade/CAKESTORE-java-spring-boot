@@ -634,21 +634,28 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
     }
 
     let finalSlotId = selectedSlotId;
-    if (timeSelectionMode === 'CUSTOM') {
-      if (!customDeliveryTime.trim()) {
-        setError('Please choose or enter your desired delivery time.');
-        return;
+    if (effectiveFulfillmentMethod === 'HOME_DELIVERY') {
+      if (timeSelectionMode === 'CUSTOM') {
+        if (!customDeliveryTime.trim()) {
+          setError('Please choose or enter your desired delivery time.');
+          return;
+        }
+        finalSlotId = resolvedSlotForCustomTime?.id || selectedSlotId || applicableSlots[0]?.id || slots[0]?.id;
+      } else {
+        if (!selectedSlotId) {
+          setError('Please select a delivery slot window.');
+          return;
+        }
       }
-      finalSlotId = resolvedSlotForCustomTime?.id || selectedSlotId || applicableSlots[0]?.id || slots[0]?.id;
-    } else {
-      if (!selectedSlotId) {
-        setError('Please select a delivery slot window.');
-        return;
-      }
-    }
 
-    if (!finalSlotId && slots.length > 0) {
-      finalSlotId = slots[0]?.id;
+      if (!finalSlotId && slots.length > 0) {
+        finalSlotId = slots[0]?.id;
+      }
+    } else {
+      // For SELF_PICKUP, delivery slot selection is optional
+      if (timeSelectionMode === 'CUSTOM' && customDeliveryTime.trim()) {
+        finalSlotId = resolvedSlotForCustomTime?.id || selectedSlotId || applicableSlots[0]?.id || slots[0]?.id;
+      }
     }
 
     const preferredTimeStr = timeSelectionMode === 'CUSTOM' && customDeliveryTime.trim()
@@ -1509,7 +1516,7 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Input
-                label="Delivery Date"
+                label={effectiveFulfillmentMethod === 'SELF_PICKUP' ? 'Pickup Date' : 'Delivery Date'}
                 type="date"
                 required
                 value={deliveryDate}
@@ -1520,7 +1527,7 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-brand-espresso">
-                    Delivery Timing Preference
+                    {effectiveFulfillmentMethod === 'SELF_PICKUP' ? 'Pickup Timing Preference' : 'Delivery Timing Preference'}
                   </label>
                   <div className="flex items-center p-0.5 bg-brand-cream/80 rounded-lg border border-brand-border/60 text-[10px]">
                     <button
@@ -1552,9 +1559,14 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
                 {timeSelectionMode === 'SLOT' ? (
                   <Select
                     label=""
-                    required
+                    required={effectiveFulfillmentMethod === 'HOME_DELIVERY'}
                     options={[
-                      { value: '', label: 'Select Delivery Window' },
+                      {
+                        value: '',
+                        label: effectiveFulfillmentMethod === 'SELF_PICKUP'
+                          ? 'Select Pickup Window (Optional)'
+                          : 'Select Delivery Window',
+                      },
                       ...applicableSlots.map((s: DeliverySlot) => {
                         const dayLabel = s.dayOfWeek ? s.dayOfWeek.charAt(0) + s.dayOfWeek.slice(1).toLowerCase() : 'Everyday';
                         const timeRange = `${s.startTime.slice(0, 5)} - ${s.endTime.slice(0, 5)}`;
@@ -1573,7 +1585,9 @@ export const StorefrontCheckoutTab: React.FC<StorefrontCheckoutTabProps> = ({
                     ]}
                     value={selectedSlotId || ''}
                     onChange={(e) => setSelectedSlotId(e.target.value ? Number(e.target.value) : undefined)}
-                    helperText={applicableSlots.length === 0 ? 'No delivery slots found for this date' : undefined}
+                    helperText={applicableSlots.length === 0
+                      ? (effectiveFulfillmentMethod === 'SELF_PICKUP' ? 'Pickup is available during standard bakery hours' : 'No delivery slots found for this date')
+                      : undefined}
                   />
                 ) : (
                   <div className="space-y-1.5 p-2.5 rounded-xl bg-[#FAF7F2] border border-[#5C1D2E]/25">

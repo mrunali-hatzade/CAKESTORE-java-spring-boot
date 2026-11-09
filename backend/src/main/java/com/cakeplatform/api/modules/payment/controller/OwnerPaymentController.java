@@ -48,19 +48,20 @@ public class OwnerPaymentController {
     }
 
     private boolean isAllowedMockEnvironment() {
-        if (environment != null) {
-            for (String profile : environment.getActiveProfiles()) {
-                if ("prod".equalsIgnoreCase(profile) || "production".equalsIgnoreCase(profile)) {
-                    return false;
-                }
-            }
-            for (String profile : environment.getActiveProfiles()) {
-                if ("test".equalsIgnoreCase(profile) || "dev".equalsIgnoreCase(profile) || "local".equalsIgnoreCase(profile)) {
-                    return true;
-                }
+        if (environment == null) {
+            return false;
+        }
+        for (String profile : environment.getActiveProfiles()) {
+            if ("prod".equalsIgnoreCase(profile) || "production".equalsIgnoreCase(profile) || "staging".equalsIgnoreCase(profile)) {
+                return false;
             }
         }
-        return razorpayService.getKeyId() != null && razorpayService.getKeyId().contains("placeholder");
+        for (String profile : environment.getActiveProfiles()) {
+            if ("test".equalsIgnoreCase(profile) || "dev".equalsIgnoreCase(profile) || "local".equalsIgnoreCase(profile)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private final SubscriptionService subscriptionService;

@@ -512,5 +512,212 @@ public class CustomerPaymentControllerTest {
         // No duplicate owner notifications
         verify(notificationService, never()).createNotification(any(), any(), any(), any(), any(), anyBoolean());
     }
+
+    // =========================================================================
+    // Phase 2.10.3A Focused Security Tests (Scenarios 1-10)
+    // =========================================================================
+
+    @Test
+    void security1_RazorpayNotConfigured_VerificationRejected() throws Exception {
+        testOrder.setTransactionId("order_rzp_real_9999");
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+        when(razorpayService.isConfigured()).thenReturn(false);
+
+        Map<String, String> payload = Map.of(
+                "razorpayOrderId", "order_rzp_real_9999",
+                "razorpayPaymentId", "pay_real_7777",
+                "razorpaySignature", "any_signature"
+        );
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/verify-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", containsString("Payment gateway is not configured")));
+
+        // MUST assert order is NOT marked PAID or CONFIRMED
+        assertNotEquals("PAID", testOrder.getPaymentStatus());
+        assertNotEquals("CONFIRMED", testOrder.getOrderStatus());
+        assertEquals("PENDING", testOrder.getPaymentStatus());
+        assertEquals("NEW", testOrder.getOrderStatus());
+    }
+
+    @Test
+    void security2_MissingSignature_Rejected() throws Exception {
+        testOrder.setTransactionId("order_rzp_real_9999");
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+
+        Map<String, String> payload = Map.of(
+                "razorpayOrderId", "order_rzp_real_9999",
+                "razorpayPaymentId", "pay_real_7777",
+                "razorpaySignature", ""
+        );
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/verify-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", containsString("Missing required payment verification parameters")));
+
+        assertNotEquals("PAID", testOrder.getPaymentStatus());
+        assertNotEquals("CONFIRMED", testOrder.getOrderStatus());
+    }
+
+    @Test
+    void security5_IncorrectAmount_Rejected() throws Exception {
+        testOrder.setTransactionId("order_rzp_real_9999");
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+        when(razorpayService.verifyPaymentSignature(any(), any(), any())).thenReturn(true);
+
+        Map<String, String> payload = Map.of(
+                "razorpayOrderId", "order_rzp_real_9999",
+                "razorpayPaymentId", "pay_real_7777",
+                "razorpaySignature", "valid_sig",
+                "amount", "999.00" // Mismatched amount
+        );
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/verify-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", containsString("Amount mismatch")));
+
+        assertNotEquals("PAID", testOrder.getPaymentStatus());
+        assertNotEquals("CONFIRMED", testOrder.getOrderStatus());
+    }
+
+    @Test
+    void security6_IncorrectCurrency_Rejected() throws Exception {
+        testOrder.setTransactionId("order_rzp_real_9999");
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+        when(razorpayService.verifyPaymentSignature(any(), any(), any())).thenReturn(true);
+
+        Map<String, String> payload = Map.of(
+                "razorpayOrderId", "order_rzp_real_9999",
+                "razorpayPaymentId", "pay_real_7777",
+                "razorpaySignature", "valid_sig",
+                "currency", "USD" // Unsupported currency
+        );
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/verify-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", containsString("Unsupported currency")));
+
+        assertNotEquals("PAID", testOrder.getPaymentStatus());
+        assertNotEquals("CONFIRMED", testOrder.getOrderStatus());
+    }
+
+    @Test
+    @org.springframework.security.test.context.support.WithMockUser(username = "9111111111", roles = {"CUSTOMER"})
+    void security7_DifferentCustomer_RejectedWithForbidden() throws Exception {
+        testOrder.setTransactionId("order_rzp_real_9999");
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+
+        Map<String, String> payload = Map.of(
+                "razorpayOrderId", "order_rzp_real_9999",
+                "razorpayPaymentId", "pay_real_7777",
+                "razorpaySignature", "valid_sig"
+        );
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/verify-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error", containsString("You do not have permission")));
+
+        assertNotEquals("PAID", testOrder.getPaymentStatus());
+        assertNotEquals("CONFIRMED", testOrder.getOrderStatus());
+    }
+
+    @Test
+    void security8_OrderNotInPendingPaymentState_Rejected() throws Exception {
+        testOrder.setTransactionId("order_rzp_real_9999");
+        testOrder.setPaymentStatus("FAILED");
+        testOrder.setOrderStatus("CANCELLED");
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+
+        Map<String, String> payload = Map.of(
+                "razorpayOrderId", "order_rzp_real_9999",
+                "razorpayPaymentId", "pay_real_7777",
+                "razorpaySignature", "valid_sig"
+        );
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/verify-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", containsString("Order is not in a pending payment state")));
+
+        assertNotEquals("PAID", testOrder.getPaymentStatus());
+        assertNotEquals("CONFIRMED", testOrder.getOrderStatus());
+    }
+
+    @Test
+    void security8b_OrderAlreadyCompleted_Rejected() throws Exception {
+        testOrder.setTransactionId("order_rzp_real_9999");
+        testOrder.setOrderStatus("COMPLETED");
+        testOrder.setPaymentStatus("PENDING");
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+
+        Map<String, String> payload = Map.of(
+                "razorpayOrderId", "order_rzp_real_9999",
+                "razorpayPaymentId", "pay_real_7777",
+                "razorpaySignature", "valid_sig"
+        );
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/verify-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error", containsString("Cannot verify payment for an already completed or delivered order")));
+
+        assertNotEquals("PAID", testOrder.getPaymentStatus());
+    }
+
+    @Test
+    @org.springframework.security.test.context.support.WithMockUser(username = "owner@test.com", roles = {"SHOP_OWNER"})
+    void security_ShopOwnerCannotVerifyCustomerPayment_ReturnsForbidden() throws Exception {
+        testOrder.setTransactionId("order_rzp_real_9999");
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+
+        Map<String, String> payload = Map.of(
+                "razorpayOrderId", "order_rzp_real_9999",
+                "razorpayPaymentId", "pay_real_7777",
+                "razorpaySignature", "valid_sig"
+        );
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/verify-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error", containsString("You do not have permission")));
+
+        assertNotEquals("PAID", testOrder.getPaymentStatus());
+        assertNotEquals("CONFIRMED", testOrder.getOrderStatus());
+    }
+
+    @Test
+    @org.springframework.security.test.context.support.WithMockUser(username = "admin@cakestore.com", roles = {"ADMIN"})
+    void security_AdminCannotVerifyCustomerPaymentWithoutCustomerAuth_ReturnsForbidden() throws Exception {
+        testOrder.setTransactionId("order_rzp_real_9999");
+        when(orderRepository.findByOrderNumber("ORD-TEST-1234")).thenReturn(Optional.of(testOrder));
+
+        Map<String, String> payload = Map.of(
+                "razorpayOrderId", "order_rzp_real_9999",
+                "razorpayPaymentId", "pay_real_7777",
+                "razorpaySignature", "valid_sig"
+        );
+
+        mockMvc.perform(post("/api/storefront/orders/ORD-TEST-1234/verify-payment")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error", containsString("You do not have permission")));
+
+        assertNotEquals("PAID", testOrder.getPaymentStatus());
+        assertNotEquals("CONFIRMED", testOrder.getOrderStatus());
+    }
 }
 
